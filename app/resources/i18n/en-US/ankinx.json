@@ -34,6 +34,7 @@
     "type_answer": "Press A to type your answer",
     "your_answer": "Your answer",
     "missing_media": "Missing media file",
+    "toggle_masks": "Toggle masks",
     "congrats": "Congratulations! You have finished this deck for now.",
     "zoom": "Zoom",
     "error": "Something went wrong"

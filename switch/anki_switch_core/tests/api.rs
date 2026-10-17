@@ -213,7 +213,10 @@ fn study_flow() {
     let typing = dir.path().join("typing");
     std::fs::create_dir_all(&typing).unwrap();
     {
-        let mut col = CollectionBuilder::new(typing.join("collection.anki2")).build().unwrap();
+        let mut col = CollectionBuilder::new(typing.join("collection.anki2"))
+            .set_media_paths(typing.join("collection.media"), typing.join("collection.mdb"))
+            .build()
+            .unwrap();
         let deck = col.get_or_create_normal_deck("Typing").unwrap();
         let notetype = col.get_notetype_by_name("Basic (type in the answer)").unwrap().unwrap();
         let mut note = notetype.new_note();

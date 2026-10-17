@@ -24,6 +24,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Fields, conditionals, `{{FrontSide}}`, cloze | ✅ | Rendered by rslib |
 | `{{hint:...}}` | ✅ | Native links, X reveals all |
 | `{{type:...}}`, `{{type:cloze:...}}`, `{{type:nc:...}}` | ✅ | Answer box opens the Switch keyboard (A or tap); the answer side shows Anki's `compare_answer` diff, as in desktop. Host-tested |
+| Image Occlusion (stock note type, Anki 23.10+) | ✅ | Masks drawn natively over the image (rect, ellipse, polygon, text) following `review.ts`; "occlude inactive"; X toggles masks on the answer. Verified in preview and host tests; needs an on-console check |
 | `[sound:...]`, replay buttons | ✅ | |
 | `{{tts ...}}` | ⬜ | See section 3 |
 | MathJax `\(...\)`, `\[...\]` | ⬜ | See section 3 and the JavaScript evaluation |
@@ -49,7 +50,8 @@ interaction gets in the way of studying, whatever else works. Rules:
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| AnkiWeb normal sync, full upload/download conflict choice | ✅ | Host-tested up to the network; needs an on-console run |
+| AnkiWeb normal sync, full upload/download conflict choice | ✅ | Verified on console (0.2.0) |
+| Automatic sync: on open, after studying, before + exits | ✅ | Like Anki desktop / AnkiDroid's option; toggle in the account menu (−). Closing from HOME can't sync (no time), hence the sync after studying. Needs an on-console check |
 | Login with the Switch keyboard | ✅ | Only the host key is stored (`sync.json`) |
 | Background media sync with completion notice | ✅ | |
 

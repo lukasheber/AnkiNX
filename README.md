@@ -6,6 +6,32 @@ AnkiWeb sync behave as in Anki desktop. The interface follows AnkiDroid.
 
 Unofficial: not affiliated with Ankitects, AnkiDroid or Nintendo.
 
+## Scope: reviewing on the go
+
+AnkiNX is for **studying**: deck list, reviews, answer buttons, undo, audio,
+images, type-in-the-answer and Image Occlusion cards. Adding and editing notes
+and cards is **not implemented**. Create and maintain your collection in Anki
+desktop or AnkiDroid, and use AnkiNX to review it.
+
+**With AnkiWeb (recommended).** Log in with the − button and sync with X.
+Automatic sync is on by default: when the app opens, after studying and before
+exiting with +. Your reviews then reach Anki desktop and AnkiDroid, and new
+cards made there reach the Switch.
+
+**Offline.** Without AnkiWeb, copy the collection to the SD card:
+
+1. Close Anki desktop, so all changes are written to the collection file.
+2. From your Anki profile folder, copy `collection.anki2` and the
+   `collection.media` folder to `/switch/ankinx/` on the SD card, replacing
+   what is there. The profile folder is `Anki2/<profile name>` inside
+   `%APPDATA%` on Windows, `~/Library/Application Support` on macOS and
+   `~/.local/share` on Linux.
+3. Start AnkiNX.
+
+To bring your Switch reviews back to the computer, copy `collection.anki2`
+back the same way, with Anki closed. This replaces the computer's copy, so
+don't study on both sides between copies.
+
 ## Layout
 
 | Path | What |

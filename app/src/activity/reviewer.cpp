@@ -298,6 +298,7 @@ void ReviewerActivity::showQuestion()
     shownBody = questionBody();
     cardView->setOcclusions(occlusionsFor(card, "question"));
     cardView->setMasksHidden(false);
+    frame->updateActionHint(brls::BUTTON_X, "ankinx/review/hints"_i18n);
     cardView->setHtml(documentFor(shownBody));
     setBar(false);
     playAudio(card["question_av"]);
@@ -350,6 +351,9 @@ void ReviewerActivity::showAnswer()
     }
     cardView->setOcclusions(occlusionsFor(card, "answer"));
     cardView->setMasksHidden(false);
+    const anki::json& io = card["occlusions"];
+    if (io.is_object() && io.value("can_toggle", false))
+        frame->updateActionHint(brls::BUTTON_X, "ankinx/review/toggle_masks"_i18n);
     cardView->setHtml(documentFor(shownBody));
     cardView->scrollToAnswerAfterLayout();
     const anki::json& buttons = card["buttons"];
