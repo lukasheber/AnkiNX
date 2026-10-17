@@ -30,7 +30,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | MathJax `\(...\)`, `\[...\]` | ⬜ | See section 3 and the JavaScript evaluation |
 | Template JavaScript | ⬜ | See the JavaScript evaluation |
 | CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables; flexbox partial; to audit against popular shared-deck styles |
-| Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done |
+| Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
 | RTL scripts, ruby (furigana `{{furigana:...}}`) | 🔶 | Furigana renders through rslib as `<ruby>`; litehtml's ruby layout to check |
 
 ## 1. Study and review
@@ -78,6 +78,57 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Rust thread-locals beyond libnx's TLS slots | ✅ | Found on device: std aborted "out of TLS keys" when loading a collection and syncing; keys now come from the shim (`nx_posix.c`) |
 | Applet-mode warning | ✅ | |
 | Horizon filesystem semantics | ✅ | `stat()` on open files and `rename()` over existing files fixed in the shim (found on device: `SQLITE_IOERR_FSTAT` 1802) |
+
+## Backlog: review and study features
+
+Brainstormed from AnkiDroid's reviewer, Anki desktop and the Switch's own
+situation (handheld/docked, touch, Joy-Cons, shared family consoles, no
+microphone). Scope stays review-only: no note editing. Priority: **P1** is
+expected by most users, **P2** is often requested, **P3** is nice to have.
+Current order of work: maths, then single Joy-Con and key bindings, then
+template JavaScript, then this list.
+
+### In the reviewer
+
+| Feature | Priority | Notes |
+| --- | --- | --- |
+| Single Joy-Con (sideways) and custom key bindings | P1 | Sideways Joy-Con has no ZL/L/R/ZR, so it can't grade cards today. Detect the layout, map face buttons to Again/Hard/Good/Easy, settings screen for all actions |
+| Card actions menu: flag (colours), mark, bury card/note, suspend card/note, forget, set due date | P1 | AnkiDroid's reviewer menu; all are scheduler operations in rslib, not editing |
+| Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | P1 | rslib `card_stats` |
+| Leech, daily-limit and "learning card due in N min" messages | P1 | Anki shows these; today the app just says "finished" |
+| Answer timer and auto advance (show answer / answer after N seconds) | P2 | Anki 23.12+ auto advance, from deck options; good for hands-free audio decks |
+| Whiteboard (draw on the card with the touchscreen) | P2 | AnkiDroid feature, very useful for kanji and handwriting; handheld mode only |
+| Tap zones and swipe gestures (handheld) | P2 | AnkiDroid-style: tap left/right/bottom areas for answer buttons |
+| Persistent card zoom / text size per deck | P2 | Stick-click zoom exists but resets each card |
+| Audio options: autoplay on/off, replay question only, playback speed | P2 | |
+| Redo, multiple undo levels shown | P3 | Undo exists |
+| Rumble on answer (HD Rumble) | P3 | Light feedback when grading |
+| Text-to-speech for `{{tts}}` | P3 | Needs an offline engine (eSpeak NG); quality is limited |
+
+### Around studying
+
+| Feature | Priority | Notes |
+| --- | --- | --- |
+| Deck overview screen before studying (counts, description, "Study now", custom study) | P1 | AnkiDroid's Study Options screen |
+| Deck options (limits, learning steps, FSRS on/off, desired retention) | P1 | Already listed in section 1 |
+| Custom study and filtered decks (study ahead, forgotten cards, by tag, increase today's limit) | P1 | Already listed in section 1 |
+| Statistics: today (cards, time), forecast, review heatmap, retention | P2 | rslib graphs data; draw natively |
+| Multiple profiles, one per Switch user | P2 | Families share consoles; pick the profile from the Switch user selector (`/switch/ankinx/<user>/`) |
+| Import `.apkg`/`.colpkg` from the SD card | P2 | Shared decks without a PC or AnkiWeb; needs the Horizon-safe file handling used for backups |
+| Restore a backup from the app | P2 | Backups exist; restoring needs the SD card today |
+| Custom sync server (self-hosted Anki sync server) | P2 | The backend already accepts an endpoint at login; needs a settings field |
+| Read-only card browser (search, preview, suspend/flag from the list) | P3 | Search through rslib; no editing |
+| Deck list actions: collapse all, filter, show only decks with due cards | P3 | |
+
+### Interface and platform
+
+| Feature | Priority | Notes |
+| --- | --- | --- |
+| Interface translations (Portuguese, Spanish, Japanese, ...) | P1 | Anki's own strings (scheduler, errors) are already translated through rslib; the app's own strings are English only |
+| Docked/TV layout: larger card text and buttons at 1080p | P2 | |
+| In-app theme choice (light/dark/follow system) | P3 | Follows the system theme today |
+| Night mode adapted to card CSS | P3 | Moved here: the app already follows the Switch's dark theme |
+| Resume after sleep: keep the current card, sync on wake if automatic sync is on | P3 | |
 
 ## JavaScript evaluation (QuickJS / Duktape + litehtml)
 
