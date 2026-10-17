@@ -299,6 +299,8 @@ void ReviewerActivity::showQuestion()
     cardView->setOcclusions(occlusionsFor(card, "question"));
     cardView->setMasksHidden(false);
     frame->updateActionHint(brls::BUTTON_X, "ankinx/review/hints"_i18n);
+    // updateActionHint doesn't redraw the footer by itself.
+    brls::Application::getGlobalHintsUpdateEvent()->fire();
     cardView->setHtml(documentFor(shownBody));
     setBar(false);
     playAudio(card["question_av"]);
@@ -353,7 +355,10 @@ void ReviewerActivity::showAnswer()
     cardView->setMasksHidden(false);
     const anki::json& io = card["occlusions"];
     if (io.is_object() && io.value("can_toggle", false))
+    {
         frame->updateActionHint(brls::BUTTON_X, "ankinx/review/toggle_masks"_i18n);
+        brls::Application::getGlobalHintsUpdateEvent()->fire();
+    }
     cardView->setHtml(documentFor(shownBody));
     cardView->scrollToAnswerAfterLayout();
     const anki::json& buttons = card["buttons"];

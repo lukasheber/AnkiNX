@@ -6,6 +6,12 @@ AnkiWeb sync behave as in Anki desktop. The interface follows AnkiDroid.
 
 Unofficial: not affiliated with Ankitects, AnkiDroid or Nintendo.
 
+| | |
+| --- | --- |
+| ![Deck list](docs/screenshots/decks.png) | ![Cloze card](docs/screenshots/cloze_question.png) |
+| ![Card with an image](docs/screenshots/image_answer.png) | ![Type in the answer](docs/screenshots/type_answer.png) |
+| ![Image Occlusion question](docs/screenshots/occlusion_question.png) | ![Image Occlusion answer](docs/screenshots/occlusion_answer.png) |
+
 ## Scope: reviewing on the go
 
 AnkiNX is for **studying**: deck list, reviews, answer buttons, undo, audio,
