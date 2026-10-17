@@ -1,0 +1,18 @@
+[package]
+name = "std_probe"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+tokio = ["dep:tokio"]
+
+[dependencies]
+tokio = { version = "1.45", features = ["rt-multi-thread", "net", "fs"], optional = true }
+
+[patch.crates-io]
+libc = { path = "../../vendor/libc" }
+mio = { path = "../../vendor/mio" }
+tokio = { path = "../../vendor/tokio" }

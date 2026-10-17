@@ -1,0 +1,321 @@
+diff -ruN a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -19,7 +19,7 @@
+     "Thomas de Zeeuw <thomasdezeeuw@gmail.com>",
+     "Tokio Contributors <team@tokio.rs>",
+ ]
+-build = false
++build = "build.rs"
+ include = [
+     "Cargo.toml",
+     "LICENSE",
+diff -ruN a/build.rs b/build.rs
+--- a/build.rs
++++ b/build.rs
+@@ -0,0 +1,12 @@
++// Added for the Nintendo Switch port: `cfg(libnx)` marks Horizon OS on aarch64
++// (devkitA64 newlib + libnx), as opposed to the 3DS, which shares
++// `target_os = "horizon"` but has a different socket stack and no usable waker.
++fn main() {
++    println!("cargo:rerun-if-changed=build.rs");
++    println!("cargo:rustc-check-cfg=cfg(libnx)");
++    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
++    let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
++    if os == "horizon" && arch == "aarch64" {
++        println!("cargo:rustc-cfg=libnx");
++    }
++}
+diff -ruN a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -51,7 +51,7 @@
+ mod poll;
+ mod sys;
+ mod token;
+-#[cfg(not(any(target_os = "horizon", target_os = "wasi")))]
++#[cfg(not(any(all(target_os = "horizon", not(libnx)), target_os = "wasi")))]
+ mod waker;
+ 
+ pub mod event;
+@@ -69,7 +69,7 @@
+ pub use interest::Interest;
+ pub use poll::{Poll, Registry};
+ pub use token::Token;
+-#[cfg(not(any(target_os = "horizon", target_os = "wasi")))]
++#[cfg(not(any(all(target_os = "horizon", not(libnx)), target_os = "wasi")))]
+ pub use waker::Waker;
+ 
+ #[cfg(all(unix, feature = "os-ext"))]
+diff -ruN a/src/poll.rs b/src/poll.rs
+--- a/src/poll.rs
++++ b/src/poll.rs
+@@ -16,9 +16,9 @@
+     )),
+ ))]
+ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
+-#[cfg(all(debug_assertions, not(any(target_os = "wasi", target_os = "horizon"))))]
++#[cfg(all(debug_assertions, not(any(target_os = "wasi", all(target_os = "horizon", not(libnx))))))]
+ use std::sync::atomic::{AtomicBool, Ordering};
+-#[cfg(all(debug_assertions, not(any(target_os = "wasi", target_os = "horizon"))))]
++#[cfg(all(debug_assertions, not(any(target_os = "wasi", all(target_os = "horizon", not(libnx))))))]
+ use std::sync::Arc;
+ use std::time::Duration;
+ use std::{fmt, io};
+@@ -276,7 +276,7 @@
+ pub struct Registry {
+     selector: sys::Selector,
+     /// Whether this selector currently has an associated waker.
+-    #[cfg(all(debug_assertions, not(any(target_os = "wasi", target_os = "horizon"))))]
++    #[cfg(all(debug_assertions, not(any(target_os = "wasi", all(target_os = "horizon", not(libnx))))))]
+     has_waker: Arc<AtomicBool>,
+ }
+ 
+@@ -322,7 +322,7 @@
+             sys::Selector::new().map(|selector| Poll {
+                 registry: Registry {
+                     selector,
+-                    #[cfg(all(debug_assertions, not(any(target_os = "wasi", target_os = "horizon"))))]
++                    #[cfg(all(debug_assertions, not(any(target_os = "wasi", all(target_os = "horizon", not(libnx))))))]
+                     has_waker: Arc::new(AtomicBool::new(false)),
+                 },
+             })
+@@ -715,14 +715,14 @@
+     pub fn try_clone(&self) -> io::Result<Registry> {
+         self.selector.try_clone().map(|selector| Registry {
+             selector,
+-            #[cfg(all(debug_assertions, not(any(target_os = "wasi", target_os = "horizon"))))]
++            #[cfg(all(debug_assertions, not(any(target_os = "wasi", all(target_os = "horizon", not(libnx))))))]
+             has_waker: Arc::clone(&self.has_waker),
+         })
+     }
+ 
+     /// Internal check to ensure only a single `Waker` is active per [`Poll`]
+     /// instance.
+-    #[cfg(all(debug_assertions, not(any(target_os = "wasi", target_os = "horizon"))))]
++    #[cfg(all(debug_assertions, not(any(target_os = "wasi", all(target_os = "horizon", not(libnx))))))]
+     pub(crate) fn register_waker(&self) {
+         assert!(
+             !self.has_waker.swap(true, Ordering::AcqRel),
+@@ -732,7 +732,7 @@
+ 
+     /// Get access to the `sys::Selector`.
+     #[cfg(any(not(target_os = "wasi"), feature = "net"))]
+-    #[cfg_attr(target_os = "horizon", allow(dead_code))]
++    #[cfg_attr(all(target_os = "horizon", not(libnx)), allow(dead_code))]
+     pub(crate) fn selector(&self) -> &sys::Selector {
+         &self.selector
+     }
+diff -ruN a/src/sys/shell/mod.rs b/src/sys/shell/mod.rs
+--- a/src/sys/shell/mod.rs
++++ b/src/sys/shell/mod.rs
+@@ -7,9 +7,9 @@
+ mod selector;
+ pub(crate) use self::selector::{event, Event, Events, Selector};
+ 
+-#[cfg(not(any(target_os = "wasi", target_os = "horizon")))]
++#[cfg(not(any(target_os = "wasi", all(target_os = "horizon", not(libnx)))))]
+ mod waker;
+-#[cfg(not(any(target_os = "wasi", target_os = "horizon")))]
++#[cfg(not(any(target_os = "wasi", all(target_os = "horizon", not(libnx)))))]
+ pub(crate) use self::waker::Waker;
+ 
+ cfg_net! {
+diff -ruN a/src/sys/unix/mod.rs b/src/sys/unix/mod.rs
+--- a/src/sys/unix/mod.rs
++++ b/src/sys/unix/mod.rs
+@@ -116,7 +116,8 @@
+         target_os = "cygwin",
+         all(target_os = "wasi", target_env = "p1")
+     ), path = "waker/pipe.rs")]
+-    #[cfg_attr(any(target_os = "horizon", all(target_os = "wasi", not(target_env = "p1"))), path = "waker/single_threaded.rs")]
++    #[cfg_attr(any(all(target_os = "horizon", not(libnx)), all(target_os = "wasi", not(target_env = "p1"))), path = "waker/single_threaded.rs")]
++    #[cfg_attr(libnx, path = "waker/socket.rs")]
+     mod waker;
+     #[cfg(all(not(mio_unsupported_force_poll_poll), target_os = "solaris"))]
+     pub(crate) use self::waker::Waker;
+diff -ruN a/src/sys/unix/net.rs b/src/sys/unix/net.rs
+--- a/src/sys/unix/net.rs
++++ b/src/sys/unix/net.rs
+@@ -67,13 +67,15 @@
+         target_os = "haiku",
+         target_os = "vita",
+         target_os = "nto",
++        libnx,
+     ))]
+     {
+         if let Err(err) = syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK)) {
+             let _ = syscall!(close(socket));
+             return Err(err);
+         }
+-        #[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "nto")))]
++        // No exec on the Switch, so close-on-exec is meaningless there.
++        #[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "nto", libnx)))]
+         if let Err(err) = syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC)) {
+             let _ = syscall!(close(socket));
+             return Err(err);
+@@ -136,6 +138,7 @@
+                     target_os = "vita",
+                     target_os = "hermit",
+                     target_os = "nto",
++                    libnx,
+                 ))]
+                 sin_len: 0,
+                 #[cfg(target_os = "vita")]
+diff -ruN a/src/sys/unix/selector/poll.rs b/src/sys/unix/selector/poll.rs
+--- a/src/sys/unix/selector/poll.rs
++++ b/src/sys/unix/selector/poll.rs
+@@ -47,7 +47,7 @@
+         self.state.select(events, timeout)
+     }
+ 
+-    #[cfg_attr(target_os = "horizon", allow(dead_code))]
++    #[cfg_attr(all(target_os = "horizon", not(libnx)), allow(dead_code))]
+     pub fn register(&self, fd: RawFd, token: Token, interests: Interest) -> io::Result<()> {
+         self.state.register(fd, token, interests)
+     }
+@@ -73,7 +73,7 @@
+     }
+     }
+ 
+-    #[cfg(not(any(target_os = "horizon", target_os = "wasi")))]
++    #[cfg(not(any(all(target_os = "horizon", not(libnx)), target_os = "wasi")))]
+     pub fn wake(&self, token: Token) -> io::Result<()> {
+         self.state.wake(token)
+     }
+@@ -457,16 +457,16 @@
+         })
+     }
+ 
+-    #[cfg(not(any(target_os = "horizon", target_os = "wasi")))]
++    #[cfg(not(any(all(target_os = "horizon", not(libnx)), target_os = "wasi")))]
+     pub fn wake(&self, token: Token) -> io::Result<()> {
+         self.pending_wake_token.lock().unwrap().replace(token);
+         self.notify_waker.wake()
+     }
+ }
+ 
+-#[cfg(not(target_os = "horizon"))]
++#[cfg(not(all(target_os = "horizon", not(libnx))))]
+ type PollFlagInt = libc::c_short;
+-#[cfg(target_os = "horizon")]
++#[cfg(all(target_os = "horizon", not(libnx)))]
+ type PollFlagInt = libc::c_int;
+ 
+ #[cfg(target_os = "linux")]
+@@ -647,14 +647,14 @@
+     }
+ }
+ 
+-#[cfg(not(any(target_os = "wasi", target_os = "horizon")))]
++#[cfg(not(any(target_os = "wasi", all(target_os = "horizon", not(libnx)))))]
+ #[derive(Debug)]
+ pub(crate) struct Waker {
+     selector: Selector,
+     token: Token,
+ }
+ 
+-#[cfg(not(any(target_os = "wasi", target_os = "horizon")))]
++#[cfg(not(any(target_os = "wasi", all(target_os = "horizon", not(libnx)))))]
+ impl Waker {
+     pub(crate) fn new(selector: &Selector, token: Token) -> io::Result<Waker> {
+         Ok(Waker {
+diff -ruN a/src/sys/unix/tcp.rs b/src/sys/unix/tcp.rs
+--- a/src/sys/unix/tcp.rs
++++ b/src/sys/unix/tcp.rs
+@@ -114,7 +114,7 @@
+         ))
+         .map(|socket| unsafe { net::TcpStream::from_raw_fd(socket) })
+         .and_then(|s| {
+-            #[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi")))]
++            #[cfg(not(any(target_os = "espidf", target_os = "vita", target_os = "wasi", libnx)))]
+             syscall!(fcntl(s.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+ 
+             // See https://github.com/tokio-rs/mio/issues/1450
+@@ -126,6 +126,7 @@
+                 target_os = "hermit",
+                 target_os = "nto",
+                 target_os = "wasi",
++                libnx,
+             ))]
+             syscall!(fcntl(s.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+ 
+diff -ruN a/src/sys/unix/waker/socket.rs b/src/sys/unix/waker/socket.rs
+--- a/src/sys/unix/waker/socket.rs
++++ b/src/sys/unix/waker/socket.rs
+@@ -0,0 +1,75 @@
++use std::io;
++use std::net::{Ipv4Addr, UdpSocket};
++use std::os::fd::{AsRawFd, RawFd};
++
++use crate::sys::Selector;
++use crate::{Interest, Token};
++
++/// Waker backed by a loopback UDP socket connected to itself.
++///
++/// Used on the Nintendo Switch (libnx), which has neither `pipe(2)` nor
++/// `eventfd(2)`, but whose BSD socket service supports `poll(2)` on sockets.
++/// Writing a datagram makes the socket readable, which interrupts a `poll`
++/// blocked on another thread, just like the pipe-based waker.
++#[derive(Debug)]
++pub(crate) struct Waker {
++    socket: UdpSocket,
++}
++
++impl Waker {
++    #[allow(dead_code)] // Not used by the `poll(2)` implementation.
++    pub(crate) fn new(selector: &Selector, token: Token) -> io::Result<Waker> {
++        let waker = Waker::new_unregistered()?;
++        selector.register(waker.socket.as_raw_fd(), token, Interest::READABLE)?;
++        Ok(waker)
++    }
++
++    pub(crate) fn new_unregistered() -> io::Result<Waker> {
++        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))?;
++        socket.connect(socket.local_addr()?)?;
++        socket.set_nonblocking(true)?;
++        Ok(Waker { socket })
++    }
++
++    pub(crate) fn wake(&self) -> io::Result<()> {
++        match self.socket.send(&[1]) {
++            Ok(_) => Ok(()),
++            // Receive buffer full: plenty of wake-ups are already pending.
++            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => Ok(()),
++            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => self.wake(),
++            Err(err) => Err(err),
++        }
++    }
++
++    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
++    pub(crate) fn ack_and_reset(&self) {
++        self.empty();
++    }
++
++    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
++    pub(crate) fn fd(&self) -> Option<RawFd> {
++        Some(self.socket.as_raw_fd())
++    }
++
++    /// Only ever `true` for the `single_threaded.rs` implementation.
++    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
++    pub(crate) fn woken(&self) -> bool {
++        false
++    }
++
++    /// Drain all pending wake-up datagrams. Ignores errors.
++    fn empty(&self) {
++        let mut buf = [0; 64];
++        while let Ok(n) = self.socket.recv(&mut buf) {
++            if n == 0 {
++                break;
++            }
++        }
++    }
++}
++
++impl AsRawFd for Waker {
++    fn as_raw_fd(&self) -> RawFd {
++        self.socket.as_raw_fd()
++    }
++}

@@ -1,0 +1,73 @@
+{
+  "title": "AnkiNX",
+  "decks": {
+    "col_new": "New",
+    "col_learn": "Learn",
+    "col_due": "Due",
+    "study": "Study",
+    "sync": "Sync",
+    "toggle": "Expand / collapse",
+    "account": "AnkiWeb account",
+    "empty": "No cards yet.\n\nPress X to log in to AnkiWeb and download your collection,\nor copy collection.anki2 and collection.media from Anki desktop\ninto /switch/ankinx/ on the SD card.",
+    "opening": "Opening collection…",
+    "open_failed": "Could not open the collection",
+    "logged_in_as": "Logged in to AnkiWeb as",
+    "not_logged_in": "Not logged in to AnkiWeb.",
+    "login": "Log in",
+    "logout": "Log out",
+    "auto_sync_on": "Turn on automatic sync",
+    "auto_sync_off": "Turn off automatic sync",
+    "auto_sync_enabled": "Automatic sync is on: when opening, after studying and when exiting with +",
+    "auto_sync_disabled": "Automatic sync is off: press X to sync"
+  },
+  "review": {
+    "show_answer": "Show Answer",
+    "again": "Again",
+    "hard": "Hard",
+    "good": "Good",
+    "easy": "Easy",
+    "undo": "Undo",
+    "undone": "Undone",
+    "nothing_to_undo": "Nothing to undo",
+    "replay": "Replay audio",
+    "hints": "Show hints",
+    "type_answer": "Press A to type your answer",
+    "your_answer": "Your answer",
+    "missing_media": "Missing media file",
+    "congrats": "Congratulations! You have finished this deck for now.",
+    "zoom": "Zoom",
+    "error": "Something went wrong"
+  },
+  "sync": {
+    "email": "AnkiWeb email",
+    "password": "AnkiWeb password",
+    "logging_in": "Logging in to AnkiWeb…",
+    "logged_in": "Logged in to AnkiWeb",
+    "logged_out": "Logged out of AnkiWeb",
+    "syncing": "Syncing with AnkiWeb…",
+    "uploading": "Uploading collection to AnkiWeb…",
+    "downloading": "Downloading collection from AnkiWeb…",
+    "done": "Sync complete",
+    "failed": "Sync failed",
+    "media_done": "Media sync complete",
+    "media_failed": "Media sync failed",
+    "upload": "Upload to AnkiWeb",
+    "download": "Download from AnkiWeb",
+    "confirm_upload": "Upload this collection to AnkiWeb?\n\nThe collection on AnkiWeb will be replaced. Changes made on other devices since their last sync will be lost.",
+    "confirm_download": "Download the collection from AnkiWeb?\n\nThe collection on this Switch will be replaced. Changes made here since the last sync will be lost.",
+    "conflict": "This collection and AnkiWeb's have both changed in ways that can't be merged.\n\nChoose which one to keep."
+  },
+  "login": {
+    "title": "Log in to AnkiWeb",
+    "intro": "Enter the email and password of your AnkiWeb account. Select a field to type with the keyboard.",
+    "email": "Email",
+    "password": "Password",
+    "required": "Select to enter",
+    "missing": "Enter your email and password first.",
+    "button": "Log in"
+  },
+  "hint": {
+    "applet_mode": "AnkiNX is running in applet mode (opened from the Album), which has very little memory.\n\nFor reliable studying, exit and open the Homebrew Menu by holding R while launching a game.",
+    "continue": "Continue anyway"
+  }
+}

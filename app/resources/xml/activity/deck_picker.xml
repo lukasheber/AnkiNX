@@ -1,0 +1,45 @@
+<brls:AppletFrame
+    id="frame"
+    iconInterpolation="linear"
+    footerHidden="false">
+
+    <brls:Box
+        width="auto"
+        height="auto"
+        axis="column"
+        grow="1.0">
+
+        <!-- Column titles, aligned with the counts in deck_cell.xml -->
+        <brls:Box
+            width="auto"
+            height="40"
+            axis="row"
+            alignItems="center"
+            paddingLeft="60"
+            paddingRight="70">
+            <brls:Label id="account" width="auto" height="auto" grow="1.0" fontSize="16" singleLine="true" />
+            <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#42a5f5" text="@i18n/ankinx/decks/col_new" />
+            <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#ef5350" text="@i18n/ankinx/decks/col_learn" />
+            <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#66bb6a" text="@i18n/ankinx/decks/col_due" />
+        </brls:Box>
+
+        <brls:Label
+            id="message"
+            width="auto"
+            height="auto"
+            grow="1.0"
+            fontSize="22"
+            horizontalAlign="center"
+            verticalAlign="center"
+            visibility="gone" />
+
+        <brls:RecyclerFrame
+            id="decks"
+            width="auto"
+            height="auto"
+            grow="1.0"
+            paddingLeft="40"
+            paddingRight="40"
+            paddingBottom="20" />
+    </brls:Box>
+</brls:AppletFrame>

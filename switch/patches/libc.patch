@@ -1,0 +1,814 @@
+diff -ruN a/build.rs b/build.rs
+--- a/build.rs
++++ b/build.rs
+@@ -61,9 +61,13 @@
+     /// Corresponds to the `UCLIBC_USE_TIME64` config / `__UCLIBC_USE_TIME64__` define. Indicates
+     /// that `*time64` syscalls should be used. Implies 32-bit.
+     Uclibc32Time64,
++    /// Nintendo Switch: Horizon OS on aarch64 with devkitA64 newlib + libnx. Distinguishes it
++    /// from the 3DS (also `target_os = "horizon"`, but 32-bit ARM with libctru).
++    Libnx,
+ }
+ 
+ const ALLOWED_CFGS: &[Cfg] = &[
++    Cfg::Libnx,
+     Cfg::LibcDenyWarnings,
+     Cfg::EmscriptenOldStatAbi,
+     Cfg::EmscriptenFsblkcntIs32bit,
+@@ -115,6 +119,7 @@
+             Cfg::Musl32Time64 => "musl32_time64",
+             Cfg::MuslRedirTime64 => "musl_redir_time64",
+             Cfg::Uclibc32Time64 => "uclibc32_time64",
++            Cfg::Libnx => "libnx",
+         })
+     }
+ }
+@@ -222,6 +227,10 @@
+         }
+     }
+ 
++    if target_os == "horizon" && target_arch == "aarch64" {
++        cfgs.push(Cfg::Libnx);
++    }
++
+     if target_os == "emscripten" {
+         if let Some(v) = emcc_version_code() {
+             // 3.1.42
+@@ -497,6 +506,11 @@
+                 assert_eq!(target_os, "vxworks", "{cfg:?} set on non-vxworks platform");
+             }
+ 
++            Cfg::Libnx => {
++                assert_eq!(target_os, "horizon", "{cfg:?} set on non-horizon platform");
++                assert_eq!(target_env, "newlib", "{cfg:?} requires target_env = newlib");
++            }
++
+             Cfg::GnuFileOffsetBits64 => {
+                 assert_eq!(target_env, "gnu", "{cfg:?} set on non-gnu platform");
+                 assert_eq!(target_ptr_width, "32", "{cfg:?} set on non-32-bit platform");
+diff -ruN a/src/unix/mod.rs b/src/unix/mod.rs
+--- a/src/unix/mod.rs
++++ b/src/unix/mod.rs
+@@ -104,45 +104,59 @@
+     pub struct rusage {
+         pub ru_utime: timeval,
+         pub ru_stime: timeval,
++        #[cfg(not(libnx))]
+         pub ru_maxrss: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad1: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_ixrss: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad2: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_idrss: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad3: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_isrss: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad4: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_minflt: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad5: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_majflt: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad6: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_nswap: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad7: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_inblock: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad8: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_oublock: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad9: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_msgsnd: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad10: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_msgrcv: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad11: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_nsignals: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad12: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_nvcsw: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad13: Padding<u32>,
++        #[cfg(not(libnx))]
+         pub ru_nivcsw: c_long,
+         #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+         __pad14: Padding<u32>,
+@@ -162,7 +176,7 @@
+     }
+ 
+     #[exhaustive] // FIXME(exhaustive): review for 1.0
+-    #[cfg(all(not(target_os = "cygwin"), not(target_os = "horizon")))]
++    #[cfg(any(all(not(target_os = "cygwin"), not(target_os = "horizon")), libnx))]
+     pub struct hostent {
+         #[custom_default(ptr::null_mut())]
+         pub h_name: *mut c_char,
+@@ -182,7 +196,7 @@
+     }
+ 
+     #[exhaustive] // FIXME(exhaustive): review for 1.0
+-    #[cfg(not(target_os = "horizon"))]
++    #[cfg(any(not(target_os = "horizon"), libnx))]
+     pub struct pollfd {
+         pub fd: c_int,
+         pub events: c_short,
+@@ -1394,12 +1408,18 @@
+     pub fn pthread_detach(thread: crate::pthread_t) -> c_int;
+     #[cfg_attr(target_os = "netbsd", link_name = "__libc_thr_yield")]
+     pub fn sched_yield() -> c_int;
++    // libnx: Rust's thread-locals are pthread keys on this target, more than
++    // libnx's TLS slots; anki_switch_core/shim/nx_posix.c provides unlimited ones.
++    #[cfg_attr(libnx, link_name = "nxshim_pthread_key_create")]
+     pub fn pthread_key_create(
+         key: *mut crate::pthread_key_t,
+         dtor: Option<unsafe extern "C" fn(*mut c_void)>,
+     ) -> c_int;
++    #[cfg_attr(libnx, link_name = "nxshim_pthread_key_delete")]
+     pub fn pthread_key_delete(key: crate::pthread_key_t) -> c_int;
++    #[cfg_attr(libnx, link_name = "nxshim_pthread_getspecific")]
+     pub fn pthread_getspecific(key: crate::pthread_key_t) -> *mut c_void;
++    #[cfg_attr(libnx, link_name = "nxshim_pthread_setspecific")]
+     pub fn pthread_setspecific(key: crate::pthread_key_t, value: *const c_void) -> c_int;
+     pub fn pthread_mutex_init(
+         lock: *mut crate::pthread_mutex_t,
+diff -ruN a/src/unix/newlib/libnx/mod.rs b/src/unix/newlib/libnx/mod.rs
+--- a/src/unix/newlib/libnx/mod.rs
++++ b/src/unix/newlib/libnx/mod.rs
+@@ -0,0 +1,283 @@
++//! AArch64 Nintendo Switch (Horizon OS) definitions: devkitA64 newlib + libnx.
++//!
++//! libnx provides a FreeBSD-derived BSD socket API (`sa_len` sockaddrs, FreeBSD
++//! constant values). Every item here is checked against the real headers and
++//! libraries by `switch/tools/abi_check.sh`; see that script before editing.
++
++use crate::prelude::*;
++
++pub type wchar_t = c_uint;
++
++pub type u_register_t = c_ulong;
++pub type u_char = c_uchar;
++pub type u_short = c_ushort;
++pub type u_int = c_uint;
++pub type u_long = c_ulong;
++pub type ushort = c_ushort;
++pub type uint = c_uint;
++pub type ulong = c_ulong;
++pub type clock_t = c_ulong;
++pub type daddr_t = c_long;
++pub type caddr_t = *mut c_char;
++pub type sbintime_t = c_longlong;
++pub type sigset_t = c_ulong;
++
++s! {
++    pub struct sockaddr {
++        pub sa_len: u8,
++        pub sa_family: crate::sa_family_t,
++        pub sa_data: [c_char; 14],
++    }
++
++    pub struct sockaddr_storage {
++        pub ss_len: u8,
++        pub ss_family: crate::sa_family_t,
++        __ss_pad1: Padding<[c_char; 6]>,
++        __ss_align: i64,
++        __ss_pad2: Padding<[c_char; 112]>,
++    }
++
++    pub struct sockaddr_in {
++        pub sin_len: u8,
++        pub sin_family: crate::sa_family_t,
++        pub sin_port: crate::in_port_t,
++        pub sin_addr: crate::in_addr,
++        pub sin_zero: [c_char; 8],
++    }
++
++    // libnx's netinet/in.h has no `sin6_len` here, unlike the other sockaddrs.
++    pub struct sockaddr_in6 {
++        pub sin6_family: crate::sa_family_t,
++        pub sin6_port: crate::in_port_t,
++        pub sin6_flowinfo: u32,
++        pub sin6_addr: crate::in6_addr,
++        pub sin6_scope_id: u32,
++    }
++
++    // Not in libnx headers (no AF_UNIX support at runtime); BSD layout so that
++    // std's `os::unix::net` compiles and fails with an OS error if used.
++    pub struct sockaddr_un {
++        pub sun_len: c_uchar,
++        pub sun_family: crate::sa_family_t,
++        pub sun_path: [c_char; 104usize],
++    }
++
++    pub struct sched_param {
++        pub sched_priority: c_int,
++    }
++
++    pub struct msghdr {
++        pub msg_name: *mut c_void,
++        pub msg_namelen: crate::socklen_t,
++        pub msg_iov: *mut crate::iovec,
++        pub msg_iovlen: c_int,
++        pub msg_control: *mut c_void,
++        pub msg_controllen: crate::socklen_t,
++        pub msg_flags: c_int,
++    }
++
++    pub struct cmsghdr {
++        pub cmsg_len: crate::socklen_t,
++        pub cmsg_level: c_int,
++        pub cmsg_type: c_int,
++    }
++
++    pub struct ip_mreqn {
++        pub imr_multiaddr: crate::in_addr,
++        pub imr_address: crate::in_addr,
++        pub imr_ifindex: c_int,
++    }
++
++    pub struct ip_mreq_source {
++        pub imr_multiaddr: crate::in_addr,
++        pub imr_sourceaddr: crate::in_addr,
++        pub imr_interface: crate::in_addr,
++    }
++}
++// `stat` and `dirent` come from the parent newlib module (same layout as libnx).
++
++pub const SIGEV_NONE: c_int = 1;
++pub const SIGEV_SIGNAL: c_int = 2;
++pub const SIGEV_THREAD: c_int = 3;
++pub const SA_NOCLDSTOP: c_int = 1;
++pub const MINSIGSTKSZ: c_int = 2048;
++pub const SIGSTKSZ: c_int = 8192;
++pub const SS_ONSTACK: c_int = 1;
++pub const SS_DISABLE: c_int = 2;
++pub const SIG_SETMASK: c_int = 0;
++pub const SIG_BLOCK: c_int = 1;
++pub const SIG_UNBLOCK: c_int = 2;
++pub const SIGHUP: c_int = 1;
++pub const SIGINT: c_int = 2;
++pub const SIGQUIT: c_int = 3;
++pub const SIGILL: c_int = 4;
++pub const SIGTRAP: c_int = 5;
++pub const SIGABRT: c_int = 6;
++pub const SIGEMT: c_int = 7;
++pub const SIGFPE: c_int = 8;
++pub const SIGKILL: c_int = 9;
++pub const SIGBUS: c_int = 10;
++pub const SIGSEGV: c_int = 11;
++pub const SIGSYS: c_int = 12;
++pub const SIGPIPE: c_int = 13;
++pub const SIGALRM: c_int = 14;
++pub const SIGTERM: c_int = 15;
++pub const SIGURG: c_int = 16;
++pub const SIGSTOP: c_int = 17;
++pub const SIGTSTP: c_int = 18;
++pub const SIGCONT: c_int = 19;
++pub const SIGCHLD: c_int = 20;
++pub const SIGCLD: c_int = 20;
++pub const SIGTTIN: c_int = 21;
++pub const SIGTTOU: c_int = 22;
++pub const SIGIO: c_int = 23;
++pub const SIGPOLL: c_int = 23;
++pub const SIGXCPU: c_int = 24;
++pub const SIGXFSZ: c_int = 25;
++pub const SIGVTALRM: c_int = 26;
++pub const SIGPROF: c_int = 27;
++pub const SIGWINCH: c_int = 28;
++pub const SIGLOST: c_int = 29;
++pub const SIGUSR1: c_int = 30;
++pub const SIGUSR2: c_int = 31;
++pub const NSIG: c_int = 32;
++pub const CLOCK_ENABLED: c_uint = 1;
++pub const CLOCK_DISABLED: c_uint = 0;
++pub const CLOCK_ALLOWED: c_uint = 1;
++pub const CLOCK_DISALLOWED: c_uint = 0;
++pub const TIMER_ABSTIME: c_uint = 4;
++
++pub const SOL_SOCKET: c_int = 0xffff;
++pub const MSG_OOB: c_int = 0x1;
++pub const MSG_PEEK: c_int = 0x2;
++pub const MSG_DONTROUTE: c_int = 0x4;
++pub const MSG_WAITALL: c_int = 0x40;
++pub const MSG_EOR: c_int = 0x8;
++pub const MSG_TRUNC: c_int = 0x10;
++pub const MSG_CTRUNC: c_int = 0x20;
++pub const MSG_DONTWAIT: c_int = 0x80;
++pub const MSG_NOSIGNAL: c_int = 0x20000;
++
++pub const SOCK_RAW: c_int = 3;
++pub const SOCK_RDM: c_int = 4;
++pub const SOCK_SEQPACKET: c_int = 5;
++pub const SOCK_NONBLOCK: c_int = 0x20000000;
++
++pub const IP_HDRINCL: c_int = 2;
++pub const IP_RECVDSTADDR: c_int = 7;
++pub const IP_RECVTOS: c_int = 68;
++pub const IP_ADD_SOURCE_MEMBERSHIP: c_int = 70;
++pub const IP_DROP_SOURCE_MEMBERSHIP: c_int = 71;
++
++// Not defined by newlib/libnx; only used by std as a lower clamp for stack sizes.
++pub const PTHREAD_STACK_MIN: size_t = 4096;
++pub const WNOHANG: c_int = 1;
++
++pub const POLLIN: c_short = 0x0001;
++pub const POLLPRI: c_short = 0x0002;
++pub const POLLOUT: c_short = 0x0004;
++pub const POLLRDNORM: c_short = 0x0040;
++pub const POLLWRNORM: c_short = POLLOUT;
++pub const POLLRDBAND: c_short = 0x0080;
++pub const POLLWRBAND: c_short = 0x0100;
++pub const POLLERR: c_short = 0x0008;
++pub const POLLHUP: c_short = 0x0010;
++pub const POLLNVAL: c_short = 0x0020;
++
++pub const EAI_AGAIN: c_int = 2;
++pub const EAI_BADFLAGS: c_int = 3;
++pub const EAI_FAIL: c_int = 4;
++pub const EAI_SERVICE: c_int = 9;
++pub const EAI_SYSTEM: c_int = 11;
++pub const EAI_BADHINTS: c_int = 12;
++pub const EAI_PROTOCOL: c_int = 13;
++pub const EAI_OVERFLOW: c_int = 14;
++pub const EAI_MAX: c_int = 15;
++
++pub const AF_UNIX: c_int = 1;
++pub const AF_INET6: c_int = 28;
++
++// _IOW('f', 126, int) / _IOR('f', 127, int) from libnx sys/filio.h.
++pub const FIONBIO: c_ulong = 0x8004667e;
++pub const FIONREAD: c_ulong = 0x4004667f;
++
++pub const RTLD_DEFAULT: *mut c_void = ptr::null_mut();
++
++pub const SCHED_FIFO: c_int = 1;
++pub const SCHED_RR: c_int = 2;
++
++// For getrandom(), which libnx lacks: provided by the port's C shim (randomGet).
++pub const GRND_NONBLOCK: c_uint = 0x1;
++pub const GRND_RANDOM: c_uint = 0x2;
++
++// Horizon has no processes to wait on.
++f! {
++    pub const safe fn WIFSTOPPED(_status: c_int) -> bool {
++        false
++    }
++
++    pub const safe fn WSTOPSIG(_status: c_int) -> c_int {
++        0
++    }
++
++    pub const safe fn WIFCONTINUED(_status: c_int) -> bool {
++        true
++    }
++
++    pub const safe fn WIFSIGNALED(_status: c_int) -> bool {
++        false
++    }
++
++    pub const safe fn WTERMSIG(_status: c_int) -> c_int {
++        0
++    }
++
++    pub const safe fn WIFEXITED(_status: c_int) -> bool {
++        true
++    }
++
++    pub const safe fn WEXITSTATUS(_status: c_int) -> c_int {
++        0
++    }
++
++    pub const safe fn WCOREDUMP(_status: c_int) -> bool {
++        false
++    }
++}
++
++extern "C" {
++    pub fn pthread_create(
++        native: *mut crate::pthread_t,
++        attr: *const crate::pthread_attr_t,
++        f: extern "C" fn(_: *mut c_void) -> *mut c_void,
++        value: *mut c_void,
++    ) -> c_int;
++
++    pub fn pthread_attr_getschedparam(
++        attr: *const crate::pthread_attr_t,
++        param: *mut sched_param,
++    ) -> c_int;
++
++    pub fn pthread_attr_setschedparam(
++        attr: *mut crate::pthread_attr_t,
++        param: *const sched_param,
++    ) -> c_int;
++
++    pub fn pthread_condattr_getclock(
++        attr: *const crate::pthread_condattr_t,
++        clock_id: *mut crate::clockid_t,
++    ) -> c_int;
++
++    pub fn pthread_condattr_setclock(
++        attr: *mut crate::pthread_condattr_t,
++        clock_id: crate::clockid_t,
++    ) -> c_int;
++
++    pub fn getrandom(buf: *mut c_void, buflen: size_t, flags: c_uint) -> ssize_t;
++
++    pub fn sendmsg(fd: c_int, msg: *const msghdr, flags: c_int) -> ssize_t;
++    pub fn recvmsg(fd: c_int, msg: *mut msghdr, flags: c_int) -> ssize_t;
++
++    pub fn seekdir(dirp: *mut crate::DIR, loc: c_long);
++    pub fn telldir(dirp: *mut crate::DIR) -> c_long;
++}
+diff -ruN a/src/unix/newlib/mod.rs b/src/unix/newlib/mod.rs
+--- a/src/unix/newlib/mod.rs
++++ b/src/unix/newlib/mod.rs
+@@ -1,7 +1,14 @@
+ use crate::prelude::*;
+ 
+-pub type blkcnt_t = i32;
+-pub type blksize_t = i32;
++cfg_if! {
++    if #[cfg(libnx)] {
++        pub type blkcnt_t = c_long;
++        pub type blksize_t = c_long;
++    } else {
++        pub type blkcnt_t = i32;
++        pub type blksize_t = i32;
++    }
++}
+ 
+ cfg_if! {
+     if #[cfg(target_os = "rtems")] {
+@@ -20,6 +27,10 @@
+         pub type dev_t = u64;
+         pub type ino_t = u64;
+         pub type off_t = i64;
++    } else if #[cfg(libnx)] {
++        pub type dev_t = c_short;
++        pub type ino_t = c_ushort;
++        pub type off_t = i64;
+     } else if #[cfg(any(target_arch = "arm", target_arch = "powerpc"))] {
+         pub type dev_t = u32;
+         pub type ino_t = u32;
+@@ -32,7 +43,13 @@
+ pub type fsblkcnt_t = u64;
+ pub type fsfilcnt_t = u32;
+ pub type id_t = u32;
+-pub type key_t = c_int;
++cfg_if! {
++    if #[cfg(libnx)] {
++        pub type key_t = c_long;
++    } else {
++        pub type key_t = c_int;
++    }
++}
+ pub type loff_t = c_longlong;
+ pub type mode_t = c_uint;
+ pub type nfds_t = u32;
+@@ -48,7 +65,7 @@
+ }
+ 
+ cfg_if! {
+-    if #[cfg(target_os = "horizon")] {
++    if #[cfg(all(target_os = "horizon", not(libnx)))] {
+         pub type sa_family_t = u16;
+     } else {
+         pub type sa_family_t = u8;
+@@ -57,7 +74,13 @@
+ 
+ pub type socklen_t = u32;
+ pub type speed_t = u32;
+-pub type suseconds_t = i32;
++cfg_if! {
++    if #[cfg(libnx)] {
++        pub type suseconds_t = c_long;
++    } else {
++        pub type suseconds_t = i32;
++    }
++}
+ cfg_if! {
+     if #[cfg(target_os = "espidf")] {
+         pub type tcflag_t = u16;
+@@ -65,7 +88,13 @@
+         pub type tcflag_t = c_uint;
+     }
+ }
+-pub type useconds_t = u32;
++cfg_if! {
++    if #[cfg(libnx)] {
++        pub type useconds_t = c_ulong;
++    } else {
++        pub type useconds_t = u32;
++    }
++}
+ 
+ cfg_if! {
+     if #[cfg(any(
+@@ -189,6 +218,8 @@
+         pub pw_passwd: *mut c_char,
+         pub pw_uid: crate::uid_t,
+         pub pw_gid: crate::gid_t,
++        #[cfg(libnx)]
++        pub pw_comment: *mut c_char,
+         pub pw_gecos: *mut c_char,
+         pub pw_dir: *mut c_char,
+         pub pw_shell: *mut c_char,
+@@ -208,9 +239,13 @@
+         pub c_ospeed: u32,
+     }
+ 
++    #[cfg_attr(libnx, repr(align(4)))]
+     pub struct sem_t {
+-        // Unverified
++        // Unverified (libnx: verified by switch/tools/abi_check.sh)
++        #[cfg(not(libnx))]
+         __size: [c_char; 16],
++        #[cfg(libnx)]
++        __size: [c_char; 12],
+     }
+ 
+     pub struct Dl_info {
+@@ -236,6 +271,7 @@
+         bits: [u32; 32],
+     }
+ 
++    #[cfg_attr(libnx, repr(align(8)))]
+     pub struct pthread_attr_t {
+         // Unverified
+         #[cfg(not(target_os = "espidf"))]
+@@ -264,16 +300,22 @@
+     }
+ 
+     #[cfg_attr(
+-        all(
+-            target_pointer_width = "32",
+-            any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc")
++        any(
++            libnx,
++            all(
++                target_pointer_width = "32",
++                any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc")
++            )
+         ),
+         repr(align(4))
+     )]
+     #[cfg_attr(
+-        any(
+-            target_pointer_width = "64",
+-            not(any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc"))
++        all(
++            not(libnx),
++            any(
++                target_pointer_width = "64",
++                not(any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc"))
++            )
+         ),
+         repr(align(8))
+     )]
+@@ -283,16 +325,22 @@
+     }
+ 
+     #[cfg_attr(
+-        all(
+-            target_pointer_width = "32",
+-            any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc")
++        any(
++            libnx,
++            all(
++                target_pointer_width = "32",
++                any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc")
++            )
+         ),
+         repr(align(4))
+     )]
+     #[cfg_attr(
+-        any(
+-            target_pointer_width = "64",
+-            not(any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc"))
++        all(
++            not(libnx),
++            any(
++                target_pointer_width = "64",
++                not(any(target_arch = "mips", target_arch = "arm", target_arch = "powerpc"))
++            )
+         ),
+         repr(align(8))
+     )]
+@@ -303,6 +351,7 @@
+ 
+     #[cfg_attr(
+         any(
++            libnx,
+             target_pointer_width = "32",
+             target_arch = "x86_64",
+             target_arch = "powerpc64",
+@@ -314,6 +363,7 @@
+     )]
+     #[cfg_attr(
+         not(any(
++            libnx,
+             target_pointer_width = "32",
+             target_arch = "x86_64",
+             target_arch = "powerpc64",
+@@ -334,7 +384,8 @@
+         size: [u8; crate::__SIZEOF_PTHREAD_COND_T],
+     }
+ 
+-    #[repr(align(4))]
++    #[cfg_attr(not(libnx), repr(align(4)))]
++    #[cfg_attr(libnx, repr(align(8)))]
+     pub struct pthread_condattr_t {
+         // Unverified
+         size: [u8; crate::__SIZEOF_PTHREAD_CONDATTR_T],
+@@ -375,9 +426,19 @@
+ pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
+     size: [__PTHREAD_INITIALIZER_BYTE; __SIZEOF_PTHREAD_MUTEX_T],
+ };
++#[cfg(not(libnx))]
+ pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
+     size: [__PTHREAD_INITIALIZER_BYTE; __SIZEOF_PTHREAD_COND_T],
+ };
++// libnx: `{ clockid_t clock_id = CLOCK_REALTIME; _COND_T cond = 0; }` (little-endian).
++#[cfg(libnx)]
++pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
++    size: {
++        let mut b = [0u8; __SIZEOF_PTHREAD_COND_T];
++        b[0] = CLOCK_REALTIME as u8;
++        b
++    },
++};
+ pub const PTHREAD_RWLOCK_INITIALIZER: pthread_rwlock_t = pthread_rwlock_t {
+     size: [__PTHREAD_INITIALIZER_BYTE; __SIZEOF_PTHREAD_RWLOCK_T],
+ };
+@@ -393,7 +454,18 @@
+ }
+ 
+ cfg_if! {
+-    if #[cfg(target_os = "espidf")] {
++    if #[cfg(libnx)] {
++        // devkitA64 newlib sys/_pthreadtypes.h + sys/lock.h; verified by abi_check.sh.
++        const __PTHREAD_INITIALIZER_BYTE: u8 = 0;
++        pub const __SIZEOF_PTHREAD_ATTR_T: usize = 24;
++        pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 12;
++        pub const __SIZEOF_PTHREAD_MUTEXATTR_T: usize = 4;
++        pub const __SIZEOF_PTHREAD_COND_T: usize = 16;
++        pub const __SIZEOF_PTHREAD_CONDATTR_T: usize = 8;
++        pub const __SIZEOF_PTHREAD_RWLOCK_T: usize = 16;
++        pub const __SIZEOF_PTHREAD_RWLOCKATTR_T: usize = 0;
++        pub const __SIZEOF_PTHREAD_BARRIER_T: usize = 20;
++    } else if #[cfg(target_os = "espidf")] {
+         const __PTHREAD_INITIALIZER_BYTE: u8 = 0xff;
+         pub const __SIZEOF_PTHREAD_ATTR_T: usize = 32;
+         pub const __SIZEOF_PTHREAD_MUTEX_T: usize = 4;
+@@ -453,7 +525,10 @@
+     }
+ }
+ // intentionally not public, only used for fd_set
++#[cfg(not(libnx))]
+ const ULONG_SIZE: usize = 32;
++#[cfg(libnx)]
++const ULONG_SIZE: usize = 64;
+ 
+ // Other constants
+ pub const EPERM: c_int = 1;
+@@ -578,7 +653,7 @@
+ 
+ pub const O_ACCMODE: c_int = 3;
+ cfg_if! {
+-    if #[cfg(any(target_os = "espidf", target_os = "rtems"))] {
++    if #[cfg(any(target_os = "espidf", target_os = "rtems", libnx))] {
+         pub const O_CLOEXEC: c_int = 0x40000;
+     } else {
+         pub const O_CLOEXEC: c_int = 0x80000;
+@@ -624,7 +699,7 @@
+ cfg_if! {
+     if #[cfg(target_os = "espidf")] {
+         pub const PF_INET6: c_int = 10;
+-    } else if #[cfg(target_os = "rtems")] {
++    } else if #[cfg(any(target_os = "rtems", libnx))] {
+         pub const PF_INET6: c_int = 28;
+     } else {
+         pub const PF_INET6: c_int = 23;
+@@ -679,7 +754,7 @@
+ pub const SO_SNDTIMEO: c_int = 0x1005;
+ pub const SO_RCVTIMEO: c_int = 0x1006;
+ cfg_if! {
+-    if #[cfg(target_os = "horizon")] {
++    if #[cfg(all(target_os = "horizon", not(libnx)))] {
+         pub const SO_ERROR: c_int = 0x1009;
+     } else {
+         pub const SO_ERROR: c_int = 0x1007;
+@@ -688,7 +763,7 @@
+ pub const SO_TYPE: c_int = 0x1008;
+ 
+ cfg_if! {
+-    if #[cfg(target_os = "rtems")] {
++    if #[cfg(any(target_os = "rtems", libnx))] {
+         pub const SOCK_CLOEXEC: c_int = 0x10000000;
+     } else {
+         pub const SOCK_CLOEXEC: c_int = O_CLOEXEC;
+@@ -717,7 +792,7 @@
+ pub const IFF_MULTICAST: c_int = 0x8000; // supports multicast
+ 
+ cfg_if! {
+-    if #[cfg(any(target_os = "vita", target_os = "rtems"))] {
++    if #[cfg(any(target_os = "vita", target_os = "rtems", libnx))] {
+         pub const TCP_NODELAY: c_int = 1;
+         pub const TCP_MAXSEG: c_int = 2;
+     } else if #[cfg(target_os = "espidf")] {
+@@ -744,7 +819,7 @@
+ }
+ 
+ cfg_if! {
+-    if #[cfg(target_os = "horizon")] {
++    if #[cfg(all(target_os = "horizon", not(libnx)))] {
+         pub const IP_TOS: c_int = 7;
+     } else if #[cfg(target_os = "espidf")] {
+         pub const IP_TOS: c_int = 1;
+@@ -753,7 +828,7 @@
+     }
+ }
+ cfg_if! {
+-    if #[cfg(any(target_os = "vita", target_os = "rtems"))] {
++    if #[cfg(any(target_os = "vita", target_os = "rtems", libnx))] {
+         pub const IP_TTL: c_int = 4;
+     } else if #[cfg(target_os = "espidf")] {
+         pub const IP_TTL: c_int = 2;
+@@ -775,7 +850,7 @@
+ }
+ 
+ cfg_if! {
+-    if #[cfg(any(target_os = "vita", target_os = "rtems"))] {
++    if #[cfg(any(target_os = "vita", target_os = "rtems", libnx))] {
+         pub const IP_ADD_MEMBERSHIP: c_int = 12;
+         pub const IP_DROP_MEMBERSHIP: c_int = 13;
+     } else if #[cfg(target_os = "espidf")] {
+@@ -810,7 +885,7 @@
+         pub const NO_DATA: c_int = 211;
+         pub const NO_RECOVERY: c_int = 212;
+         pub const TRY_AGAIN: c_int = 213;
+-    } else if #[cfg(target_os = "rtems")] {
++    } else if #[cfg(any(target_os = "rtems", libnx))] {
+         pub const HOST_NOT_FOUND: c_int = 1;
+         pub const TRY_AGAIN: c_int = 2;
+         pub const NO_RECOVERY: c_int = 3;
+@@ -823,7 +898,7 @@
+     }
+ }
+ cfg_if! {
+-    if #[cfg(target_os = "rtems")] {
++    if #[cfg(any(target_os = "rtems", libnx))] {
+         pub const NO_ADDRESS: c_int = NO_DATA;
+     } else {
+         pub const NO_ADDRESS: c_int = 2;
+@@ -837,7 +912,7 @@
+     if #[cfg(target_os = "espidf")] {
+         pub const AI_NUMERICSERV: c_int = 8;
+         pub const AI_ADDRCONFIG: c_int = 64;
+-    } else if #[cfg(target_os = "rtems")] {
++    } else if #[cfg(any(target_os = "rtems", libnx))] {
+         pub const AI_NUMERICSERV: c_int = 0x00000008;
+         pub const AI_ADDRCONFIG: c_int = 0x00000400;
+     } else {
+@@ -852,7 +927,7 @@
+ pub const NI_NUMERICHOST: c_int = 2;
+ pub const NI_NAMEREQD: c_int = 4;
+ cfg_if! {
+-    if #[cfg(any(target_os = "espidf", target_os = "rtems"))] {
++    if #[cfg(any(target_os = "espidf", target_os = "rtems", libnx))] {
+         pub const NI_NUMERICSERV: c_int = 8;
+         pub const NI_DGRAM: c_int = 16;
+     } else {
+@@ -868,7 +943,7 @@
+         pub const EAI_MEMORY: c_int = 203;
+         pub const EAI_NONAME: c_int = 200;
+         pub const EAI_SOCKTYPE: c_int = 10;
+-    } else if #[cfg(target_os = "rtems")] {
++    } else if #[cfg(any(target_os = "rtems", libnx))] {
+         pub const EAI_FAMILY: c_int = 5;
+         pub const EAI_MEMORY: c_int = 6;
+         pub const EAI_NONAME: c_int = 8;
+@@ -1027,6 +1102,9 @@
+     if #[cfg(target_os = "espidf")] {
+         mod espidf;
+         pub use self::espidf::*;
++    } else if #[cfg(libnx)] {
++        mod libnx;
++        pub use self::libnx::*;
+     } else if #[cfg(target_os = "horizon")] {
+         mod horizon;
+         pub use self::horizon::*;

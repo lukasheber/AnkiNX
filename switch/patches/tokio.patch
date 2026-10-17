@@ -1,0 +1,111 @@
+diff -ruN a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -952,7 +952,7 @@
+ version = "0.2.168"
+ optional = true
+ 
+-[target."cfg(unix)".dependencies.signal-hook-registry]
++[target."cfg(all(unix, not(target_os = \"horizon\")))".dependencies.signal-hook-registry]
+ version = "1.1.1"
+ optional = true
+ 
+diff -ruN a/src/macros/cfg.rs b/src/macros/cfg.rs
+--- a/src/macros/cfg.rs
++++ b/src/macros/cfg.rs
+@@ -442,9 +442,11 @@
+     }
+ }
+ 
++// Horizon OS has no POSIX signals (and no AF_UNIX for the signal driver's
++// self-pipe), so it is treated like a non-unix target for signal handling.
+ macro_rules! cfg_signal_internal_and_unix {
+     ($($item:item)*) => {
+-        #[cfg(unix)]
++        #[cfg(all(unix, not(target_os = "horizon")))]
+         cfg_signal_internal! { $($item)* }
+     }
+ }
+@@ -452,7 +454,7 @@
+ macro_rules! cfg_not_signal_internal {
+     ($($item:item)*) => {
+         $(
+-            #[cfg(any(loom, not(unix), not(any(feature = "signal", all(unix, feature = "process")))))]
++            #[cfg(any(loom, not(unix), target_os = "horizon", not(any(feature = "signal", all(unix, feature = "process")))))]
+             $item
+         )*
+     }
+diff -ruN a/src/net/unix/ucred.rs b/src/net/unix/ucred.rs
+--- a/src/net/unix/ucred.rs
++++ b/src/net/unix/ucred.rs
+@@ -71,7 +71,8 @@
+     target_os = "espidf",
+     target_os = "nuttx",
+     target_os = "vita",
+-    target_os = "hurd"
++    target_os = "hurd",
++    target_os = "horizon"
+ ))]
+ pub(crate) use self::impl_noproc::get_peer_cred;
+ 
+@@ -402,7 +403,8 @@
+     target_os = "espidf",
+     target_os = "nuttx",
+     target_os = "vita",
+-    target_os = "hurd"
++    target_os = "hurd",
++    target_os = "horizon"
+ ))]
+ pub(crate) mod impl_noproc {
+     use crate::net::unix::UnixStream;
+diff -ruN a/src/signal/ctrl_c.rs b/src/signal/ctrl_c.rs
+--- a/src/signal/ctrl_c.rs
++++ b/src/signal/ctrl_c.rs
+@@ -1,4 +1,4 @@
+-#[cfg(unix)]
++#[cfg(all(unix, not(target_os = "horizon")))]
+ use super::unix::{self as os_impl};
+ #[cfg(windows)]
+ use super::windows::{self as os_impl};
+@@ -56,7 +56,17 @@
+ ///     // Your handler here
+ /// });
+ /// ```
++#[cfg(not(target_os = "horizon"))]
+ pub async fn ctrl_c() -> io::Result<()> {
+     os_impl::ctrl_c()?.recv().await;
+     Ok(())
+ }
++
++/// Horizon OS has no signals, so there is no "ctrl-c" to listen for.
++#[cfg(target_os = "horizon")]
++pub async fn ctrl_c() -> io::Result<()> {
++    Err(io::Error::new(
++        io::ErrorKind::Unsupported,
++        "signals are not supported on Horizon OS",
++    ))
++}
+diff -ruN a/src/signal/mod.rs b/src/signal/mod.rs
+--- a/src/signal/mod.rs
++++ b/src/signal/mod.rs
+@@ -50,7 +50,7 @@
+ #[cfg(feature = "signal")]
+ pub use ctrl_c::ctrl_c;
+ 
+-#[cfg(unix)]
++#[cfg(all(unix, not(target_os = "horizon")))]
+ pub(crate) mod registry;
+ 
+ pub mod unix;
+diff -ruN a/src/signal/unix.rs b/src/signal/unix.rs
+--- a/src/signal/unix.rs
++++ b/src/signal/unix.rs
+@@ -3,7 +3,7 @@
+ //! This module is only defined on Unix platforms and contains the primary
+ //! `Signal` type for receiving notifications of signals.
+ 
+-#![cfg(unix)]
++#![cfg(all(unix, not(target_os = "horizon")))]
+ #![cfg_attr(docsrs, doc(cfg(all(unix, feature = "signal"))))]
+ 
+ use crate::runtime::scheduler;

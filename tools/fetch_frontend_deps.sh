@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Fetch the frontend's third-party libraries into app/library at pinned commits.
+# The first run (with no pins file) records the resolved commits in
+# app/library/PINS so later runs reproduce the same sources.
+set -euo pipefail
+source "$(dirname "$0")/env.sh"
+LIB="$ANKISWITCH_SRC/app/library"
+PINS="$LIB/PINS"
+mkdir -p "$LIB"
+
+# name  url  ref(branch or tag; used only when not pinned yet)
+DEPS=(
+    "borealis https://github.com/dragonflylee/borealis.git switchfin"
+    "litehtml https://github.com/litehtml/litehtml.git master"
+    # SVG card images (incl. Anki's LaTeX SVGs, which need <use>); Switchfin's fork
+    "lunasvg https://github.com/dragonflylee/lunasvg.git master"
+)
+
+pinned() { [[ -f "$PINS" ]] && awk -v n="$1" '$1 == n {print $2}' "$PINS"; }
+
+for dep in "${DEPS[@]}"; do
+    read -r name url ref <<< "$dep"
+    sha=$(pinned "$name" || true)
+    if [[ -z "$sha" ]]; then
+        sha=$(git ls-remote "$url" "refs/heads/$ref" "refs/tags/$ref" | head -1 | cut -f1)
+        [[ -n "$sha" ]] || { echo "error: $url has no branch/tag '$ref'" >&2; exit 1; }
+        echo "$name $sha $url" >> "$PINS"
+    fi
+    dest="$LIB/$name"
+    if [[ -f "$dest/.pinned-sha" && $(cat "$dest/.pinned-sha") == "$sha" ]]; then
+        echo "$name already at $sha"; continue
+    fi
+    echo "$name -> $url @ $sha"
+    tmp=$(mktemp -d)
+    git -C "$tmp" init -q
+    git -C "$tmp" fetch -q --depth 1 "$url" "$sha"
+    git -C "$tmp" checkout -q FETCH_HEAD
+    # borealis vendors some of its dependencies as submodules
+    git -C "$tmp" submodule update -q --init --depth 1 --recursive 2>/dev/null || true
+    rm -rf "$dest" && mkdir -p "$dest"
+    (cd "$tmp" && tar --exclude=.git -cf - .) | tar -xf - -C "$dest"
+    echo "$sha" > "$dest/.pinned-sha"
+    rm -rf "$tmp"
+done
+# The desktop preview needs the Switch system fonts, which borealis ships.
+# They are Nintendo's, so they are copied here and not kept in our repository.
+# (The .nro drops them and uses the console's shared fonts.)
+FONTS="$ANKISWITCH_SRC/app/resources/font"
+mkdir -p "$FONTS"
+cp "$LIB/borealis/resources/font/switch_font.ttf" "$LIB/borealis/resources/font/switch_icons.ttf" "$FONTS/"
+cat "$PINS"

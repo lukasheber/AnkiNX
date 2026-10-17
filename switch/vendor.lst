@@ -1,0 +1,9 @@
+# Upstream crates carried with Nintendo Switch (libnx) patches.
+# <crate> <version> <vendor dir>        patch: switch/patches/<vendor dir>.patch
+libc        0.2.191  libc
+mio         1.2.4    mio
+tokio       1.53.3   tokio
+getrandom   0.2.16   getrandom-0.2
+getrandom   0.3.3    getrandom-0.3
+getrandom   0.4.2    getrandom-0.4
+ring        0.17.14  ring

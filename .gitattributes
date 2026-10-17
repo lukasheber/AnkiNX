@@ -1,0 +1,10 @@
+# Scripts run inside WSL (Linux): keep LF everywhere, including on Windows
+# checkouts, or bash fails on the carriage returns.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.bmp binary
+*.ttf binary
+*.otf binary
+*.nro binary

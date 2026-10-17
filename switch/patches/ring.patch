@@ -1,0 +1,16 @@
+diff -ruN a/build.rs b/build.rs
+--- a/build.rs
++++ b/build.rs
+@@ -195,6 +195,12 @@
+         arch: ARM,
+         perlasm_format: "linux32",
+     },
++    // Nintendo Switch: ELF + GNU as, same as the Linux AArch64 assembly.
++    AsmTarget {
++        oss: &["horizon"],
++        arch: AARCH64,
++        perlasm_format: "linux64",
++    },
+     AsmTarget {
+         oss: APPLE_ABI,
+         arch: AARCH64,

@@ -1,0 +1,99 @@
+#pragma once
+
+#include <borealis.hpp>
+#include <functional>
+#include <litehtml.h>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+class NvgContainer;
+
+// One Image Occlusion mask, as Anki's reviewer draws it
+// (ts/routes/image-occlusion/review.ts). Positions and sizes are fractions of
+// the image; drawn over the <img> whose src ends in "#ankinx-io".
+struct Occlusion
+{
+    enum class State
+    {
+        Active,    // the cloze being asked (question side)
+        Inactive,  // other clozes: drawn only with "occlude inactive"
+        Highlight, // the cloze being asked, answer side: outline only
+    };
+    enum class Kind
+    {
+        Rect,
+        Ellipse,
+        Polygon,
+        Text,
+    };
+    State state = State::Active;
+    Kind kind   = Kind::Rect;
+    bool occludeInactive = false;
+    float left = 0, top = 0, width = 0, height = 0, rx = 0, ry = 0;
+    float angle = 0; // degrees, about (left, top)
+    std::vector<std::pair<float, float>> points;
+    std::string text;
+    float scale    = 1;
+    float fontSize = 0; // fraction of the image height; 0: Anki's 40px
+    std::string fill;   // "#rrggbb", or empty for the default
+};
+
+// Renders a card's HTML/CSS (litehtml layout, NanoVG drawing).
+// JavaScript in card templates is not executed.
+class CardView : public brls::View
+{
+  public:
+    // Image Occlusion masks for the current document (empty for other cards).
+    void setOcclusions(std::vector<Occlusion> shapes);
+    // "Toggle masks" (answer side): hide all but text labels, or show again.
+    void setMasksHidden(bool hidden);
+    bool getMasksHidden() const { return masksHidden; }
+
+    CardView();
+    ~CardView() override;
+
+    static brls::View* create();
+
+    // Replace the displayed document. Layout happens on the next frame.
+    // keepScroll: stay at the current position (e.g. after revealing a hint).
+    void setHtml(const std::string& html, bool keepScroll = false);
+    // Scroll so the answer separator (<hr id="answer">) is near the top.
+    void scrollToAnswerAfterLayout();
+    // Folder that relative <img src> paths resolve against.
+    void setMediaDir(const std::string& dir);
+    // Called for activated links, e.g. "playsound:q:0".
+    void setOnLink(std::function<void(const std::string&)> callback);
+    // Called when the card is tapped outside any link.
+    void setOnTap(std::function<void()> callback);
+
+    void scrollBy(float dy);
+    void setZoom(float zoom);
+    float getZoom() const { return zoom; }
+
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
+              brls::FrameContext* ctx) override;
+
+  private:
+    friend class NvgContainer;
+
+    void layout(float width);
+    float maxScroll() const;
+    void handleTap(brls::Point point);
+
+    std::unique_ptr<NvgContainer> container;
+    litehtml::document::ptr document;
+    std::string html;
+    bool needsLayout         = false;
+    bool scrollToAnswer      = false;
+    bool linkActivated       = false;
+    float layoutWidth        = -1;
+    float scroll             = 0;
+    float zoom               = 1.3f;
+    float viewHeight         = 0;
+    std::function<void(const std::string&)> onLink;
+    std::function<void()> onTap;
+    std::vector<Occlusion> occlusions;
+    bool masksHidden = false;
+};

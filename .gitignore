@@ -1,0 +1,32 @@
+# --- Not ours: upstream sources and reference material ---------------------
+/source_code/
+/example of source code of a nintendo port/
+/info/
+/Anki Nintendo Switch Port Guide.md
+/CLAUDE.md
+
+# --- Fetched dependencies (reproducible) -----------------------------------
+# borealis, litehtml, lunasvg: tools/fetch_frontend_deps.sh at the commits in PINS
+/app/library/*
+!/app/library/PINS
+# Patched crates: switch/tools/vendor.sh apply (switch/vendor.lst + switch/patches/)
+/switch/vendor/
+# Nintendo's system fonts for the desktop preview, copied from borealis by
+# tools/fetch_frontend_deps.sh (not ours to license)
+/app/resources/font/
+
+# --- Build outputs ---------------------------------------------------------
+/app/build*/
+/app/dist/
+/switch/dist/
+/switch/dist-host/
+target/
+
+# --- Local files -----------------------------------------------------------
+# Crash reports copied from the console
+*.log
+# The logo's working copy lives in app/assets/
+/logo.png
+# Editor settings
+/.vscode/
+*.code-workspace

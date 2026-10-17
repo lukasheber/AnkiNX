@@ -1,0 +1,55 @@
+[package]
+name = "anki_switch_core"
+version = "0.2.0" # = ../../VERSION (build_core.sh checks)
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+description = "Anki's Rust backend (rslib) as a C static library for the Nintendo Switch"
+
+[lib]
+# rlib: lets the host-side tests in tests/ link against the API.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# Path mirrors the Windows tree; tools/sync.sh reproduces it under ~/ankiswitch.
+anki = { path = "../../source_code/anki-26.09.3/rslib", features = ["rustls"] }
+# Horizon has no OS certificate store reachable from homebrew: also bundle the
+# Mozilla root set so AnkiWeb TLS verification works (unified into rslib's reqwest).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
+# Same crate rusqlite links (bundled SQLite); used to pick the default VFS.
+libsqlite3-sys = "0.34"
+# For the JSON API (src/api.rs); versions are resolved from Anki's lockfile.
+anki_proto = { path = "../../source_code/anki-26.09.3/rslib/proto" }
+chrono = "0.4"
+futures = "0.3"
+# Writing .colpkg backups (src/api.rs write_backup); same versions as Anki.
+prost = "0.13"
+zip = { version = "4.1.0", default-features = false, features = ["deflate", "time"] }
+zstd = "0.13.3"
+regex = "1.11.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+cc = "1"
+
+[patch.crates-io]
+# Switch (libnx) support; see switch/vendor/*/ and switch/README.md.
+libc = { path = "../vendor/libc" }
+mio = { path = "../vendor/mio" }
+tokio = { path = "../vendor/tokio" }
+getrandom = { path = "../vendor/getrandom-0.3" }
+getrandom02 = { package = "getrandom", path = "../vendor/getrandom-0.2" }
+getrandom04 = { package = "getrandom", path = "../vendor/getrandom-0.4" }
+ring = { path = "../vendor/ring" }
+
+[profile.release]
+panic = "abort"
+debug = false
+
+# Standalone: not part of Anki's workspace.
+[workspace]

@@ -1,0 +1,76 @@
+<brls:AppletFrame
+    id="frame"
+    iconInterpolation="linear"
+    footerHidden="false">
+
+    <brls:Box
+        width="auto"
+        height="auto"
+        axis="column"
+        grow="1.0"
+        paddingLeft="140"
+        paddingRight="140"
+        paddingTop="40">
+
+        <brls:Label
+            width="auto"
+            height="auto"
+            fontSize="20"
+            marginBottom="30"
+            text="@i18n/ankinx/login/intro" />
+
+        <brls:Box
+            id="emailRow"
+            width="auto"
+            height="72"
+            axis="row"
+            alignItems="center"
+            focusable="true"
+            paddingLeft="20"
+            paddingRight="20"
+            lineColor="@theme/brls/sidebar/separator"
+            lineBottom="1">
+            <brls:Label width="240" height="auto" fontSize="22" text="@i18n/ankinx/login/email" />
+            <brls:Label id="emailValue" width="auto" height="auto" grow="1.0" fontSize="22"
+                horizontalAlign="right" singleLine="true" />
+        </brls:Box>
+
+        <brls:Box
+            id="passwordRow"
+            width="auto"
+            height="72"
+            axis="row"
+            alignItems="center"
+            focusable="true"
+            paddingLeft="20"
+            paddingRight="20"
+            lineColor="@theme/brls/sidebar/separator"
+            lineBottom="1">
+            <brls:Label width="240" height="auto" fontSize="22" text="@i18n/ankinx/login/password" />
+            <brls:Label id="passwordValue" width="auto" height="auto" grow="1.0" fontSize="22"
+                horizontalAlign="right" singleLine="true" />
+        </brls:Box>
+
+        <brls:Label
+            id="status"
+            width="auto"
+            height="auto"
+            fontSize="18"
+            marginTop="24"
+            horizontalAlign="center" />
+
+        <brls:Box
+            width="auto"
+            height="auto"
+            axis="row"
+            justifyContent="center"
+            marginTop="24">
+            <brls:Button
+                id="loginButton"
+                width="340"
+                height="64"
+                style="primary"
+                text="@i18n/ankinx/login/button" />
+        </brls:Box>
+    </brls:Box>
+</brls:AppletFrame>

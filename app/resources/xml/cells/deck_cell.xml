@@ -1,0 +1,17 @@
+<brls:Box
+    width="auto"
+    height="64"
+    axis="row"
+    alignItems="center"
+    focusable="true"
+    paddingLeft="20"
+    paddingRight="30"
+    lineColor="@theme/brls/sidebar/separator"
+    lineBottom="1">
+
+    <brls:Label id="arrow" width="36" height="auto" fontSize="18" />
+    <brls:Label id="name" width="auto" height="auto" grow="1.0" fontSize="22" singleLine="true" />
+    <brls:Label id="new" width="90" height="auto" fontSize="22" horizontalAlign="right" />
+    <brls:Label id="learn" width="90" height="auto" fontSize="22" horizontalAlign="right" />
+    <brls:Label id="review" width="90" height="auto" fontSize="22" horizontalAlign="right" />
+</brls:Box>

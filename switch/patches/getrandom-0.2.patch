@@ -1,0 +1,24 @@
+diff -ruN a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -253,7 +253,7 @@
+         target_os = "illumos",
+         // Check for target_arch = "arm" to only include the 3DS. Does not
+         // include the Nintendo Switch (which is target_arch = "aarch64").
+-        all(target_os = "horizon", target_arch = "arm"),
++        target_os = "horizon",
+         target_os = "cygwin",
+     ))] {
+         mod util_libc;
+diff -ruN a/src/util_libc.rs b/src/util_libc.rs
+--- a/src/util_libc.rs
++++ b/src/util_libc.rs
+@@ -21,7 +21,7 @@
+         use libc::_errnop as errno_location;
+     } else if #[cfg(target_os = "nto")] {
+         use libc::__get_errno_ptr as errno_location;
+-    } else if #[cfg(any(all(target_os = "horizon", target_arch = "arm"), target_os = "vita"))] {
++    } else if #[cfg(any(target_os = "horizon", target_os = "vita"))] {
+         extern "C" {
+             // Not provided by libc: https://github.com/rust-lang/libc/issues/1995
+             fn __errno() -> *mut libc::c_int;
