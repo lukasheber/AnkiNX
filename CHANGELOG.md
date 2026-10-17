@@ -26,11 +26,12 @@ First version verified on hardware for sync and study.
   - Clean exit: the backend shuts down before the network does (no crash
     dialog after +).
 - Automatic sync when the app opens, after studying and before + exits; on
-  by default, switchable in the account menu (-). Not yet tested on hardware.
+  by default, switchable in the account menu (-). Verified on hardware (open,
+  after studying); exit with + only syncs when something is still unsynced.
 - Type-in-the-answer cards (`{{type:...}}`): answer box with the system
   keyboard, Anki's comparison on the answer side.
 - Image Occlusion cards: masks drawn natively; X toggles them on the answer
-  side. Not yet tested on hardware.
+  side. Verified on hardware.
 - "Missing media file" notice instead of silent audio.
 - Backups (.colpkg) written after closing, restorable in Anki.
 - New app icon.
