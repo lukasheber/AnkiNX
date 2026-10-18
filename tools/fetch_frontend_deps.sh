@@ -14,6 +14,8 @@ DEPS=(
     "litehtml https://github.com/litehtml/litehtml.git master"
     # SVG card images (incl. Anki's LaTeX SVGs, which need <use>); Switchfin's fork
     "lunasvg https://github.com/dragonflylee/lunasvg.git master"
+    # JavaScript in card templates (app/src/view/card_script.cpp)
+    "quickjs https://github.com/quickjs-ng/quickjs.git v0.17.0"
 )
 
 pinned() { [[ -f "$PINS" ]] && awk -v n="$1" '$1 == n {print $2}' "$PINS"; }

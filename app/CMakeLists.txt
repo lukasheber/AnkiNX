@@ -59,6 +59,17 @@ set(LUNASVG_DISABLE_LOAD_SYSTEM_FONTS ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 add_subdirectory(library/lunasvg EXCLUDE_FROM_ALL)
 
+# QuickJS-ng (JavaScript in card templates, src/script): the engine only, no
+# libc module (scripts get a DOM from us, not files or processes).
+set(QJS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/library/quickjs)
+add_library(quickjs STATIC ${QJS_DIR}/quickjs.c ${QJS_DIR}/libregexp.c ${QJS_DIR}/libunicode.c ${QJS_DIR}/dtoa.c)
+set_target_properties(quickjs PROPERTIES C_STANDARD 11)
+target_include_directories(quickjs PUBLIC ${QJS_DIR})
+# NDEBUG: QuickJS asserts on objects still referenced at teardown; a card
+# script must never be able to abort the app.
+target_compile_definitions(quickjs PRIVATE _GNU_SOURCE NDEBUG)
+target_compile_options(quickjs PRIVATE -w)
+
 file(GLOB_RECURSE MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 # Exactly one audio backend: SDL2_mixer, or the silent stub.
 if (ANKINX_AUDIO)
@@ -78,10 +89,16 @@ target_include_directories(${PROJECT_NAME} PRIVATE include
 target_compile_options(${PROJECT_NAME} PRIVATE -ffunction-sections -fdata-sections -Wall)
 target_link_directories(${PROJECT_NAME} PRIVATE ${AUDIO_STATIC_LIBRARY_DIRS} ${WEBP_STATIC_LIBRARY_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    borealis litehtml lunasvg::lunasvg anki_switch_core
+    borealis litehtml gumbo quickjs lunasvg::lunasvg anki_switch_core
     ${AUDIO_STATIC_LIBRARIES} ${WEBP_STATIC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} m)
 if (PLATFORM_DESKTOP)
     target_link_libraries(${PROJECT_NAME} PRIVATE dl) # Rust std on Linux
+
+    # Host test for card scripts: app/test_scripts.sh
+    add_executable(script_test tests/script_test.cpp src/script/dom.cpp src/script/card_script.cpp)
+    set_target_properties(script_test PROPERTIES CXX_STANDARD 17)
+    target_include_directories(script_test PRIVATE include)
+    target_link_libraries(script_test PRIVATE gumbo quickjs m)
 endif ()
 
 if (PLATFORM_SWITCH)
