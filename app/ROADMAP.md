@@ -113,9 +113,9 @@ template JavaScript, then this list, taken in groups of related features
 | Deck overview screen before studying (counts, description, "Study now", custom study) | ✅ | R or ⋯ on a deck row: counts, description, Study now (A), Custom study (X), Options (Y) |
 | Deck options (limits, learning steps, FSRS on/off, desired retention) | ✅ | See section 1 |
 | Custom study and filtered decks (study ahead, forgotten cards, by tag, increase today's limit) | ✅ | See section 1 |
-| Statistics: today (cards, time), forecast, review heatmap, retention | P2 | rslib graphs data; draw natively |
+| Statistics: today (cards, time), forecast, review heatmap, retention | ✅ | R on the deck overview (that deck and subdecks) or Settings > Statistics (all decks): Today, Forecast, Heatmap, Retention panels drawn natively from rslib's graph data; L/R or tap to switch |
 | Multiple profiles, one per Switch user | P2 | Families share consoles; pick the profile from the Switch user selector (`/switch/ankinx/<user>/`) |
-| Custom sync server (self-hosted Anki sync server) | P2 | The backend already accepts an endpoint at login; needs a settings field |
+| Custom sync server (self-hosted Anki sync server) | ✅ | Settings > Account > Sync server; used at login (changing it logs out) |
 | Read-only card browser (search, preview, suspend/flag from the list) | P3 | Search through rslib; no editing |
 | Deck list actions: collapse all, filter, show only decks with due cards | P3 | |
 

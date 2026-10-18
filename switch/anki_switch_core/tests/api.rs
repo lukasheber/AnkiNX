@@ -241,6 +241,20 @@ fn study_flow() {
         assert!(answered < 20, "deck never finished");
     }
     assert_eq!(answered, 3);
+
+    // Statistics: the three answers show today, in the heatmap's last day and
+    // as cards due later (Easy graduated them).
+    for args in [json!({ "deck_id": verbs }), json!({})] {
+        let stats = ok("stats", args);
+        assert_eq!(stats["today"]["answers"], 3, "{stats}");
+        assert_eq!(stats["heatmap"].as_array().unwrap().last(), Some(&json!(3)));
+        assert_eq!(stats["forecast"].as_array().unwrap().len(), 31);
+        let due_later: u64 = stats["forecast"].as_array().unwrap().iter().map(|n| n.as_u64().unwrap()).sum();
+        assert_eq!(due_later, 3, "{stats}");
+        assert_eq!(stats["cards"]["new"], 0);
+        let studied = stats["studied_today"].as_str().unwrap();
+        assert!(studied.contains('3') && !studied.contains(['\u{2068}', '\u{2069}']), "{stats}");
+    }
     let decks = ok("deck_tree", json!({}));
     assert_eq!(decks["decks"][1]["new"], 0);
 

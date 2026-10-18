@@ -3,6 +3,7 @@
 #include "anki/api.hpp"
 #include "app.hpp"
 #include "util/keyboard.hpp"
+#include "util/settings.hpp"
 
 using namespace brls::literals;
 
@@ -117,7 +118,11 @@ void LoginActivity::submit()
         std::string error;
         try
         {
-            anki::call("login", { { "username", user }, { "password", pass } });
+            // A self-hosted sync server (Settings > Account), else AnkiWeb.
+            anki::json args = { { "username", user }, { "password", pass } };
+            if (settings::get("sync_server").is_string())
+                args["endpoint"] = settings::get("sync_server");
+            anki::call("login", args);
         }
         catch (const anki::Error& e)
         {

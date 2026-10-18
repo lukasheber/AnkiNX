@@ -39,6 +39,10 @@ build, then commit and tag (`git tag v0.2.0`).
   in Anki 23.12+: started from the card menu, it shows the answer and then
   answers (or buries, or reminds) after the deck's seconds, waiting for the
   audio if the deck says so. Both are set in deck options.
+- Statistics: today's study, a 30-day forecast, a 26-week review heatmap,
+  true retention and card counts, for a deck (R on its overview) or the
+  whole collection (Settings > Statistics).
+- Self-hosted sync server: Settings > Account > Sync server.
 - Whiteboard (handheld): the pen in the reviewer's header lets you draw over
   the card; the bin clears it, and each new card starts clean.
 - Settings > Study: swipe to answer (← Again, ↓ Hard, → Good, ↑ Easy) and

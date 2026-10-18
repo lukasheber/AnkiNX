@@ -1,8 +1,10 @@
 #include "activity/settings.hpp"
 
+#include "activity/stats.hpp"
 #include "anki/api.hpp"
 #include "anki_switch_core.h"
 #include "app.hpp"
+#include "util/keyboard.hpp"
 #include "util/settings.hpp"
 #include "util/sync_flow.hpp"
 
@@ -70,6 +72,7 @@ void SettingsActivity::onContentAvailable()
     tabs->addTab("ankinx/settings/tab_account"_i18n, [this] { return accountTab(); });
     tabs->addTab("ankinx/settings/tab_controls"_i18n, [this] { return controlsTab(); });
     tabs->addTab("ankinx/settings/tab_study"_i18n, [this] { return studyTab(); });
+    tabs->addTab("ankinx/stats/title"_i18n, [this] { return statsTab(); });
     tabs->addTab("ankinx/settings/tab_about"_i18n, [this] { return aboutTab(); });
 }
 
@@ -109,6 +112,37 @@ brls::View* SettingsActivity::accountTab()
         return true;
     });
     box->addView(account);
+
+    // A self-hosted sync server instead of AnkiWeb (as Anki's preferences):
+    // used at the next login, so changing it logs out.
+    auto serverText = [] {
+        anki::json server = settings::get("sync_server");
+        return server.is_string() ? server.get<std::string>() : "ankinx/settings/ankiweb_default"_i18n;
+    };
+    auto* server = detail("ankinx/settings/sync_server"_i18n, serverText());
+    server->registerClickAction([server, account, serverText, token = alive](brls::View*) {
+        anki::json current = settings::get("sync_server");
+        keyboard::text("ankinx/settings/sync_server_prompt"_i18n, current.is_string() ? current.get<std::string>() : "",
+                       200, [server, account, serverText, token](const std::string& text) {
+                           std::string url = text;
+                           while (!url.empty() && url.back() == ' ')
+                               url.pop_back();
+                           if (!url.empty() && url.back() != '/')
+                               url += '/'; // rslib joins "sync/..." onto it
+                           anki::json before = settings::get("sync_server");
+                           if (before.is_string() ? before.get<std::string>() == url : url.empty())
+                               return;
+                           settings::set("sync_server", url.empty() ? anki::json() : anki::json(url));
+                           sync_flow::logout();
+                           brls::Application::notify("ankinx/settings/sync_server_changed"_i18n);
+                           if (!*token)
+                               return;
+                           server->setDetailText(serverText());
+                           account->setDetailText(accountText());
+                       });
+        return true;
+    });
+    box->addView(server);
 
     auto* autoSync = new brls::BooleanCell();
     autoSync->init("ankinx/settings/auto_sync"_i18n, settings::autoSync(), [](bool on) { settings::setAutoSync(on); });
@@ -246,6 +280,27 @@ brls::View* SettingsActivity::studyTab()
     rumble->init("ankinx/settings/rumble"_i18n, settings::get("rumble") == true,
                  [](bool on) { settings::set("rumble", on); });
     box->addView(rumble);
+    return scroller;
+}
+
+// Statistics for the whole collection (each deck's are on its overview, R).
+brls::View* SettingsActivity::statsTab()
+{
+    brls::ScrollingFrame* scroller;
+    brls::Box* box = column(&scroller);
+    box->addView(header("ankinx/stats/title"_i18n));
+    auto* all = detail("ankinx/stats/all_decks"_i18n, "");
+    all->registerClickAction([](brls::View*) {
+        brls::Application::pushActivity(new StatsActivity(0, "ankinx/stats/all_decks"_i18n));
+        return true;
+    });
+    box->addView(all);
+    auto* note = new brls::Label();
+    note->setText("ankinx/stats/deck_hint"_i18n);
+    note->setFontSize(16);
+    note->setMarginTop(8);
+    note->setMarginLeft(16);
+    box->addView(note);
     return scroller;
 }
 

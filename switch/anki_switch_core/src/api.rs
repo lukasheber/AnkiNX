@@ -302,6 +302,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "set_collapsed" => state.set_collapsed(&args),
         "select_deck" => state.select_deck(&args),
         "deck_overview" => state.deck_overview(&args),
+        "stats" => state.stats(&args),
         "deck_options" => state.deck_options(&args),
         "set_deck_options" => state.set_deck_options(&args),
         "custom_study_defaults" => state.custom_study_defaults(&args),
@@ -734,6 +735,95 @@ impl State {
         };
         let name = col.get_deck(study_deck).map_err(err)?.map(|d| d.human_name()).unwrap_or_default();
         Ok(json!({ "deck_id": study_deck.0, "name": name }))
+    }
+
+    /// `stats {deck_id?}`: what the statistics screen draws, for one deck
+    /// (with its subdecks) or the whole collection: today, a 31-day forecast
+    /// (overdue cards counted today), reviews per day over 26 weeks, true
+    /// retention, and card counts. From rslib's graph data.
+    fn stats(&mut self, args: &Value) -> ApiResult {
+        use anki::services::StatsService;
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let search = match args.get("deck_id").and_then(Value::as_i64) {
+            Some(id) => {
+                let deck = col
+                    .get_deck(DeckId(id))
+                    .map_err(err)?
+                    .ok_or_else(|| ApiError::new("no_deck", "the deck no longer exists"))?;
+                let name: String = deck
+                    .human_name()
+                    .chars()
+                    .flat_map(|c| match c {
+                        '\\' | '"' | '*' | '_' => vec!['\\', c],
+                        _ => vec![c],
+                    })
+                    .collect();
+                format!("deck:\"{name}\"")
+            }
+            None => String::new(),
+        };
+        const HEATMAP_DAYS: i32 = 26 * 7;
+        let g = col
+            .graphs(anki_proto::stats::GraphsRequest { search, days: HEATMAP_DAYS as u32 })
+            .map_err(err)?;
+        // Without the bidi isolation marks Fluent puts around numbers.
+        let studied_today = without_bidi_isolates(&col.studied_today().map_err(err)?);
+
+        let today = g.today.unwrap_or_default();
+        let mut forecast = vec![0u32; 31];
+        for (&day, &count) in &g.future_due.unwrap_or_default().future_due {
+            if day < 31 {
+                forecast[day.max(0) as usize] += count;
+            }
+        }
+        // Reviews per day, oldest first, today last.
+        let mut heatmap = vec![0u32; HEATMAP_DAYS as usize];
+        for (&day, r) in &g.reviews.unwrap_or_default().count {
+            let index = HEATMAP_DAYS - 1 + day;
+            if (0..HEATMAP_DAYS).contains(&index) {
+                heatmap[index as usize] += r.learn + r.relearn + r.young + r.mature + r.filtered;
+            }
+        }
+        let retention = g.true_retention.unwrap_or_default();
+        let period = |r: Option<anki_proto::stats::graphs_response::true_retention_stats::TrueRetention>| {
+            let r = r.unwrap_or_default();
+            json!([r.young_passed, r.young_failed, r.mature_passed, r.mature_failed])
+        };
+        let counts = g.card_counts.unwrap_or_default().excluding_inactive.unwrap_or_default();
+        Ok(json!({
+            "studied_today": studied_today,
+            "today": {
+                "answers": today.answer_count,
+                "secs": today.answer_millis / 1000,
+                "correct": today.correct_count,
+                "mature": today.mature_count,
+                "mature_correct": today.mature_correct,
+                "learn": today.learn_count,
+                "review": today.review_count,
+                "relearn": today.relearn_count,
+            },
+            "forecast": forecast,
+            "heatmap": heatmap,
+            // [young passed, young failed, mature passed, mature failed]
+            "retention": {
+                "today": period(retention.today),
+                "yesterday": period(retention.yesterday),
+                "week": period(retention.week),
+                "month": period(retention.month),
+                "year": period(retention.year),
+                "all_time": period(retention.all_time),
+            },
+            "cards": {
+                "new": counts.new_cards,
+                "learn": counts.learn + counts.relearn,
+                "young": counts.young,
+                "mature": counts.mature,
+                "suspended": counts.suspended,
+                "buried": counts.buried,
+            },
+        }))
     }
 
     fn select_deck(&mut self, args: &Value) -> ApiResult {

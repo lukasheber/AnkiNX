@@ -2,6 +2,7 @@
 
 #include "activity/deck_options.hpp"
 #include "activity/reviewer.hpp"
+#include "activity/stats.hpp"
 #include "anki/api.hpp"
 #include "app.hpp"
 #include "util/keyboard.hpp"
@@ -56,6 +57,17 @@ void DeckOverviewActivity::onContentAvailable()
     optionsButton->addGestureRecognizer(new brls::TapGestureRecognizer(optionsButton, [this] { openOptions(); }));
     frame->registerAction("ankinx/overview/options"_i18n, brls::BUTTON_Y, [this](brls::View*) {
         openOptions();
+        return true;
+    }, true);
+    // R: this deck's statistics (R opened this screen from the deck list too).
+    auto openStats = [this] {
+        if (loaded)
+            brls::Application::pushActivity(new StatsActivity(deckId, deckName));
+    };
+    statsLabel->setText(brls::Hint::getKeyIcon(brls::BUTTON_RB, true) + "  " + "ankinx/stats/title"_i18n);
+    statsButton->addGestureRecognizer(new brls::TapGestureRecognizer(statsButton, openStats));
+    frame->registerAction("ankinx/stats/title"_i18n, brls::BUTTON_RB, [openStats](brls::View*) {
+        openStats();
         return true;
     }, true);
     load();
