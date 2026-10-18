@@ -11,7 +11,8 @@ namespace app
 void quit();
 
 // Register + (quit) on a screen, and hide the footer's status (see
-// hideStatus). Every activity calls this.
+// hideStatus). Only the deck list and the login screen quit with +; the
+// reviewer and settings go back with B (and call hideStatus instead).
 void registerQuit(brls::View* contentView);
 
 // Leave the footer of an AppletFrame to button hints: no battery, Wi-Fi or

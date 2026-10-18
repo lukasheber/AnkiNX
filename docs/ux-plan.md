@@ -28,7 +28,7 @@ backlog groups) at the level of screens, buttons and placement. Principles:
 | Card menu (section 2) | Hold Y | Hold stick press |
 | Zoom − / + | Left / right stick press | not mapped (touch: pinch) |
 | Back to decks | B | B |
-| Exit | + | + (when no other action needs it) |
+| Exit | + (deck list only; not while studying or in settings) | + (same) |
 
 A sideways Joy-Con has 4 face buttons, SL, SR, the stick (with press) and
 one of +/−. borealis already rotates the face buttons; AnkiNX detects the
@@ -88,7 +88,7 @@ Side tabs, like the Switch's System Settings:
 │                                                                    │
 ├────────────────────────────────────────────────────────────────────┤
 │   [ZL Again <1m]  [L Hard <6m]  [R Good 1d]  [ZR Easy 4d]          │
-└ ⊕ Exit  ⊖ Undo  Ⓧ Hints  Ⓨ Replay  Ⓑ Back  Ⓐ OK ───────────────────┘
+└ ⊖ Undo  Ⓧ Hints  Ⓨ Replay  Ⓑ Back ─────────────────────────────────┘
 ```
 
 - Header right: flag colour and ★ (marked) when set, the counts, and a ⋯

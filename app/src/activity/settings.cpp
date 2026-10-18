@@ -66,7 +66,7 @@ SettingsActivity::~SettingsActivity() { *alive = false; }
 void SettingsActivity::onContentAvailable()
 {
     frame->setTitle("ankinx/settings/title"_i18n);
-    app::registerQuit(frame);
+    app::hideStatus(frame); // no + here: quit from the deck list
     tabs->addTab("ankinx/settings/tab_account"_i18n, [this] { return accountTab(); });
     tabs->addTab("ankinx/settings/tab_controls"_i18n, [this] { return controlsTab(); });
     tabs->addTab("ankinx/settings/tab_study"_i18n, [this] { return studyTab(); });

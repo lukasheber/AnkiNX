@@ -265,7 +265,7 @@ void ReviewerActivity::onUi(std::shared_ptr<bool> token, std::function<void()> f
 void ReviewerActivity::onContentAvailable()
 {
     frame->setTitle(deckName);
-    app::registerQuit(frame);
+    app::hideStatus(frame); // no + to quit while studying (B goes back to the decks)
     showAnswerLabel->setText(std::string("  ") + "ankinx/review/show_answer"_i18n);
 
     for (int ease = 1; ease <= 4; ease++)

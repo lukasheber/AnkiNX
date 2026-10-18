@@ -34,8 +34,8 @@ static TOGGLE_BUTTON: LazyLock<Regex> =
 pub struct Occlusions {
     pub html: String,
     pub shapes: Vec<Value>,
-    /// Some inactive shapes are drawn ("occlude inactive"), so hiding masks
-    /// on the answer side makes sense (Anki shows its toggle button then).
+    /// The answer side's masks can be hidden: it has Anki's toggle button, or
+    /// inactive shapes are drawn ("occlude inactive").
     pub can_toggle: bool,
 }
 
@@ -61,6 +61,9 @@ pub fn extract(html: &str) -> Option<Occlusions> {
         format!("{}{}{IMAGE_MARKER}{}", &c[1], &c[2], &c[3])
     });
     let html = CANVAS.replace(&html, "");
+    // Anki's back template always has a "Toggle Masks" button (the app's X):
+    // in "hide one, guess one" it hides the highlighted shape.
+    can_toggle |= TOGGLE_BUTTON.is_match(&html);
     let html = TOGGLE_BUTTON.replace(&html, "").into_owned();
     Some(Occlusions { html, shapes, can_toggle })
 }
@@ -148,5 +151,21 @@ mod tests {
         assert_eq!(text["angle"], 90.0);
         assert_eq!(text["font_size"], 0.05);
         assert!(extract("<span class=cloze>[...]</span>").is_none());
+    }
+
+    #[test]
+    fn hide_one_answers_can_toggle() {
+        // "Hide one, guess one": no inactive masks, but the back template's
+        // toggle button hides the highlighted one.
+        let shape = r#"<div style="display: none"><div class="cloze-highlight" data-ordinal="1" data-shape="rect" data-left=".1" data-top=".2" data-width=".3" data-height=".4" ></div></div>
+<div id="image-occlusion-container">
+    <img src="pic.png">
+    <canvas id="image-occlusion-canvas"></canvas>
+</div>"#;
+        assert!(!extract(shape).unwrap().can_toggle);
+        let back = format!("{shape}\n<div><button id=\"toggle\">Toggle Masks</button></div>");
+        let out = extract(&back).unwrap();
+        assert!(out.can_toggle);
+        assert!(!out.html.contains("toggle"), "{}", out.html);
     }
 }
