@@ -1,0 +1,206 @@
+Right-to-left text for AnkiNX (Persian, Arabic, Hebrew cards): litehtml lays
+words out left to right only. line_box::finish() now reorders each line's
+words like the Unicode bidi algorithm does for plain text (runs of
+right-to-left words reversed; dir="rtl" on an ancestor makes the line read
+right to left and turns left alignment into right). Shaping and the order
+inside each word are done by the container (app/src/view/rtl_text.cpp).
+
+--- a/src/line_box.cpp
++++ b/src/line_box.cpp
+@@ -4,6 +4,10 @@
+ #include "render_item.h"
+ #include "types.h"
+ #include <algorithm>
++#include <cctype>
++#include <cstdint>
++#include <string>
++#include <vector>
+ 
+ //////////////////////////////////////////////////////////////////////////////////////////
+ 
+@@ -217,6 +221,176 @@
+     }
+ }
+ 
++namespace
++{
++// AnkiNX: right-to-left text (Persian, Arabic, Hebrew). Words are laid out
++// left to right; each finished line is reordered the way the Unicode bidi
++// algorithm orders plain text: runs of right-to-left words (with the neutral
++// words between them) are reversed. With dir="rtl" on an ancestor the line
++// reads right to left, left-to-right runs keep their order, and left-aligned
++// text goes right. Shaping and the order inside a word are left to the
++// container.
++enum class word_dir
++{
++    ltr,
++    rtl,
++    neutral
++};
++
++word_dir word_direction(const std::string& text)
++{
++    bool ltr = false;
++    for(size_t i = 0; i < text.size();)
++    {
++        auto     c = static_cast<unsigned char>(text[i]);
++        uint32_t cp;
++        size_t   len;
++        if(c < 0x80)
++        {
++            cp  = c;
++            len = 1;
++        } else if((c >> 5) == 6 && i + 1 < text.size())
++        {
++            cp  = ((c & 0x1F) << 6) | (text[i + 1] & 0x3F);
++            len = 2;
++        } else if((c >> 4) == 14 && i + 2 < text.size())
++        {
++            cp  = ((c & 0x0F) << 12) | ((text[i + 1] & 0x3F) << 6) | (text[i + 2] & 0x3F);
++            len = 3;
++        } else
++        {
++            cp  = 0x10000;
++            len = (c >> 3) == 30 ? 4 : 1;
++        }
++        i += len;
++        bool digit = (cp >= '0' && cp <= '9') || (cp >= 0x0660 && cp <= 0x0669) || (cp >= 0x06F0 && cp <= 0x06F9);
++        if(digit)
++        {
++            continue; // numbers go with the words around them
++        }
++        if((cp >= 0x0590 && cp <= 0x08FF) || (cp >= 0xFB1D && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF))
++        {
++            return word_dir::rtl;
++        }
++        if((cp < 0x80 && isalpha(static_cast<int>(cp))) ||
++           (cp >= 0xC0 && cp != 0xD7 && cp != 0xF7 && !(cp >= 0x2000 && cp <= 0x2BFF) &&
++            !(cp >= 0x3000 && cp <= 0x303F)))
++        {
++            ltr = true;
++        }
++    }
++    return ltr ? word_dir::ltr : word_dir::neutral;
++}
++
++void reorder_bidi(std::list<std::unique_ptr<litehtml::line_box_item>>& items, litehtml::text_align& align)
++{
++    std::vector<litehtml::line_box_item*> v;
++    std::vector<word_dir>                 dirs;
++    bool                                  any_rtl = false;
++    for(auto& item : items)
++    {
++        word_dir d = word_dir::neutral;
++        if(item->get_type() == litehtml::line_box_item::type_text_part)
++        {
++            std::string text;
++            item->get_el()->src_el()->get_text(text);
++            d = word_direction(text);
++        }
++        any_rtl = any_rtl || d == word_dir::rtl;
++        v.push_back(item.get());
++        dirs.push_back(d);
++    }
++    if(!any_rtl)
++    {
++        return;
++    }
++    bool base_rtl = false;
++    for(litehtml::element::ptr el = v.front()->get_el()->src_el(); el; el = el->parent())
++    {
++        if(const char* dir = el->get_attr("dir"))
++        {
++            base_rtl = litehtml::t_strcasecmp(dir, "rtl") == 0;
++            break;
++        }
++    }
++    const word_dir    base = base_rtl ? word_dir::rtl : word_dir::ltr;
++    const size_t      n    = v.size();
++    std::vector<bool> rtl(n);
++    for(size_t i = 0; i < n; i++)
++    {
++        word_dir d = dirs[i];
++        if(d == word_dir::neutral)
++        {
++            word_dir before = base, after = base;
++            for(size_t p = i; p > 0;)
++            {
++                if(dirs[--p] != word_dir::neutral)
++                {
++                    before = dirs[p];
++                    break;
++                }
++            }
++            for(size_t k = i + 1; k < n; k++)
++            {
++                if(dirs[k] != word_dir::neutral)
++                {
++                    after = dirs[k];
++                    break;
++                }
++            }
++            d = before == after ? before : base;
++        }
++        rtl[i] = d == word_dir::rtl;
++    }
++    // Reverse the items [a, b) in place, keeping their widths and gaps.
++    auto mirror = [&](size_t a, size_t b) {
++        litehtml::pixel_t left = v[a]->pos().x, right = v[a]->pos().x + v[a]->width();
++        for(size_t k = a; k < b; k++)
++        {
++            left  = std::min(left, v[k]->pos().x);
++            right = std::max(right, v[k]->pos().x + v[k]->width());
++        }
++        for(size_t k = a; k < b; k++)
++        {
++            v[k]->pos().x = left + right - v[k]->pos().x - v[k]->width();
++        }
++    };
++    auto mirror_runs = [&](bool of_rtl) {
++        for(size_t i = 0; i < n;)
++        {
++            if(rtl[i] != of_rtl)
++            {
++                i++;
++                continue;
++            }
++            size_t j = i;
++            while(j < n && rtl[j] == of_rtl)
++            {
++                j++;
++            }
++            mirror(i, j);
++            i = j;
++        }
++    };
++    if(base_rtl)
++    {
++        mirror(0, n);
++        mirror_runs(false);
++        if(align == litehtml::text_align_left)
++        {
++            align = litehtml::text_align_right;
++        }
++    } else
++    {
++        mirror_runs(true);
++    }
++    // Later steps (justify, right alignment) walk the items in visual order.
++    items.sort([](const std::unique_ptr<litehtml::line_box_item>& a, const std::unique_ptr<litehtml::line_box_item>& b) {
++        return a->pos().x < b->pos().x;
++    });
++}
++} // namespace
++
+ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
+     bool last_box, const containing_block_context& containing_block_size)
+ {
+@@ -304,6 +478,8 @@
+         return ret_items;
+     }
+ 
++    reorder_bidi(m_items, m_text_align);
++
+     pixel_t spacing_x = 0_px; // Number of pixels to distribute between elements
+     pixel_t shift_x   = 0_px; // Shift elements by X to apply the text-align
+ 

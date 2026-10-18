@@ -136,6 +136,19 @@ fn main() {
             "Loaded from the media folder",
         ],
     );
+    // Right-to-left text: Persian (with ZWNJ, digits and an English word) with
+    // and without dir="rtl", and Arabic.
+    add(
+        "RTL",
+        &basic,
+        &[
+            "<div style=\"text-align: left\">کتاب English ۱۲۳</div><hr>\
+             <div dir=\"rtl\" style=\"text-align: left\">زبان فارسی یکی از زبان‌های هندواروپایی است و در ایران، \
+             افغانستان و تاجیکستان به آن سخن می‌گویند (۱۱۰ میلیون نفر).</div><hr>\
+             <div dir=\"rtl\">السلام عليكم</div>",
+            "Persian / Arabic",
+        ],
+    );
     // {{type:Back}}: an answer box on the question, a comparison on the answer.
     add("Typing", &typing, &["あ (romaji)", "a"]);
 

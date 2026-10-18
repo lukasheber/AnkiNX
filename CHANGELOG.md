@@ -33,6 +33,10 @@ build, then commit and tag (`git tag v0.2.0`).
   shared decks use for Japanese, Arabic or Persian fonts): TrueType and
   OpenType, with their bold and italic faces; missing glyphs come from the
   system font.
+- Right-to-left text: Persian and Arabic letters are joined as they should
+  be (they showed as separate letters, or not at all: the Switch's fonts
+  have no Arabic, so DejaVu Sans is bundled as a fallback), and words and
+  lines read right to left, also with `dir="rtl"`. Hebrew is reordered too.
 - Inline `<svg>` in cards, and `data:` image URIs (such as SVG icons in CSS
   backgrounds), are drawn.
 - Fix: script-edited cards no longer garble characters whose UTF-8 encoding

@@ -17,6 +17,7 @@
 #include <webp/decode.h>
 
 #include "util/controls.hpp"
+#include "view/rtl_text.hpp"
 
 using namespace litehtml;
 
@@ -457,6 +458,8 @@ class NvgContainer : public document_container
                    brls::FONT_EMOJI, brls::FONT_SWITCH_ICONS, brls::FONT_MATERIAL_ICONS })
                 if (int f = brls::Application::getFont(fallback); f >= 0)
                     nvgAddFallbackFontId(vg, id, f);
+            if (int f = rtlFallback(); f >= 0)
+                nvgAddFallbackFontId(vg, id, f);
             return face.id = id;
         }
         return -1;
@@ -493,9 +496,35 @@ class NvgContainer : public document_container
         return -1;
     }
 
+    // DejaVu Sans (resources/card_fonts): Arabic-script glyphs, including the
+    // presentation forms rtl::visual produces, which the system fonts lack.
+    // Loaded once, as a fallback of the system font and of card fonts.
+    int rtlFallback()
+    {
+        static int id = -2;
+        if (id != -2 || !vg)
+            return id;
+        id = nvgFindFont(vg, "ankinx-rtl");
+        if (id >= 0)
+            return id;
+        std::string data = readFile(BRLS_ASSET("card_fonts/DejaVuSans.ttf"));
+        auto* copy       = isFontFile(data) ? (unsigned char*)std::malloc(data.size()) : nullptr;
+        if (!copy)
+        {
+            brls::Logger::error("card fonts: no right-to-left fallback font");
+            return id = -1;
+        }
+        std::memcpy(copy, data.data(), data.size());
+        id = nvgCreateFontMem(vg, "ankinx-rtl", copy, (int)data.size(), 1);
+        if (id >= 0)
+            nvgAddFallbackFontId(vg, brls::Application::getFont(brls::FONT_REGULAR), id);
+        return id;
+    }
+
   public:
     uint_ptr create_font(const font_description& descr, const document*, font_metrics* fm) override
     {
+        rtlFallback();
         auto* f       = new Font();
         f->face       = brls::Application::getFont(brls::FONT_REGULAR);
         f->size       = std::max(1.0f, (float)descr.size);
@@ -533,15 +562,19 @@ class NvgContainer : public document_container
 
     void delete_font(uint_ptr hFont) override { delete (Font*)hFont; }
 
-    pixel_t text_width(const char* text, uint_ptr hFont) override
+    // Right-to-left words are measured and drawn shaped, in visual order.
+    pixel_t text_width(const char* logical, uint_ptr hFont) override
     {
         applyFont((Font*)hFont);
-        return nvgTextBounds(vg, 0, 0, text, nullptr, nullptr);
+        std::string shown = rtl::visual(logical);
+        return nvgTextBounds(vg, 0, 0, shown.c_str(), nullptr, nullptr);
     }
 
-    void draw_text(uint_ptr, const char* text, uint_ptr hFont, web_color color, const position& pos) override
+    void draw_text(uint_ptr, const char* logical, uint_ptr hFont, web_color color, const position& pos) override
     {
-        auto* f = (Font*)hFont;
+        std::string shown = rtl::visual(logical);
+        const char* text  = shown.c_str();
+        auto* f           = (Font*)hFont;
         applyFont(f);
         float baseline = pos.y + pos.height - f->metrics.descent;
         nvgFillColor(vg, toNvg(color));
