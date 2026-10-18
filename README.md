@@ -77,8 +77,11 @@ Third-party code and assets, under their own licences:
 | --- | --- |
 | Anki (`source_code/`, rslib) | AGPL-3.0-or-later, with BSD-3 portions |
 | borealis (UI framework) | Apache-2.0 |
-| litehtml (HTML/CSS layout) | BSD-3-Clause |
+| litehtml (HTML/CSS layout; our fixes in `app/patches/litehtml`) | BSD-3-Clause |
+| gumbo (HTML parser, bundled with litehtml) | Apache-2.0 |
+| QuickJS-ng (card JavaScript) | MIT |
 | lunasvg (SVG) | MIT |
+| DejaVu Sans font (`app/resources/card_fonts`; right-to-left text) | Bitstream Vera licence; DejaVu changes public domain |
 | Material Icons font (`app/resources/material`) | Apache-2.0 |
 | Patched crates (`switch/patches/`): libc, getrandom | MIT OR Apache-2.0 |
 | Patched crates: mio, tokio | MIT |
