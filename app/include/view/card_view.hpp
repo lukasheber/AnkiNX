@@ -67,6 +67,9 @@ class CardView : public brls::View
     void setOnLink(std::function<void(const std::string&)> callback);
     // Called when the card is tapped outside any link.
     void setOnTap(std::function<void()> callback);
+    // Called first for a tap on an element tagged data-ankinx-node (card
+    // scripts); returning true means it was handled (onTap isn't called).
+    void setOnElementTap(std::function<bool(int serial)> callback);
 
     void scrollBy(float dy);
     void setZoom(float zoom);
@@ -94,6 +97,7 @@ class CardView : public brls::View
     float viewHeight         = 0;
     std::function<void(const std::string&)> onLink;
     std::function<void()> onTap;
+    std::function<bool(int)> onElementTap;
     std::vector<Occlusion> occlusions;
     bool masksHidden = false;
 };

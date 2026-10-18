@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "anki/api.hpp"
+#include "script/card_script.hpp"
 #include "util/controls.hpp"
 #include "view/card_view.hpp"
 
@@ -44,6 +45,11 @@ class ReviewerActivity : public brls::Activity
     void showError(const std::string& message);
     void updateCounts(const anki::json& counts, const std::string& queue);
     void setBar(bool answerSide);
+    // Card scripts (script/card_script).
+    void startScripts();
+    void runScripts();
+    void afterScript();
+    void scheduleTimers();
     // Controls (util/controls): bindings depend on the controller layout.
     controls::Action actionFor(brls::ControllerButton button) const;
     bool onButton(brls::ControllerButton button);
@@ -71,6 +77,9 @@ class ReviewerActivity : public brls::Activity
     // Actions registered for the bindable buttons (re-registered on changes).
     std::vector<brls::ActionIdentifier> buttonActions;
     bool refreshPending = false;
+    // JavaScript of the current card, if it has any; replaced per card.
+    std::unique_ptr<CardScript> script;
+    int scriptGeneration = 0;
 
     BRLS_BIND(brls::AppletFrame, frame, "frame");
     BRLS_BIND(CardView, cardView, "card");

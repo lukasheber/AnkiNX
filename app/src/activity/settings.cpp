@@ -69,6 +69,7 @@ void SettingsActivity::onContentAvailable()
     app::registerQuit(frame);
     tabs->addTab("ankinx/settings/tab_account"_i18n, [this] { return accountTab(); });
     tabs->addTab("ankinx/settings/tab_controls"_i18n, [this] { return controlsTab(); });
+    tabs->addTab("ankinx/settings/tab_study"_i18n, [this] { return studyTab(); });
     tabs->addTab("ankinx/settings/tab_about"_i18n, [this] { return aboutTab(); });
 }
 
@@ -224,6 +225,18 @@ void SettingsActivity::captureButton(controls::Action action)
         }, true);
     dialog->setCancelable(true);
     dialog->open();
+}
+
+brls::View* SettingsActivity::studyTab()
+{
+    brls::ScrollingFrame* scroller;
+    brls::Box* box = column(&scroller);
+    box->addView(header("ankinx/settings/cards"_i18n));
+    auto* scripts = new brls::BooleanCell();
+    scripts->init("ankinx/settings/card_scripts"_i18n, settings::cardScripts(),
+                  [](bool on) { settings::setCardScripts(on); });
+    box->addView(scripts);
+    return scroller;
 }
 
 brls::View* SettingsActivity::aboutTab()

@@ -6,6 +6,7 @@
 
 #include "activity/deck_picker.hpp"
 #include "anki/api.hpp"
+#include "script/card_script.hpp"
 #include "util/audio.hpp"
 #include "util/controls.hpp"
 #include "view/card_view.hpp"
@@ -49,6 +50,14 @@ int main(int argc, char* argv[])
     brls::Application::registerXMLView("CardView", CardView::create);
     setupCardFontFallbacks();
 
+    CardScript::log = [](int level, const std::string& msg) {
+        if (level >= 2)
+            brls::Logger::error("card script: {}", msg);
+        else if (level == 1)
+            brls::Logger::warning("card script: {}", msg);
+        else
+            brls::Logger::info("card script: {}", msg);
+    };
     brls::Application::pushActivity(new DeckPickerActivity());
     // Joy-Cons taken off the console: offer the system grip screen (one
     // sideways Joy-Con), as games do.

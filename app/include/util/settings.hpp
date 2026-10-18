@@ -14,6 +14,10 @@ namespace settings
 bool autoSync();
 void setAutoSync(bool enabled);
 
+// Run JavaScript in card templates (Settings > Study); on by default.
+bool cardScripts();
+void setCardScripts(bool enabled);
+
 // Any other setting (null when unset), e.g. "controls" (util/controls.cpp).
 anki::json get(const std::string& key);
 void set(const std::string& key, anki::json value);

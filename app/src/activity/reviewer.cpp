@@ -4,8 +4,11 @@
 #include "util/audio.hpp"
 #include "util/controls.hpp"
 #include "util/keyboard.hpp"
+#include "util/settings.hpp"
 
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 
 #include <sys/stat.h>
 
@@ -29,6 +32,8 @@ code#typeans { white-space: pre-wrap; }
 .typeGood { background: #afa; color: black; }
 .typeBad { background: #faa; color: black; }
 .typeMissed { background: #ccc; color: black; }
+button { display: inline-block; border: 1px solid #999999; border-radius: 6px; padding: 4px 12px;
+         margin: 4px; background-color: #e9e9e9; color: #222222; }
 )CSS";
 
 std::string escapeHtml(const std::string& text)
@@ -53,6 +58,7 @@ std::string escapeHtml(const std::string& text)
 const char* NIGHT_CSS = R"CSS(
 .card.nightMode { color: #e6e6e6; background-color: #2c2c2c; }
 .nightMode a { color: #8ab4f8; }
+.nightMode button { background-color: #3a3a3a; color: #e6e6e6; border-color: #666666; }
 )CSS";
 
 // Ease button glyphs from the Switch's shared symbol font (as in borealis hints).
@@ -137,6 +143,14 @@ void ReviewerActivity::onContentAvailable()
     cardView->setOnTap([this] {
         if (state == State::Question)
             showAnswer();
+    });
+    // Taps on card elements go to card scripts first (onclick etc.).
+    cardView->setOnElementTap([this](int serial) {
+        if (!script)
+            return false;
+        bool handled = script->click(serial);
+        afterScript();
+        return handled;
     });
     cardView->setOnLink([this](const std::string& url) {
         if (url.rfind("anki-hint:", 0) == 0)
@@ -237,6 +251,15 @@ void ReviewerActivity::revealAllHints()
 // What Anki's hint-field onclick script does: hide the link, show the div.
 void ReviewerActivity::revealHint(const std::string& id)
 {
+    if (script)
+    {
+        // The card's DOM is the source of truth while scripts run.
+        script->eval("(function(){var l=document.querySelector('a[href=\"anki-hint:" + id +
+                     "\"]');if(l)l.style.display='none';var d=document.getElementById('" + id +
+                     "');if(d)d.style.display='block';})()");
+        afterScript();
+        return;
+    }
     auto replace = [this](const std::string& from, const std::string& to) {
         size_t at = shownBody.find(from);
         if (at != std::string::npos)
@@ -253,11 +276,65 @@ void ReviewerActivity::showQuestion()
     typed.clear();
     updateCounts(card["counts"], card.value("queue", ""));
     shownBody = questionBody();
+    startScripts();
+    runScripts();
     cardView->setOcclusions(occlusionsFor(card, "question"));
     cardView->setMasksHidden(false);
     cardView->setHtml(documentFor(shownBody));
     setBar(false);
     playAudio(card["question_av"]);
+}
+
+// A new card: a script context if either side has scripts (and they're on in
+// Settings > Study). One context per card, as Anki keeps the page between
+// question and answer.
+void ReviewerActivity::startScripts()
+{
+    script.reset();
+    scriptGeneration++;
+    std::string sides = card.value("question", "") + card.value("answer", "");
+    if (!settings::cardScripts() || !CardScript::wanted(sides))
+        return;
+    static const std::string prelude = [] {
+        std::ifstream in(BRLS_ASSET("script/prelude.js"), std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    }();
+    script = std::make_unique<CardScript>(prelude, mediaDir);
+}
+
+// Run the side in shownBody through the card's scripts.
+void ReviewerActivity::runScripts()
+{
+    if (!script)
+        return;
+    script->show(shownBody, card.value("body_class", "card"));
+    shownBody = script->html();
+    scheduleTimers();
+}
+
+// After scripts ran (a tap, a timer, a hint): show their changes.
+void ReviewerActivity::afterScript()
+{
+    if (!script)
+        return;
+    if (script->dirty())
+    {
+        shownBody = script->html();
+        cardView->setHtml(documentFor(shownBody), true);
+    }
+    scheduleTimers();
+}
+
+void ReviewerActivity::scheduleTimers()
+{
+    for (auto [id, ms] : script->takeTimers())
+        brls::delay(ms, [this, token = alive, generation = scriptGeneration, id = id] {
+            // Ignore timers of a card that has gone.
+            if (!*token || !script || generation != scriptGeneration)
+                return;
+            script->fireTimer(id);
+            afterScript();
+        });
 }
 
 // The question, with the answer box (type-answer cards) showing what was typed.
@@ -305,6 +382,7 @@ void ReviewerActivity::showAnswer()
             brls::Application::notify(e.what());
         }
     }
+    runScripts();
     cardView->setOcclusions(occlusionsFor(card, "answer"));
     cardView->setMasksHidden(false);
     cardView->setHtml(documentFor(shownBody));

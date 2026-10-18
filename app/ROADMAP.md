@@ -28,7 +28,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | `[sound:...]`, replay buttons | ✅ | |
 | `{{tts ...}}` | ⬜ | See section 3 |
 | MathJax `\(...\)`, `\[...\]` | ✅ | Native: LaTeX → Typst (MiTeX) → SVG, cached in `/switch/ankinx/cache/math`, sized in `em` and on the text baseline (`switch/anki_switch_core/src/math.rs`). ~25 ms per new formula on PC; adds ~25 MB to the `.nro`. Verified on console |
-| Template JavaScript | ⬜ | See the JavaScript evaluation |
+| Template JavaScript | ✅ | QuickJS-ng with a small DOM (`app/src/script`): scripts on load, onclick/listeners on tap, timers, globals kept from question to answer, Anki stubs (`anki.imageOcclusion`, `MathJax`). 500 ms / 32 MB budget per run; off switch in Settings > Study. Not covered: layout measurement, canvas, network. Template buttons are touch-only (no controller focus yet). Needs an on-console check |
 | CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables; flexbox partial; to audit against popular shared-deck styles |
 | Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
 | RTL scripts, ruby (furigana `{{furigana:...}}`) | 🔶 | Furigana renders through rslib as `<ruby>`; litehtml's ruby layout to check |
@@ -67,7 +67,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Audio M4A/AAC, ALAC, FLAC, WebM/MP4 audio | ✅ | FFmpeg fallback (decoders and demuxers confirmed in the Switch binary); needs an on-console listen |
 | TTS tags (`{{tts ...}}`) | ⬜ | No TTS engine on Horizon; options: skip (current) or an offline engine such as eSpeak NG |
 | MathJax (`\(...\)`, `\[...\]`) | ✅ | See the parity table: Typst instead of MicroTeX |
-| Card JavaScript in general | ⬜ | See below |
+| Card JavaScript in general | ✅ | See the parity table |
 | Font weights | 🔶 | Synthetic bold/italic; real weights would need bundled fonts (licence + size) |
 
 ## 4. System integration and safety

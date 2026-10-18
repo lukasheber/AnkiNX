@@ -16,8 +16,11 @@ build, then commit and tag (`git tag v0.2.0`).
 - Footer shows "Toggle masks" for X on Image Occlusion answers.
 - Controls: one Joy-Con held sideways is detected and grades with SL / Y / A /
   SR; every reviewer button can be rebound per layout.
-- Settings screen on − (Account & sync, Controls, About), replacing the
+- Settings screen on − (Account & sync, Controls, Study, About), replacing the
   account dialog.
+- JavaScript in card templates (QuickJS-ng with a small DOM): scripts run on
+  load, onclick and listeners on tap, timers, state kept from question to
+  answer as in Anki. Can be turned off in Settings > Study.
 
 ## 0.2.0 (2026-10-17)
 

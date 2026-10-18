@@ -729,6 +729,8 @@ void CardView::setOnLink(std::function<void(const std::string&)> callback) { onL
 
 void CardView::setOnTap(std::function<void()> callback) { onTap = std::move(callback); }
 
+void CardView::setOnElementTap(std::function<bool(int)> callback) { onElementTap = std::move(callback); }
+
 void CardView::setZoom(float value)
 {
     zoom        = std::clamp(value, 0.6f, 3.0f);
@@ -776,7 +778,19 @@ void CardView::handleTap(brls::Point point)
     document->on_mouse_over(docX, docY, docX, docY, redraw);
     document->on_lbutton_down(docX, docY, docX, docY, redraw);
     document->on_lbutton_up(docX, docY, docX, docY, redraw); // may call on_anchor_click
-    if (!linkActivated && onTap)
+    if (linkActivated)
+        return;
+    // Card scripts: the innermost element with a node serial gets a click.
+    if (onElementTap)
+        for (auto el = std::const_pointer_cast<litehtml::element>(document->get_over_element()); el;
+             el    = el->parent())
+            if (const char* serial = el->get_attr("data-ankinx-node"))
+            {
+                if (onElementTap(std::atoi(serial)))
+                    return;
+                break;
+            }
+    if (onTap)
         onTap();
 }
 

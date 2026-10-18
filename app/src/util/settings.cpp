@@ -40,6 +40,14 @@ void setAutoSync(bool enabled)
     save();
 }
 
+bool cardScripts() { return values().value("card_scripts", true); }
+
+void setCardScripts(bool enabled)
+{
+    values()["card_scripts"] = enabled;
+    save();
+}
+
 anki::json get(const std::string& key) { return values().contains(key) ? values()[key] : anki::json(); }
 
 void set(const std::string& key, anki::json value)

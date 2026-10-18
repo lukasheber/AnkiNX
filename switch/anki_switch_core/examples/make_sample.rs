@@ -25,7 +25,13 @@ fn main() {
         "{{FrontSide}}<hr id=answer>{{Back}}",
     )];
     col.add_notetype(&mut hinted, false).unwrap();
+    // ANKINX_SAMPLE_ONLY=<deck>: only that deck, for screenshots of one card type.
+    let only = std::env::var("ANKINX_SAMPLE_ONLY").ok();
+    let wanted = |deck: &str| only.as_deref().map_or(true, |o| deck.starts_with(o));
     let mut add = |deck: &str, notetype: &anki::prelude::Notetype, fields: &[&str]| {
+        if !wanted(deck) {
+            return;
+        }
         let deck = col.get_or_create_normal_deck(deck).unwrap();
         let mut note = notetype.new_note();
         for (i, f) in fields.iter().enumerate() {
@@ -81,31 +87,45 @@ fn main() {
             r"\[x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\]and \(\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}\)",
         ],
     );
+    // Template JavaScript: an onclick button, and a script filling a value
+    // that must survive from question to answer (one page per card in Anki).
+    add(
+        "Scripts",
+        &basic,
+        &[
+            "Capital of Japan? <button onclick=\"document.getElementById('h').style.display='block'\">Show clue</button>\
+             <div id=\"h\" style=\"display:none\">It starts with T</div>\
+             <script>window.pick = 1 + Math.floor(Math.random() * 6);</script>",
+            "Tokyo. You rolled <b id=\"r\"></b>.<script>document.getElementById('r').textContent = window.pick;</script>",
+        ],
+    );
     // {{type:Back}}: an answer box on the question, a comparison on the answer.
     add("Typing", &typing, &["あ (romaji)", "a"]);
 
     // Image Occlusion: three masks (rectangle, ellipse, polygon) over a
     // generated picture; "oi=1" hides the other masks on the question side.
-    let image = dir.join("io-sample.bmp");
-    std::fs::write(&image, sample_bmp(400, 250)).unwrap();
-    let deck = col.get_or_create_normal_deck("Occlusion").unwrap();
-    col.set_current_deck(deck.id).unwrap();
-    col.add_image_occlusion_note(anki_proto::image_occlusion::AddImageOcclusionNoteRequest {
-        image_path: image.to_string_lossy().into(),
-        occlusions: "{{c1::image-occlusion:rect:left=.08:top=.12:width=.3:height=.25:oi=1}}\
-                     {{c2::image-occlusion:ellipse:left=.55:top=.1:rx=.15:ry=.18:oi=1}}\
-                     {{c3::image-occlusion:polygon:left=.35:top=.55:points=.35,.95 .5,.55 .65,.95:oi=1}}"
-            .into(),
-        header: "Name the shapes".into(),
-        back_extra: "Rectangle, circle, triangle".into(),
-        tags: vec![],
-        notetype_id: 0,
-    })
-    .unwrap();
-    std::fs::remove_file(&image).unwrap();
+    if wanted("Occlusion") {
+        let image = dir.join("io-sample.bmp");
+        std::fs::write(&image, sample_bmp(400, 250)).unwrap();
+        let deck = col.get_or_create_normal_deck("Occlusion").unwrap();
+        col.set_current_deck(deck.id).unwrap();
+        col.add_image_occlusion_note(anki_proto::image_occlusion::AddImageOcclusionNoteRequest {
+            image_path: image.to_string_lossy().into(),
+            occlusions: "{{c1::image-occlusion:rect:left=.08:top=.12:width=.3:height=.25:oi=1}}\
+                         {{c2::image-occlusion:ellipse:left=.55:top=.1:rx=.15:ry=.18:oi=1}}\
+                         {{c3::image-occlusion:polygon:left=.35:top=.55:points=.35,.95 .5,.55 .65,.95:oi=1}}"
+                .into(),
+            header: "Name the shapes".into(),
+            back_extra: "Rectangle, circle, triangle".into(),
+            tags: vec![],
+            notetype_id: 0,
+        })
+        .unwrap();
+        std::fs::remove_file(&image).unwrap();
+    }
 
     // Show the nested decks expanded.
-    for name in ["Japanese"] {
+    for name in ["Japanese"].into_iter().filter(|n| wanted(n)) {
         let deck = col.get_or_create_normal_deck(name).unwrap();
         col.set_deck_collapsed(deck.id, false, anki::decks::tree::DeckCollapseScope::Reviewer)
             .unwrap();
