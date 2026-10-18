@@ -5,7 +5,7 @@
     alignItems="center"
     focusable="true"
     paddingLeft="20"
-    paddingRight="30"
+    paddingRight="10"
     lineColor="@theme/brls/sidebar/separator"
     lineBottom="1">
 
@@ -14,4 +14,8 @@
     <brls:Label id="new" width="90" height="auto" fontSize="22" horizontalAlign="right" />
     <brls:Label id="learn" width="90" height="auto" fontSize="22" horizontalAlign="right" />
     <brls:Label id="review" width="90" height="auto" fontSize="22" horizontalAlign="right" />
+    <!-- Tap: the deck overview (R with a controller) -->
+    <brls:Box id="more" width="60" height="64" justifyContent="center" alignItems="center">
+        <brls:Label id="moreIcon" width="auto" height="auto" fontSize="26" textColor="#888888" />
+    </brls:Box>
 </brls:Box>

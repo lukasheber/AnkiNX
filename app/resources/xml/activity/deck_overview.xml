@@ -1,0 +1,54 @@
+<brls:AppletFrame
+    id="frame"
+    iconInterpolation="linear"
+    footerHidden="false">
+
+    <brls:Box
+        width="auto"
+        height="auto"
+        axis="column"
+        grow="1.0">
+
+        <!-- Today's counts, as in Anki's overview -->
+        <brls:Box width="auto" height="110" axis="row" justifyContent="center" alignItems="center">
+            <brls:Box width="200" height="auto" axis="column" alignItems="center">
+                <brls:Label id="newCount" width="auto" height="auto" fontSize="40" textColor="#42a5f5" />
+                <brls:Label id="newCaption" width="auto" height="auto" fontSize="18" textColor="#888888" />
+            </brls:Box>
+            <brls:Box width="200" height="auto" axis="column" alignItems="center">
+                <brls:Label id="learnCount" width="auto" height="auto" fontSize="40" textColor="#ef5350" />
+                <brls:Label id="learnCaption" width="auto" height="auto" fontSize="18" textColor="#888888" />
+            </brls:Box>
+            <brls:Box width="200" height="auto" axis="column" alignItems="center">
+                <brls:Label id="reviewCount" width="auto" height="auto" fontSize="40" textColor="#66bb6a" />
+                <brls:Label id="reviewCaption" width="auto" height="auto" fontSize="18" textColor="#888888" />
+            </brls:Box>
+        </brls:Box>
+
+        <!-- The deck's description (HTML), drawn like a card -->
+        <CardView
+            id="description"
+            width="auto"
+            height="auto"
+            grow="1.0"
+            marginLeft="60"
+            marginRight="60" />
+
+        <brls:Box id="buttons" width="auto" height="110" axis="row" justifyContent="center" alignItems="center">
+            <brls:Box id="studyButton" width="300" height="72" marginLeft="10" marginRight="10" axis="column"
+                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#3b82f6">
+                <brls:Label id="studyLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+            </brls:Box>
+            <brls:Box id="customButton" width="300" height="72" marginLeft="10" marginRight="10" axis="column"
+                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
+                visibility="gone">
+                <brls:Label id="customLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+            </brls:Box>
+            <brls:Box id="optionsButton" width="300" height="72" marginLeft="10" marginRight="10" axis="column"
+                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
+                visibility="gone">
+                <brls:Label id="optionsLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+            </brls:Box>
+        </brls:Box>
+    </brls:Box>
+</brls:AppletFrame>

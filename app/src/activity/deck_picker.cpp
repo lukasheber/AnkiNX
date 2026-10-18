@@ -1,5 +1,6 @@
 #include "activity/deck_picker.hpp"
 
+#include "activity/deck_overview.hpp"
 #include "activity/reviewer.hpp"
 #include "anki/api.hpp"
 #include "app.hpp"
@@ -39,7 +40,8 @@ class DeckDataSource : public brls::RecyclerDataSource
         auto* cell = (DeckCell*)recycler->dequeueReusableCell("Deck");
         size_t row = index.row;
         cell->bind(activity->getEntries()[row]);
-        cell->onToggle = [this, row] { activity->toggle(row); };
+        cell->onToggle   = [this, row] { activity->toggle(row); };
+        cell->onOverview = [this, row] { activity->overview(row); };
         return cell;
     }
 
@@ -59,6 +61,16 @@ DeckCell::DeckCell()
             onToggle();
         return true;
     });
+    this->registerAction("ankinx/decks/overview"_i18n, brls::BUTTON_RB, [this](brls::View*) {
+        if (onOverview)
+            onOverview();
+        return true;
+    });
+    moreIcon->setText("\xEE\x97\x93"); // Material more_horiz
+    more->addGestureRecognizer(new brls::TapGestureRecognizer(more, [this] {
+        if (onOverview)
+            onOverview();
+    }));
 }
 
 DeckCell* DeckCell::create() { return new DeckCell(); }
@@ -191,6 +203,16 @@ void DeckPickerActivity::study(size_t index)
     const DeckEntry& deck = entries[index];
     returningFromStudy    = true;
     brls::Application::pushActivity(new ReviewerActivity(deck.id, deck.name));
+}
+
+void DeckPickerActivity::overview(size_t index)
+{
+    if (index >= entries.size())
+        return;
+    focusedIndex = index;
+    // Studying usually follows: refresh and sync on the way back, as after study.
+    returningFromStudy = true;
+    brls::Application::pushActivity(new DeckOverviewActivity(entries[index].id));
 }
 
 void DeckPickerActivity::toggle(size_t index)

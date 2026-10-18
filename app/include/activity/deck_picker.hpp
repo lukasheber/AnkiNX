@@ -26,6 +26,7 @@ class DeckCell : public brls::RecyclerCell
 
     void bind(const DeckEntry& deck);
     std::function<void()> onToggle;
+    std::function<void()> onOverview;
 
   private:
     BRLS_BIND(brls::Label, arrow, "arrow");
@@ -33,6 +34,8 @@ class DeckCell : public brls::RecyclerCell
     BRLS_BIND(brls::Label, newCount, "new");
     BRLS_BIND(brls::Label, learnCount, "learn");
     BRLS_BIND(brls::Label, reviewCount, "review");
+    BRLS_BIND(brls::Box, more, "more");
+    BRLS_BIND(brls::Label, moreIcon, "moreIcon");
 };
 
 // Main screen: the deck list with due counts, like AnkiDroid's DeckPicker.
@@ -47,6 +50,8 @@ class DeckPickerActivity : public brls::Activity
     const std::vector<DeckEntry>& getEntries() const { return entries; }
     void study(size_t index);
     void toggle(size_t index);
+    // R: the deck overview (counts, description, options, custom study).
+    void overview(size_t index);
 
   private:
     void openCollection();

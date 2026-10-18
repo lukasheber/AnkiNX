@@ -90,6 +90,11 @@ fn study_flow() {
     assert_eq!(verbs_entry["level"], 2);
     assert_eq!(verbs_entry["new"], 3);
     assert_eq!(decks["decks"][0]["has_children"], true);
+    let overview = ok("deck_overview", json!({ "deck_id": verbs }));
+    assert_eq!(overview["name"], "Spanish::Verbs");
+    assert_eq!((overview["new"].clone(), overview["review"].clone()), (json!(3), json!(0)));
+    assert_eq!((overview["description"].clone(), overview["filtered"].clone()), (json!(""), json!(false)));
+    assert_eq!(error_kind("deck_overview", json!({ "deck_id": 12345 })), "no_deck");
 
     // Study.
     ok("select_deck", json!({ "deck_id": verbs }));

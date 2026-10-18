@@ -301,6 +301,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "deck_tree" => state.deck_tree(),
         "set_collapsed" => state.set_collapsed(&args),
         "select_deck" => state.select_deck(&args),
+        "deck_overview" => state.deck_overview(&args),
         "next_card" => state.next_card(&args),
         "answer" => state.answer(&args),
         "type_answer" => state.type_answer(&args),
@@ -570,6 +571,38 @@ impl State {
             .set_deck_collapsed(did, collapsed, DeckCollapseScope::Reviewer)
             .map_err(|e| ApiError::anki(e, &tr))?;
         Ok(json!({}))
+    }
+
+    /// `deck_overview {deck_id}`: Anki's overview screen: today's counts (as
+    /// in the deck list), the description as HTML, and whether the deck is
+    /// filtered (no options or custom study then).
+    fn deck_overview(&mut self, args: &Value) -> ApiResult {
+        use anki::decks::DeckKind;
+        let did = DeckId(i64_arg(args, "deck_id")?);
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let deck = col
+            .get_deck(did)
+            .map_err(err)?
+            .ok_or_else(|| ApiError::new("no_deck", "the deck no longer exists"))?;
+        let tree = col.deck_tree(Some(TimestampSecs::now())).map_err(err)?;
+        let node = find_deck_node(&tree, did.0);
+        // Markdown descriptions are rendered by rslib; HTML ones are shown as
+        // they are, as Anki's overview does.
+        let description = match &deck.kind {
+            DeckKind::Normal(normal) if normal.markdown_description => deck.rendered_description(),
+            DeckKind::Normal(normal) => normal.description.clone(),
+            _ => String::new(),
+        };
+        Ok(json!({
+            "name": deck.human_name(),
+            "new": node.map_or(0, |n| n.new_count),
+            "learn": node.map_or(0, |n| n.learn_count),
+            "review": node.map_or(0, |n| n.review_count),
+            "description": description,
+            "filtered": matches!(deck.kind, DeckKind::Filtered(_)),
+        }))
     }
 
     fn select_deck(&mut self, args: &Value) -> ApiResult {
@@ -1164,6 +1197,13 @@ fn without_bidi_isolates(text: &str) -> String {
 
 /// Depth-first list of decks below the (unnamed) root, skipping the children
 /// of collapsed decks.
+fn find_deck_node(node: &DeckTreeNode, deck_id: i64) -> Option<&DeckTreeNode> {
+    if node.deck_id == deck_id {
+        return Some(node);
+    }
+    node.children.iter().find_map(|child| find_deck_node(child, deck_id))
+}
+
 fn flatten_tree(node: &DeckTreeNode, out: &mut Vec<Value>) {
     for child in &node.children {
         out.push(json!({

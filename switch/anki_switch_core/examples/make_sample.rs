@@ -205,6 +205,15 @@ fn main() {
         std::fs::remove_file(&image).unwrap();
     }
 
+    // A deck description (HTML), for the deck overview.
+    if wanted("Geography") {
+        let mut deck = col.get_or_create_normal_deck("Geography").unwrap();
+        if let anki::decks::DeckKind::Normal(normal) = &mut deck.kind {
+            normal.description = "<b>Capitals</b> and rivers of Europe.<br>From a school atlas.".into();
+        }
+        col.update_deck(&mut deck).unwrap();
+    }
+
     // Show the nested decks expanded.
     for name in ["Japanese"].into_iter().filter(|n| wanted(n)) {
         let deck = col.get_or_create_normal_deck(name).unwrap();
