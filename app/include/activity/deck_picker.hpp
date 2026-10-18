@@ -70,6 +70,9 @@ class DeckPickerActivity : public brls::Activity
     BRLS_BIND(brls::Box, columns, "columns");
     // "N cards due", under the title in the header.
     brls::Label* dueLabel = nullptr;
+    // Dot on the header's sync button: changes not yet on AnkiWeb.
+    brls::Box* syncDot = nullptr;
+    void updateSyncDot(bool pending);
 
     std::vector<DeckEntry> entries;
     size_t focusedIndex = 0;

@@ -22,12 +22,12 @@ void quit()
     sync_flow::autoSync([] { brls::Application::quit(); }, sync_flow::Mode::Exit, false);
 }
 
-void registerQuit(brls::View* contentView)
+void registerQuit(brls::View* contentView, bool hidden)
 {
     contentView->registerAction("hints/exit"_i18n, brls::BUTTON_START, [](brls::View*) {
         quit();
         return true;
-    });
+    }, hidden);
     hideStatus(contentView);
 }
 

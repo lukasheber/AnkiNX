@@ -8,6 +8,7 @@
 #include "util/sync_flow.hpp"
 
 #include <algorithm>
+#include <functional>
 
 using namespace brls::literals;
 
@@ -23,6 +24,45 @@ void setCount(brls::Label* label, int count, NVGcolor color)
 {
     label->setText(std::to_string(count));
     label->setTextColor(count > 0 ? color : COLOR_ZERO);
+}
+
+const char* ICON_SYNC     = "\xEE\x98\xA7"; // Material sync
+const char* ICON_SETTINGS = "\xEE\xA2\xB8"; // Material settings
+const char* ICON_EXIT     = "\xEE\xA1\xB9"; // Material exit_to_app
+
+// A header button: the controller button's glyph and an icon; tappable.
+// dot: a small badge on the icon, hidden until set visible.
+brls::Box* headerButton(brls::ControllerButton button, const char* icon, std::function<void()> action,
+                        brls::Box** dot = nullptr)
+{
+    auto* box = new brls::Box(brls::Axis::ROW);
+    box->setAlignItems(brls::AlignItems::CENTER);
+    box->setPadding(4, 10, 4, 10);
+    box->setMarginLeft(14);
+    auto* key = new brls::Label();
+    key->setFontSize(22);
+    key->setText(brls::Hint::getKeyIcon(button, true));
+    key->setMarginRight(8);
+    box->addView(key);
+    auto* glyph = new brls::Label();
+    glyph->setFontSize(30);
+    glyph->setText(icon);
+    box->addView(glyph);
+    if (dot)
+    {
+        *dot = new brls::Box();
+        (*dot)->setWidth(10);
+        (*dot)->setHeight(10);
+        (*dot)->setCornerRadius(5);
+        (*dot)->setBackgroundColor(nvgRGB(66, 165, 245));
+        (*dot)->setPositionType(brls::PositionType::ABSOLUTE);
+        (*dot)->setPositionTop(4);
+        (*dot)->setPositionRight(6);
+        (*dot)->setVisibility(brls::Visibility::INVISIBLE);
+        box->addView(*dot);
+    }
+    box->addGestureRecognizer(new brls::TapGestureRecognizer(box, std::move(action)));
+    return box;
 }
 
 class DeckDataSource : public brls::RecyclerDataSource
@@ -124,15 +164,26 @@ void DeckPickerActivity::onContentAvailable()
     fitTable();
     // This is the root screen: B must not quit by accident (+ quits).
     frame->registerAction("", brls::BUTTON_B, [](brls::View*) { return true; }, true);
+    // Screen-wide actions sit in the header, on the right (their buttons, or
+    // a tap); the footer keeps what applies to the highlighted deck.
     frame->registerAction("ankinx/decks/sync"_i18n, brls::BUTTON_X, [this](brls::View*) {
         this->sync();
         return true;
-    });
+    }, true);
     frame->registerAction("ankinx/settings/title"_i18n, brls::BUTTON_BACK, [this](brls::View*) {
         this->openSettings();
         return true;
-    });
-    app::registerQuit(frame);
+    }, true);
+    app::registerQuit(frame, true);
+    if (auto* hintBox = dynamic_cast<brls::Box*>(frame->getView("brls/applet_frame/hint_box")))
+    {
+        hintBox->setMarginTop(0);
+        hintBox->setAlignSelf(brls::AlignSelf::CENTER);
+        hintBox->setAlignItems(brls::AlignItems::CENTER);
+        hintBox->addView(headerButton(brls::BUTTON_X, ICON_SYNC, [this] { sync(); }, &syncDot));
+        hintBox->addView(headerButton(brls::BUTTON_BACK, ICON_SETTINGS, [this] { openSettings(); }));
+        hintBox->addView(headerButton(brls::BUTTON_START, ICON_EXIT, [] { app::quit(); }));
+    }
 
     openCollection();
 }
@@ -198,8 +249,13 @@ void DeckPickerActivity::refresh()
                     d["id"].get<int64_t>(), d["name"].get<std::string>(), d["level"].get<int>(),
                     d["collapsed"].get<bool>(), d["has_children"].get<bool>(), d["new"].get<int>(),
                     d["learn"].get<int>(), d["review"].get<int>() });
-            brls::sync([this, list] {
+            // Anki's offline check (no network): reviews or edits not uploaded.
+            anki::json status    = anki::call("status");
+            const auto& needed   = status["sync_needed"];
+            bool pending         = status["username"].is_string() && needed.is_string() && needed != "none";
+            brls::sync([this, list, pending] {
                 entries = list;
+                updateSyncDot(pending);
                 updateDueLabel();
                 fitTable();
                 if (entries.empty())
@@ -300,6 +356,12 @@ void DeckPickerActivity::updateAccountLabel(const std::string& username)
 {
     account->setText(username.empty() ? "ankinx/decks/not_logged_in"_i18n
                                       : "ankinx/decks/logged_in_as"_i18n + " " + username);
+}
+
+void DeckPickerActivity::updateSyncDot(bool pending)
+{
+    if (syncDot)
+        syncDot->setVisibility(pending ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
 }
 
 // Top-level decks' counts already include their subdecks' (within limits).
