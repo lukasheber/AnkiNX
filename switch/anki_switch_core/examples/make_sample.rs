@@ -72,6 +72,15 @@ fn main() {
         ],
     );
     add("Media", &hinted, &["Largest ocean on Earth?", "Pacific"]);
+    // Maths with MathJax delimiters, inline and display.
+    add(
+        "Maths",
+        &basic,
+        &[
+            r"Solve \(ax^2 + bx + c = 0\) for \(x\).",
+            r"\[x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\]and \(\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}\)",
+        ],
+    );
     // {{type:Back}}: an answer box on the question, a comparison on the answer.
     add("Typing", &typing, &["あ (romaji)", "a"]);
 

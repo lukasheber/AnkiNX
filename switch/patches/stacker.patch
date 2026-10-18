@@ -1,0 +1,18 @@
+diff -ruN a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -135,11 +135,12 @@
+ 
+ psm_stack_manipulation! {
+     yes {
+-        #[cfg(not(any(target_arch = "wasm32",target_os = "hermit", target_os = "motor")))]
++        #[cfg(not(any(target_arch = "wasm32",target_os = "hermit", target_os = "motor", target_os = "horizon")))]
+         #[path = "mmap_stack_restore_guard.rs"]
+         mod stack_restore_guard;
+ 
+-        #[cfg(any(target_arch = "wasm32",target_os = "hermit", target_os = "motor"))]
++        // horizon (Nintendo Switch): no mmap; allocate stacks from the heap.
++        #[cfg(any(target_arch = "wasm32",target_os = "hermit", target_os = "motor", target_os = "horizon"))]
+         #[path = "alloc_stack_restore_guard.rs"]
+         mod stack_restore_guard;
+ 

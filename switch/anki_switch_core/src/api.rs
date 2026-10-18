@@ -44,6 +44,8 @@ const MEDIA_DB: &str = "collection.mdb";
 const BACKUP_FOLDER: &str = "backups";
 const SYNC_FILE: &str = "sync.json";
 const CRASH_LOG: &str = "crash.log";
+/// Rendered maths (SVG). Not in collection.media, so media sync ignores it.
+const MATH_CACHE: &str = "cache/math";
 const MAX_BACKUPS: usize = 10;
 const BACKUP_INTERVAL_SECS: u64 = 30 * 60;
 
@@ -225,6 +227,8 @@ struct State {
     media_sync: Option<MediaSync>,
     /// Error from the last finished media sync, reported once.
     media_error: Option<String>,
+    /// Typesets card maths; created when first needed (see math.rs).
+    math: Option<crate::math::MathRenderer>,
     runtime: tokio::runtime::Runtime,
     client: Client,
 }
@@ -351,6 +355,7 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         login,
         media_sync: None,
         media_error: None,
+        math: None,
         runtime,
         client,
     });
@@ -572,7 +577,11 @@ impl State {
     fn next_card(&mut self, args: &Value) -> ApiResult {
         let tr = self.tr.clone();
         let err = |e| ApiError::anki(e, &tr);
-        let col = self.col()?;
+        // By field, not self.col(): the maths renderer is borrowed alongside.
+        let col = self
+            .col
+            .as_mut()
+            .ok_or_else(|| ApiError::new("not_open", "the collection is not open"))?;
         let queued = col.get_queued_cards(1, false).map_err(err)?;
         let counts = json!({
             "new": queued.new_count,
@@ -607,6 +616,18 @@ impl State {
             };
             occlusions = json!({ "question": q.shapes, "answer": a_shapes, "can_toggle": can_toggle });
         }
+        // Maths (\(...\), \[...\]) as images; created on the first card with maths.
+        let night = args.get("night_mode").and_then(Value::as_bool).unwrap_or(false);
+        if [&question, &answer].iter().any(|side| side.contains("\\(") || side.contains("\\[")) {
+            let base = &self.base;
+            let math = self
+                .math
+                .get_or_insert_with(|| crate::math::MathRenderer::new(base.join(MATH_CACHE)));
+            // The reviewer's text colour (see the app's NIGHT_CSS).
+            let color = if night { "#e6e6e6" } else { "#000000" };
+            question = math.render_html(&question, color);
+            answer = math.render_html(&answer, color);
+        }
         // Until something is typed, the answer compares against nothing, as in
         // Anki when Show Answer is pressed with an empty box.
         let shown_answer = compare_type_answer(col, &answer, typing.as_ref(), "").map_err(err)?;
@@ -617,7 +638,6 @@ impl State {
             .map(|label| without_bidi_isolates(label))
             .collect();
 
-        let night = args.get("night_mode").and_then(Value::as_bool).unwrap_or(false);
         let mut body_class = format!("card card{}", ord + 1);
         if night {
             body_class.push_str(" nightMode night_mode");

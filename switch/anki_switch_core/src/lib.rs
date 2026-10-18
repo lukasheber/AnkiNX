@@ -5,6 +5,7 @@
 //! replies with serialized messages. See `include/anki_switch_core.h`.
 
 mod api;
+mod math;
 mod occlusion;
 
 use std::ffi::c_char;

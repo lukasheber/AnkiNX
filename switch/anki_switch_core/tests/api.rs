@@ -223,6 +223,13 @@ fn study_flow() {
         note.set_field(0, "to speak").unwrap();
         note.set_field(1, "hablar").unwrap();
         col.add_note(&mut note, deck.id).unwrap();
+        // Maths, as MathJax delimiters in a field.
+        let basic = col.get_notetype_by_name("Basic").unwrap().unwrap();
+        let deck = col.get_or_create_normal_deck("Maths").unwrap();
+        let mut note = basic.new_note();
+        note.set_field(0, r"Roots of \(ax^2+bx+c\)?").unwrap();
+        note.set_field(1, r"\[x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}\]").unwrap();
+        col.add_note(&mut note, deck.id).unwrap();
         // Image Occlusion: two masks, the other one hidden too ("oi=1").
         let image = typing.join("picture.png");
         std::fs::write(&image, b"not decoded by the backend").unwrap();
@@ -259,6 +266,17 @@ fn study_flow() {
     assert!(wrong["answer"].as_str().unwrap().contains("typeBad"), "{wrong}");
     ok("answer", json!({ "ease": 3 }));
     assert!(card["occlusions"].is_null());
+
+    // Maths: rendered to cached SVGs, referenced by absolute path.
+    ok("select_deck", json!({ "deck_id": deck_id(&decks, "Maths") }));
+    let card = ok("next_card", json!({}));
+    let question = card["question"].as_str().unwrap();
+    assert!(question.contains("class=\"ankinx-math\"") && !question.contains("\\("), "{question}");
+    let answer = card["answer"].as_str().unwrap();
+    assert!(answer.contains("ankinx-math-display"), "{answer}");
+    let svgs = std::fs::read_dir(typing.join("cache/math")).unwrap().count();
+    assert!(svgs >= 2, "expected cached maths, found {svgs} files");
+    ok("answer", json!({ "ease": 3 }));
 
     // Image Occlusion: masks for the app to draw, image marked for the view.
     ok("select_deck", json!({ "deck_id": deck_id(&decks, "Occlusion") }));

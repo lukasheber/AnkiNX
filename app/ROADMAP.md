@@ -27,7 +27,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Image Occlusion (stock note type, Anki 23.10+) | ✅ | Masks drawn natively over the image (rect, ellipse, polygon, text) following `review.ts`; "occlude inactive"; X toggles masks on the answer. Verified in preview and host tests; needs an on-console check |
 | `[sound:...]`, replay buttons | ✅ | |
 | `{{tts ...}}` | ⬜ | See section 3 |
-| MathJax `\(...\)`, `\[...\]` | ⬜ | See section 3 and the JavaScript evaluation |
+| MathJax `\(...\)`, `\[...\]` | ✅ | Native: LaTeX → Typst (MiTeX) → SVG, cached in `/switch/ankinx/cache/math`, sized in `em` and on the text baseline (`switch/anki_switch_core/src/math.rs`). ~25 ms per new formula on PC; adds ~25 MB to the `.nro`. Needs an on-console check |
 | Template JavaScript | ⬜ | See the JavaScript evaluation |
 | CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables; flexbox partial; to audit against popular shared-deck styles |
 | Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
@@ -66,7 +66,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Audio MP3/OGG/Opus/WAV | ✅ | SDL2_mixer (built with mpg123, vorbisidec, opusfile, modplug) |
 | Audio M4A/AAC, ALAC, FLAC, WebM/MP4 audio | ✅ | FFmpeg fallback (decoders and demuxers confirmed in the Switch binary); needs an on-console listen |
 | TTS tags (`{{tts ...}}`) | ⬜ | No TTS engine on Horizon; options: skip (current) or an offline engine such as eSpeak NG |
-| MathJax (`\(...\)`, `\[...\]`) | ⬜ | See the JavaScript evaluation: native math renderer recommended |
+| MathJax (`\(...\)`, `\[...\]`) | ✅ | See the parity table: Typst instead of MicroTeX |
 | Card JavaScript in general | ⬜ | See below |
 | Font weights | 🔶 | Synthetic bold/italic; real weights would need bundled fonts (licence + size) |
 
@@ -86,7 +86,8 @@ situation (handheld/docked, touch, Joy-Cons, shared family consoles, no
 microphone). Scope stays review-only: no note editing. Priority: **P1** is
 expected by most users, **P2** is often requested, **P3** is nice to have.
 Current order of work: maths, then single Joy-Con and key bindings, then
-template JavaScript, then this list.
+template JavaScript, then this list, taken in groups of related features
+(those sharing screens or code) rather than by priority.
 
 ### In the reviewer
 
@@ -103,7 +104,6 @@ template JavaScript, then this list.
 | Audio options: autoplay on/off, replay question only, playback speed | P2 | |
 | Redo, multiple undo levels shown | P3 | Undo exists |
 | Rumble on answer (HD Rumble) | P3 | Light feedback when grading |
-| Text-to-speech for `{{tts}}` | P3 | Needs an offline engine (eSpeak NG); quality is limited |
 
 ### Around studying
 
@@ -114,8 +114,6 @@ template JavaScript, then this list.
 | Custom study and filtered decks (study ahead, forgotten cards, by tag, increase today's limit) | P1 | Already listed in section 1 |
 | Statistics: today (cards, time), forecast, review heatmap, retention | P2 | rslib graphs data; draw natively |
 | Multiple profiles, one per Switch user | P2 | Families share consoles; pick the profile from the Switch user selector (`/switch/ankinx/<user>/`) |
-| Import `.apkg`/`.colpkg` from the SD card | P2 | Shared decks without a PC or AnkiWeb; needs the Horizon-safe file handling used for backups |
-| Restore a backup from the app | P2 | Backups exist; restoring needs the SD card today |
 | Custom sync server (self-hosted Anki sync server) | P2 | The backend already accepts an endpoint at login; needs a settings field |
 | Read-only card browser (search, preview, suspend/flag from the list) | P3 | Search through rslib; no editing |
 | Deck list actions: collapse all, filter, show only decks with due cards | P3 | |
@@ -156,6 +154,6 @@ template JavaScript, then this list.
   (MicroTeX, C++, with a small NanoVG drawing backend) for Anki's `\(...\)` and
   `\[...\]` delimiters, rendered inline by the card view. Cards using Anki's
   `[latex]` images already work (SVG/PNG).
-- **Recommended order:** (1) hint fields natively ✅; (2) MathJax via MicroTeX;
+- **Recommended order:** (1) hint fields natively ✅; (2) MathJax natively ✅ (Typst via MiTeX, chosen over MicroTeX: complete and already rendering SVG);
   (3) QuickJS + minimal DOM, behind a per-note-type setting so a broken script
   can't break studying.

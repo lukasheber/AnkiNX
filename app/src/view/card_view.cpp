@@ -218,6 +218,10 @@ class NvgContainer : public document_container
             src.resize(src.size() - std::strlen(OCCLUDED_IMAGE));
         if (src.empty() || src.find("://") != std::string::npos || src.rfind("data:", 0) == 0)
             return {};
+        // Absolute: files the backend made, such as rendered maths (Anki media
+        // file names never contain '/').
+        if (src[0] == '/')
+            return fileExists(src) ? src : std::string();
         std::string path = mediaDir + "/" + src;
         if (fileExists(path))
             return path;
@@ -379,7 +383,10 @@ class NvgContainer : public document_container
         if (o.width.value() <= 0 || o.height.value() <= 0)
             return;
         nvgSave(vg);
-        nvgIntersectScissor(vg, c.x, c.y, c.width, c.height);
+        // litehtml clips inline images to the text line's height; a formula
+        // taller than the line (rendered maths, by absolute path) must not be.
+        if (url.empty() || url[0] != '/')
+            nvgIntersectScissor(vg, c.x, c.y, c.width, c.height);
         NVGpaint paint = nvgImagePattern(vg, o.x, o.y, o.width, o.height, 0, it->second.id, 1.0f);
         nvgBeginPath(vg);
         if (layer.repeat == background_repeat_no_repeat)

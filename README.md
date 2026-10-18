@@ -83,6 +83,9 @@ Third-party code and assets, under their own licences:
 | Patched crates (`switch/patches/`): libc, getrandom | MIT OR Apache-2.0 |
 | Patched crates: mio, tokio | MIT |
 | Patched crate: ring | Apache-2.0 AND ISC |
+| Patched crate: stacker | MIT OR Apache-2.0 |
+| Typst (maths layout), MiTeX (LaTeX to Typst; definitions in `switch/anki_switch_core/assets/mitex`) | Apache-2.0 |
+| New Computer Modern fonts (`switch/anki_switch_core/assets/fonts`) | GUST Font License (maths); GPL-3.0+ with font exception (text) |
 
 The Switch system fonts used by the desktop preview are Nintendo's. They are
 not part of this repository: `tools/fetch_frontend_deps.sh` copies them from

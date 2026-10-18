@@ -8,6 +8,13 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## Unreleased
+
+- Maths in cards (`\(...\)` inline, `\[...\]` display, as Anki's MathJax):
+  typeset natively with Typst (LaTeX converted by MiTeX), drawn as SVG on the
+  text baseline, cached on the SD card. The `.nro` grows to about 76 MB.
+- Footer shows "Toggle masks" for X on Image Occlusion answers.
+
 ## 0.2.0 (2026-10-17)
 
 First version verified on hardware for sync and study.
