@@ -35,11 +35,13 @@ use typst::World;
 use typst_layout::PagedDocument;
 
 /// Bump when the output changes, to invalidate cached SVGs.
-const RENDER_VERSION: u32 = 2;
+const RENDER_VERSION: u32 = 3;
 /// Typst text size for rendering. Large, so the SVG's intrinsic size is big
 /// enough for a sharp raster; the HTML scales it back with `em` sizes.
 const FONT_PT: f64 = 40.0;
-/// Space around the formula so glyph ink isn't clipped.
+/// Space around the formula so glyph ink isn't clipped. (Lines are sized by
+/// glyph bounds, not Typst's default cap-height-to-baseline, for the same
+/// reason: tall inline formulas were cropped.)
 const MARGIN_PT: f64 = 2.0;
 
 static FONTS: [&[u8]; 2] = [
@@ -172,7 +174,7 @@ impl MathRenderer {
             format!(
                 "#import \"mitex/mod.typ\": mitex-scope\n\
                  #set page(width: auto, height: auto, margin: {MARGIN_PT}pt, fill: none)\n\
-                 #set text(size: {FONT_PT}pt, fill: rgb(\"{color}\"))\n\
+                 #set text(size: {FONT_PT}pt, fill: rgb(\"{color}\"), top-edge: \"bounds\", bottom-edge: \"bounds\")\n\
                  #math.equation(block: {display}, eval(\"$\" + {code:?} + \"$\", scope: mitex-scope))\n"
             ),
         );
@@ -304,6 +306,18 @@ mod tests {
         let style = out.split("margin-bottom: -").nth(1).unwrap();
         let depth: f64 = style.split("em").next().unwrap().parse().unwrap();
         assert!(depth > 0.0 && depth < 1.0, "{depth}");
+    }
+
+    /// Inline formulas taller than a text line (an integral with limits) must
+    /// not be cut to the line's height: the line is sized by glyph bounds.
+    #[test]
+    fn tall_inline_maths_is_not_cropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut renderer = MathRenderer::new(dir.path().to_path_buf());
+        let tall = renderer.render(r"\int_0^\infty e^{-x^2}dx", false, "#000000").unwrap();
+        let flat = renderer.render(r"a + b", false, "#000000").unwrap();
+        assert!(tall.height > flat.height * 1.4, "tall {} vs flat {}", tall.height, flat.height);
+        assert!(tall.depth > 0.2, "limits reach below the baseline: {}", tall.depth);
     }
 
     #[test]
