@@ -32,6 +32,7 @@ class BrowserActivity : public brls::Activity
     brls::DetailCell* searchCell = nullptr;
     brls::Label* countLabel    = nullptr;
     brls::Box* results         = nullptr;
+    anki::json rowCards        = anki::json::array(); // what the rows show
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 };
 

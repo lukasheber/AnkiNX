@@ -107,7 +107,9 @@ void BrowserActivity::load()
             brls::sync([this, token, text] {
                 if (!*token)
                     return;
+                brls::Application::giveFocus(searchCell); // before deleting the rows
                 results->clearViews();
+                rowCards = anki::json::array();
                 countLabel->setText(text);
             });
         }
@@ -122,17 +124,31 @@ void BrowserActivity::fill(const anki::json& result)
     countLabel->setText(shown < total ? brls::getStr("ankinx/browser/count_some", std::to_string(shown),
                                                      std::to_string(total))
                                       : brls::getStr("ankinx/browser/count", std::to_string(total)));
+    // The same cards (back from a preview): update the rows in place. Deleting
+    // them would delete the focused one, which borealis still points to.
+    const anki::json& cards = result["cards"];
+    bool same               = cards.size() == rowCards.size();
+    for (size_t i = 0; same && i < cards.size(); i++)
+        same = cards[i]["card_id"] == rowCards[i]["card_id"];
+    rowCards = cards;
+    if (same)
+    {
+        for (size_t i = 0; i < cards.size(); i++)
+            ((brls::DetailCell*)results->getChildren()[i])->setDetailText(rowDetail(cards[i]));
+        return;
+    }
+    brls::Application::giveFocus(searchCell);
     results->clearViews();
-    for (const anki::json& card : result["cards"])
+    for (size_t i = 0; i < cards.size(); i++)
     {
         auto* row = new brls::DetailCell();
-        row->setText(card.value("text", ""));
-        row->setDetailText(rowDetail(card));
-        int64_t id     = card["card_id"].get<int64_t>();
-        int flag       = card.value("flag", 0);
-        bool suspended = card.value("suspended", false);
-        row->registerClickAction([id, flag, suspended](brls::View*) {
-            brls::Application::pushActivity(new PreviewActivity(id, flag, suspended));
+        row->setText(cards[i].value("text", ""));
+        row->setDetailText(rowDetail(cards[i]));
+        // The preview starts from the row's current flag and suspension.
+        row->registerClickAction([this, i](brls::View*) {
+            const anki::json& card = rowCards[i];
+            brls::Application::pushActivity(new PreviewActivity(card["card_id"].get<int64_t>(), card.value("flag", 0),
+                                                                card.value("suspended", false)));
             return true;
         });
         results->addView(row);

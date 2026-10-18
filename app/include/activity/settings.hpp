@@ -2,6 +2,8 @@
 
 #include <borealis.hpp>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "util/controls.hpp"
 
@@ -28,6 +30,8 @@ class SettingsActivity : public brls::Activity
     void captureButton(controls::Action action);
 
     brls::Box* bindingsBox = nullptr;
+    brls::Header* bindingsHeader = nullptr;
+    std::vector<std::pair<controls::Action, brls::DetailCell*>> bindingCells;
     // See ReviewerActivity: guards callbacks that outlive the screen.
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 

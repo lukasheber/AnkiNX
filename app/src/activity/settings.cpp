@@ -194,6 +194,9 @@ brls::View* SettingsActivity::controlsTab()
     });
     box->addView(grip);
 
+    // A new tab: new rows (the old ones went with the old tab).
+    bindingsHeader = nullptr;
+    bindingCells.clear();
     bindingsBox = new brls::Box(brls::Axis::COLUMN);
     box->addView(bindingsBox);
     fillBindings();
@@ -204,9 +207,18 @@ void SettingsActivity::fillBindings()
 {
     if (!bindingsBox)
         return;
-    bindingsBox->clearViews();
     controls::Layout layout = controls::activeLayout();
-    bindingsBox->addView(header("ankinx/controls/buttons"_i18n + ": " + layoutName(layout)));
+    // Built once, then updated in place: rebuilding would delete the focused
+    // row (and the reset row while its own action runs).
+    if (bindingsHeader)
+    {
+        bindingsHeader->setTitle("ankinx/controls/buttons"_i18n + ": " + layoutName(layout));
+        for (auto& [action, cell] : bindingCells)
+            cell->setDetailText(controls::glyph(controls::binding(layout, action)));
+        return;
+    }
+    bindingsHeader = header("ankinx/controls/buttons"_i18n + ": " + layoutName(layout));
+    bindingsBox->addView(bindingsHeader);
     for (controls::Action action : controls::allActions())
     {
         auto* cell = detail(brls::getStr(controls::actionName(action)),
@@ -215,11 +227,12 @@ void SettingsActivity::fillBindings()
             captureButton(action);
             return true;
         });
+        bindingCells.emplace_back(action, cell);
         bindingsBox->addView(cell);
     }
     auto* reset = detail("ankinx/controls/reset"_i18n, "");
-    reset->registerClickAction([this, layout](brls::View*) {
-        controls::resetBindings(layout);
+    reset->registerClickAction([this](brls::View*) {
+        controls::resetBindings(controls::activeLayout());
         fillBindings();
         brls::Application::notify("ankinx/controls/reset_done"_i18n);
         return true;

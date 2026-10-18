@@ -25,11 +25,13 @@ class DeckOptionsActivity : public brls::Activity
     void onContentAvailable() override;
 
   private:
-    // Fetch the options; build the list, or (rebuild false) refresh the shown
-    // values in place, keeping focus. The list is rebuilt anyway when FSRS
-    // changed, as its rows differ.
-    void load(bool rebuild);
+    // Fetch the options: build the list the first time, then update its rows
+    // in place (never rebuilt: that would delete the focused row).
+    void load();
     void fill(const anki::json& options);
+    void refresh(const anki::json& options);
+    // FSRS shows desired retention; SM-2 shows ease and multipliers.
+    void showSchedulerRows();
     // Send `values` (and/or fsrs) to the backend, then show what was saved.
     void apply(anki::json args);
 
@@ -46,6 +48,11 @@ class DeckOptionsActivity : public brls::Activity
     bool fsrs = false;
     // Value rows, to refresh in place: key -> (cell, shown with decimals).
     std::map<std::string, std::pair<brls::DetailCell*, bool>> details;
+    std::map<std::string, brls::BooleanCell*> toggles;
+    std::map<std::string, std::pair<brls::SelectorCell*, std::vector<std::string>>> choices;
+    brls::BooleanCell* fsrsCell = nullptr;
+    std::vector<brls::View*> fsrsRows, sm2Rows;
+    bool built = false;
     brls::AppletFrame* frame = nullptr;
     brls::ScrollingFrame* scroller = nullptr;
     brls::Box* list = nullptr;

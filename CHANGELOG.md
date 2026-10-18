@@ -42,6 +42,10 @@ build, then commit and tag (`git tag v0.2.0`).
 - Statistics: today's study, a 30-day forecast, a 26-week review heatmap,
   true retention and card counts, for a deck (R on its overview) or the
   whole collection (Settings > Statistics).
+- Fix: crash when going back from a card preview to the browser (the list
+  was rebuilt, deleting the row that still had focus). The same pattern is
+  removed from deck options (FSRS switch) and Settings > Controls (button
+  capture and reset): rows are now updated in place.
 - Translations: Portuguese (Brazil), Spanish and Japanese, following the
   console's language or Settings > About > Language.
 - Read-only card browser (L on the deck overview): any Anki search, the

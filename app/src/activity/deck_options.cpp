@@ -58,26 +58,22 @@ brls::View* DeckOptionsActivity::createContentView()
 void DeckOptionsActivity::onContentAvailable()
 {
     app::hideStatus(frame);
-    load(true);
+    load();
 }
 
-void DeckOptionsActivity::load(bool rebuild)
+void DeckOptionsActivity::load()
 {
-    brls::async([this, rebuild, token = alive, id = deckId] {
+    brls::async([this, token = alive, id = deckId] {
         try
         {
             anki::json options = anki::call("deck_options", { { "deck_id", id } });
-            brls::sync([this, rebuild, token, options] {
+            brls::sync([this, token, options] {
                 if (!*token)
                     return;
-                if (rebuild || options.value("fsrs", false) != fsrs)
-                {
+                if (built)
+                    refresh(options);
+                else
                     fill(options);
-                    return;
-                }
-                values = options["values"];
-                for (auto& [key, row] : details)
-                    row.first->setDetailText(formatValue(values[key], row.second));
             });
         }
         catch (const anki::Error& e)
@@ -95,8 +91,7 @@ void DeckOptionsActivity::fill(const anki::json& options)
 {
     values = options["values"];
     fsrs   = options.value("fsrs", false);
-    details.clear();
-    list->clearViews();
+    built  = true;
 
     // Which preset this is; a shared one changes other decks too.
     int decks = options.value("deck_count", 1);
@@ -155,19 +150,19 @@ void DeckOptionsActivity::fill(const anki::json& options)
     list->addView(header(t("advanced")));
     number(t("maximum_interval"), "maximum_review_interval", false);
     // FSRS is collection-wide in Anki; turning it on computes memory states.
-    auto* cell = new brls::BooleanCell();
-    cell->init(t("fsrs"), fsrs, [this](bool on) { apply({ { "fsrs", on } }); });
-    list->addView(cell);
-    if (fsrs)
-        number(t("desired_retention"), "desired_retention", true);
-    else
+    fsrsCell = new brls::BooleanCell();
+    fsrsCell->init(t("fsrs"), fsrs, [this](bool on) { apply({ { "fsrs", on } }); });
+    list->addView(fsrsCell);
+    // Both sets of rows exist; FSRS shows one or the other (rebuilding the
+    // list would delete the focused row).
+    number(t("desired_retention"), "desired_retention", true);
+    fsrsRows.push_back(list->getChildren().back());
+    for (const char* key : { "starting_ease", "easy_bonus", "interval_modifier", "hard_interval", "new_interval" })
     {
-        number(t("starting_ease"), "starting_ease", true);
-        number(t("easy_bonus"), "easy_bonus", true);
-        number(t("interval_modifier"), "interval_modifier", true);
-        number(t("hard_interval"), "hard_interval", true);
-        number(t("new_interval"), "new_interval", true);
+        number(t(key), key, true);
+        sm2Rows.push_back(list->getChildren().back());
     }
+    showSchedulerRows();
     // The list arrives after the screen did: focus its first row.
     if (brls::Application::getActivitiesStack().back() == this)
         brls::Application::giveFocus(list);
@@ -223,6 +218,7 @@ void DeckOptionsActivity::choice(const std::string& title, const std::string& ke
         if (index >= 0 && index < (int)options.size())
             apply({ { "values", { { key, options[index] } } } });
     });
+    choices[key] = { cell, options };
     list->addView(cell);
 }
 
@@ -230,7 +226,34 @@ void DeckOptionsActivity::toggle(const std::string& title, const std::string& ke
 {
     auto* cell = new brls::BooleanCell();
     cell->init(title, values.value(key, false), [this, key](bool on) { apply({ { "values", { { key, on } } } }); });
+    toggles[key] = cell;
     list->addView(cell);
+}
+
+void DeckOptionsActivity::showSchedulerRows()
+{
+    for (brls::View* row : fsrsRows)
+        row->setVisibility(fsrs ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    for (brls::View* row : sm2Rows)
+        row->setVisibility(fsrs ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+}
+
+// Every row shows what the backend saved (a refused change goes back too);
+// rows are updated, not rebuilt, so the focused one stays.
+void DeckOptionsActivity::refresh(const anki::json& options)
+{
+    values = options["values"];
+    fsrs   = options.value("fsrs", false);
+    for (auto& [key, row] : details)
+        row.first->setDetailText(formatValue(values[key], row.second));
+    for (auto& [key, cell] : toggles)
+        cell->setOn(values.value(key, false), false);
+    for (auto& [key, choice] : choices)
+        for (size_t i = 0; i < choice.second.size(); i++)
+            if (values.value(key, "") == choice.second[i])
+                choice.first->setSelection((int)i, true);
+    fsrsCell->setOn(fsrs, false);
+    showSchedulerRows();
 }
 
 // Rows show the backend's values: after a change, the saved values are shown
@@ -253,7 +276,7 @@ void DeckOptionsActivity::apply(anki::json args)
                 return;
             if (!error.empty())
                 brls::Application::notify(error);
-            load(!error.empty());
+            load();
         });
     });
 }
