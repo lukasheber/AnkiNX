@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <functional>
 #include <gumbo.h>
 
@@ -61,7 +62,26 @@ std::string tagName(const GumboElement& element)
         return gumbo_normalized_tagname(element.tag);
     GumboStringPiece piece = element.original_tag;
     gumbo_tag_from_original_text(&piece);
+    // SVG names are case-sensitive: linearGradient, clipPath, foreignObject.
+    if (element.tag_namespace == GUMBO_NAMESPACE_SVG)
+        if (const char* svg = gumbo_normalize_svg_tagname(&piece))
+            return svg;
     return lower(std::string(piece.data, piece.length));
+}
+
+// HTML attribute names are lowercased; SVG ones keep gumbo's adjusted case
+// (viewBox) and their namespace prefix (xlink:href, xml:space).
+std::string attributeName(const GumboElement& element, const GumboAttribute& a)
+{
+    switch (a.attr_namespace)
+    {
+        case GUMBO_ATTR_NAMESPACE_XLINK: return std::string("xlink:") + a.name;
+        case GUMBO_ATTR_NAMESPACE_XML: return std::string("xml:") + a.name;
+        case GUMBO_ATTR_NAMESPACE_XMLNS:
+            return std::string(a.name) == "xmlns" ? "xmlns" : std::string("xmlns:") + a.name;
+        default: break;
+    }
+    return element.tag_namespace == GUMBO_NAMESPACE_HTML ? lower(a.name) : std::string(a.name);
 }
 
 NodePtr convert(const GumboNode* source)
@@ -78,7 +98,7 @@ NodePtr convert(const GumboNode* source)
             for (unsigned i = 0; i < element.attributes.length; i++)
             {
                 auto* a = (const GumboAttribute*)element.attributes.data[i];
-                node->attrs.emplace_back(lower(a->name), a->value);
+                node->attrs.emplace_back(attributeName(element, *a), a->value);
             }
             for (unsigned i = 0; i < element.children.length; i++)
                 if (NodePtr child = convert((const GumboNode*)element.children.data[i]))
@@ -295,15 +315,24 @@ std::string escape(const std::string& s, bool attribute)
 {
     std::string out;
     out.reserve(s.size());
-    for (char c : s)
+    for (size_t i = 0; i < s.size(); i++)
     {
+        char c = s[i];
         switch (c)
         {
             case '&': out += "&amp;"; break;
             case '<': out += attribute ? "<" : "&lt;"; break;
             case '>': out += attribute ? ">" : "&gt;"; break;
             case '"': out += attribute ? "&quot;" : "\""; break;
-            case '\xa0': out += "&nbsp;"; break;
+            case '\xc2': // U+00A0 is C2 A0 in UTF-8; A0 alone continues other characters
+                if (i + 1 < s.size() && s[i + 1] == '\xa0')
+                {
+                    out += "&nbsp;";
+                    i++;
+                    break;
+                }
+                out += c;
+                break;
             default: out += c;
         }
     }
@@ -374,12 +403,46 @@ struct Simple
         Attr,
         FirstChild,
         LastChild,
+        NthChild,  // :nth-child(an+b), :first-child etc. use a/b
+        NthOfType, // :nth-of-type(an+b), :first-of-type, :last-of-type (from the end)
+        Checked,   // :checked (the checked attribute)
+        Empty,     // :empty
         Not,
         Invalid,
     } kind;
     std::string name, op, value;
     std::vector<Simple> inner; // :not(...)
+    int a = 0, b = 0;          // an+b
+    bool fromEnd = false;
 };
+
+// "an+b", "odd", "even" or a number: (a, b). False if unparsable.
+bool parseNth(std::string text, int& a, int& b)
+{
+    text.erase(std::remove_if(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c); }), text.end());
+    if (text == "odd")
+    {
+        a = 2, b = 1;
+        return true;
+    }
+    if (text == "even")
+    {
+        a = 2, b = 0;
+        return true;
+    }
+    size_t npos = text.find('n');
+    char* end   = nullptr;
+    if (npos == std::string::npos)
+    {
+        a = 0;
+        b = (int)std::strtol(text.c_str(), &end, 10);
+        return !text.empty() && *end == 0;
+    }
+    std::string as = text.substr(0, npos), bs = text.substr(npos + 1);
+    a = as.empty() || as == "+" ? 1 : as == "-" ? -1 : (int)std::strtol(as.c_str(), &end, 10);
+    b = bs.empty() ? 0 : (int)std::strtol(bs.c_str(), &end, 10);
+    return true;
+}
 
 struct Compound
 {
@@ -471,6 +534,29 @@ struct Parser
                 out = { Simple::Kind::FirstChild };
             else if (name == "last-child")
                 out = { Simple::Kind::LastChild };
+            else if (name == "first-of-type" || name == "last-of-type")
+            {
+                out         = { Simple::Kind::NthOfType };
+                out.b       = 1;
+                out.fromEnd = name == "last-of-type";
+            }
+            else if (name == "checked")
+                out = { Simple::Kind::Checked };
+            else if (name == "empty")
+                out = { Simple::Kind::Empty };
+            else if ((name == "nth-child" || name == "nth-of-type" || name == "nth-last-child" ||
+                      name == "nth-last-of-type") &&
+                     peek() == '(')
+            {
+                size_t close = s.find(')', i);
+                if (close == std::string::npos)
+                    return false;
+                out = { name.find("of-type") != std::string::npos ? Simple::Kind::NthOfType : Simple::Kind::NthChild };
+                out.fromEnd = name.find("last") != std::string::npos;
+                if (!parseNth(s.substr(i + 1, close - i - 1), out.a, out.b))
+                    return false;
+                i = close + 1;
+            }
             else if (name == "not" && peek() == '(')
             {
                 i++;
@@ -623,6 +709,26 @@ bool matchSimple(const NodePtr& el, const Simple& s)
         }
         case Simple::Kind::FirstChild: return !elementSibling(el, -1);
         case Simple::Kind::LastChild: return !elementSibling(el, 1);
+        case Simple::Kind::NthChild:
+        case Simple::Kind::NthOfType:
+        {
+            // 1-based position among element siblings (of the same type).
+            bool ofType = s.kind == Simple::Kind::NthOfType;
+            int index   = 1;
+            for (NodePtr x = elementSibling(el, s.fromEnd ? 1 : -1); x; x = elementSibling(x, s.fromEnd ? 1 : -1))
+                if (!ofType || x->tag == el->tag)
+                    index++;
+            if (s.a == 0)
+                return index == s.b;
+            int n = index - s.b;
+            return n % s.a == 0 && n / s.a >= 0;
+        }
+        case Simple::Kind::Checked: return el->attr("checked") != nullptr;
+        case Simple::Kind::Empty:
+            for (const NodePtr& c : el->children)
+                if (c->isElement() || (c->type == Node::Type::Text && !c->text.empty()))
+                    return false;
+            return true;
         case Simple::Kind::Not:
             for (const Simple& inner : s.inner)
                 if (!matchSimple(el, inner))

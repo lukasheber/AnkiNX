@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -50,6 +51,45 @@ std::string readFile(const std::string& path)
 {
     std::ifstream in(path, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(in), {});
+}
+
+// Payload of a "data:[<type>][;base64],<data>" URI; empty if malformed.
+std::string decodeDataUri(const std::string& uri)
+{
+    size_t comma = uri.find(',');
+    if (uri.rfind("data:", 0) != 0 || comma == std::string::npos)
+        return {};
+    std::string meta    = uri.substr(5, comma - 5);
+    std::string payload = uri.substr(comma + 1);
+    std::transform(meta.begin(), meta.end(), meta.begin(), ::tolower);
+    if (meta.size() < 7 || meta.compare(meta.size() - 7, 7, ";base64") != 0)
+        return urlDecode(payload);
+
+    auto value = [](char c) -> int {
+        if (c >= 'A' && c <= 'Z') return c - 'A';
+        if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+        if (c >= '0' && c <= '9') return c - '0' + 52;
+        if (c == '+' || c == '-') return 62;
+        if (c == '/' || c == '_') return 63;
+        return -1;
+    };
+    std::string out;
+    uint32_t bits = 0;
+    int count     = 0;
+    for (char c : urlDecode(payload))
+    {
+        int v = value(c);
+        if (v < 0)
+            continue; // padding, whitespace
+        bits = (bits << 6) | (uint32_t)v;
+        count += 6;
+        if (count >= 8)
+        {
+            count -= 8;
+            out += (char)((bits >> count) & 0xff);
+        }
+    }
+    return out;
 }
 
 bool isWebp(const std::string& data)
@@ -157,10 +197,10 @@ class NvgContainer : public document_container
 
     // PNG, JPEG, GIF (first frame), BMP via NanoVG's stb_image; WebP via
     // libwebp; SVG (including Anki's LaTeX SVGs) via lunasvg.
-    Image decodeImage(const std::string& path)
+    // `path` is only used to recognise SVG by extension.
+    Image decodeImage(const std::string& path, const std::string& data)
     {
         Image img;
-        std::string data = readFile(path);
         if (data.empty())
             return img;
         if (isWebp(data))
@@ -358,8 +398,20 @@ class NvgContainer : public document_container
     {
         if (images.count(src))
             return;
+        if (!vg)
+        {
+            images[src] = Image();
+            return;
+        }
+        if (std::strncmp(src, "data:", 5) == 0)
+        {
+            std::string uri = src;
+            bool svg        = uri.rfind("data:image/svg", 0) == 0;
+            images[src]     = decodeImage(svg ? "inline.svg" : "inline", decodeDataUri(uri));
+            return;
+        }
         std::string path = resolve(src);
-        images[src]      = (!path.empty() && vg) ? decodeImage(path) : Image();
+        images[src]      = path.empty() ? Image() : decodeImage(path, readFile(path));
     }
 
     void get_image_size(const char* src, const char*, size& sz) override

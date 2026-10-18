@@ -46,6 +46,9 @@ class CardScript
     // Timers scripts started since the last call: (id, delay in ms).
     std::vector<std::pair<int, int>> takeTimers();
     void fireTimer(int id);
+    // Commands scripts sent to the reviewer since the last call, as Anki
+    // desktop's pycmd(): "ans" (show the answer), "ease1".."ease4".
+    std::vector<std::string> takeCommands();
 
     // Last error message, for the log and diagnostics.
     const std::string& lastError() const { return error; }

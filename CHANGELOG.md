@@ -21,6 +21,14 @@ build, then commit and tag (`git tag v0.2.0`).
 - JavaScript in card templates (QuickJS-ng with a small DOM): scripts run on
   load, onclick and listeners on tap, timers, state kept from question to
   answer as in Anki. Can be turned off in Settings > Study.
+- Card scripts written for jQuery work without it (a built-in subset of
+  jQuery), as do `pycmd("ans")` / `pycmd("ease3")`, checkbox and radio taps,
+  `<label>` taps and more selectors (`:nth-of-type`, `:checked`, ...).
+  Tested with a shared multiple-choice note type.
+- Inline `<svg>` in cards, and `data:` image URIs (such as SVG icons in CSS
+  backgrounds), are drawn.
+- Fix: script-edited cards no longer garble characters whose UTF-8 encoding
+  contains byte A0 (such as "à" or Persian letters).
 
 ## 0.2.0 (2026-10-17)
 

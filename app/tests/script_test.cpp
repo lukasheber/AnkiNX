@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "script/card_script.hpp"
 
@@ -36,6 +38,40 @@ int serialOf(const std::string& html, const std::string& marker)
         return -1;
     size_t s = html.find("data-ankinx-node=\"", at);
     return s == std::string::npos ? -1 : std::atoi(html.c_str() + s + 18);
+}
+
+std::string readFixture(const std::string& name)
+{
+    std::ifstream in("tests/fixtures/" + name);
+    return std::string(std::istreambuf_iterator<char>(in), {});
+}
+
+void replaceAll(std::string& s, const std::string& from, const std::string& to)
+{
+    for (size_t at = s.find(from); at != std::string::npos; at = s.find(from, at + to.size()))
+        s.replace(at, from.size(), to);
+}
+
+// Minimal Anki template rendering: {{#f}}..{{/f}} sections and {{f}}.
+std::string render(std::string tmpl, const std::vector<std::pair<std::string, std::string>>& fields)
+{
+    for (const auto& [name, value] : fields)
+    {
+        std::string open = "{{#" + name + "}}", close = "{{/" + name + "}}";
+        for (size_t at = tmpl.find(open); at != std::string::npos; at = tmpl.find(open, at))
+        {
+            size_t end = tmpl.find(close, at);
+            if (value.empty())
+                tmpl.erase(at, end + close.size() - at);
+            else
+            {
+                tmpl.erase(end, close.size());
+                tmpl.erase(at, open.size());
+            }
+        }
+        replaceAll(tmpl, "{{" + name + "}}", value);
+    }
+    return tmpl;
 }
 
 } // namespace
@@ -141,6 +177,102 @@ int main(int argc, char** argv)
                "document.getElementById('d').textContent += '+shown');</script>",
                "card");
         check(has(s.html(), ">loaded+shown<"), "DOMContentLoaded and onShownHook", s.html());
+    }
+    {
+        // A user's multiple-choice note type (jQuery, anki-persistence).
+        std::vector<std::pair<std::string, std::string>> fields = {
+            { "Question", "Capital of France?" }, { "option_1 (A)", "Berlin" }, { "option_2 (B)", "Paris" },
+            { "option_3 (C)", "Rome" },           { "option_4 (D)", "" },       { "option_5 (E)", "" },
+            { "option_6 (F)", "" },               { "option_7 (G)", "" },       { "option_8 (H)", "" },
+            { "Ans", "B" },                       { "Explanation", "Paris is the capital." },
+        };
+        std::string front = render(readFixture("mcq_front.html"), fields);
+        std::string back  = render(readFixture("mcq_back.html"), fields);
+        check(!front.empty() && !back.empty(), "MCQ fixtures load");
+
+        CardScript s(prelude, ".");
+        s.show(front, "card card1");
+        std::string html = s.html();
+        check(s.lastError().empty(), "MCQ front runs without errors", s.lastError());
+        check(has(html, ">(A)&nbsp;</span>Berlin"), "MCQ front prefixes option letters", html);
+        check(!has(html, "id=\"D\""), "MCQ front has only the filled options");
+
+        bool handled = s.click(serialOf(html, "class=\"container\" id=\"B\""));
+        html         = s.html();
+        size_t b     = html.find("id=\"B\"");
+        check(handled && has(html, "class=\"container check\" id=\"B\""), "MCQ tap marks the option", html);
+        check(b != std::string::npos && html.find("checked", b) < html.find("</div>", b),
+              "MCQ tap checks the option's checkbox", html.substr(b == std::string::npos ? 0 : b, 200));
+
+        auto timers = s.takeTimers();
+        for (const auto& timer : timers)
+            s.fireTimer(timer.first);
+        auto commands = s.takeCommands();
+        check(commands.size() == 1 && commands[0] == "ans", "MCQ tap flips to the answer via pycmd",
+              std::to_string(commands.size()));
+
+        s.show(back, "card card1");
+        html = s.html();
+        check(s.lastError().empty(), "MCQ back runs without errors", s.lastError());
+        size_t right = html.find("id=\"B\"");
+        check(right != std::string::npos && has(html, "class=\"option true\"") &&
+                  html.find("class=\"option true\"") > right && has(html.substr(right, 400), "<svg"),
+              "MCQ back marks the right answer", html);
+        size_t extra = html.find("id=\"extra-header\"");
+        int header   = serialOf(html, "id=\"extra-header\"");
+        s.click(header);
+        html = s.html();
+        check(extra != std::string::npos && has(html, "id=\"extra\" class=\"content\"") &&
+                  has(html.substr(html.find("id=\"extra\"") - 60, 120), "display: none"),
+              "MCQ explanation toggles", html.substr(html.find("id=\"extra\"") - 60, 200));
+
+        // Tapping the "Auto submit" label unticks its switch: a tap then
+        // only marks the option.
+        CardScript t(prelude, ".");
+        t.show(front, "card card1");
+        html = t.html();
+        t.click(serialOf(html, "for=\"Auto_submit\""));
+        html     = t.html();
+        size_t a = html.find("id=\"Auto_submit\"");
+        check(a != std::string::npos && html.find("checked", a) > html.find(">", a), "MCQ label toggles its checkbox",
+              html.substr(a == std::string::npos ? 0 : a, 80));
+        t.click(serialOf(html, "class=\"container\" id=\"A\""));
+        for (const auto& timer : t.takeTimers())
+            t.fireTimer(timer.first);
+        html = t.html();
+        check(t.takeCommands().empty() && has(html, "class=\"container check\" id=\"A\""),
+              "MCQ without auto submit stays on the question");
+        t.click(serialOf(html, "for=\"Auto_submit\"")); // restore the stored setting
+    }
+    {
+        CardScript s(prelude, ".");
+        s.show("<input type=\"radio\" name=\"r\" id=\"x\" checked><input type=\"radio\" name=\"r\" id=\"y\">"
+               "<input type=\"checkbox\" id=\"c\" onclick=\"event.preventDefault()\">",
+               "card");
+        std::string html = s.html();
+        s.click(serialOf(html, "id=\"y\""));
+        s.click(serialOf(html, "id=\"c\""));
+        html = s.html();
+        check(has(html, "id=\"x\" data") && has(html, "id=\"y\" checked") && has(html, "id=\"c\" onclick"),
+              "radio groups and cancelled checkbox clicks", html);
+    }
+    {
+        CardScript s(prelude, ".");
+        s.show("<p id=\"u\"></p><script>document.getElementById('u').textContent = 'à é سلام';</script>", "card");
+        check(has(s.html(), ">à&nbsp;é سلام<"), "non-ASCII text survives serialisation", s.html());
+    }
+    {
+        CardScript s(prelude, ".");
+        s.show("<div id=\"i\"></div><script>document.getElementById('i').innerHTML = \"<svg "
+               "xmlns:xlink='http://www.w3.org/1999/xlink' viewBox='0 0 9 9' xml:space='preserve'>"
+               "<linearGradient id='g'></linearGradient><use xlink:href='#g'/></svg>\";"
+               "document.getElementById('i').firstChild.setAttribute('preserveAspectRatio', 'none');</script>",
+               "card");
+        std::string html = s.html();
+        check(has(html, "xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 9 9\" xml:space=\"preserve\"") &&
+                  has(html, "<linearGradient") && has(html, "xlink:href=\"#g\"") &&
+                  has(html, "preserveAspectRatio=\"none\""),
+              "SVG names keep their case and namespace prefixes", html);
     }
     check(CardScript::wanted("<b onclick=\"x()\">a</b>") && CardScript::wanted("<script>1</script>") &&
               !CardScript::wanted("<p>plain, with \"on\" = text</p>"),

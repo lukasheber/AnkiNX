@@ -25,6 +25,23 @@ fn main() {
         "{{FrontSide}}<hr id=answer>{{Back}}",
     )];
     col.add_notetype(&mut hinted, false).unwrap();
+    // A user's multiple-choice note type: jQuery, anki-persistence, inline
+    // SVG and a data: URI checkbox tick (app/tests/fixtures).
+    let mut mcq = (*basic).clone();
+    mcq.id = anki::prelude::NotetypeId(0);
+    mcq.name = "MCQ".into();
+    mcq.fields = ["Question", "option_1 (A)", "option_2 (B)", "option_3 (C)", "option_4 (D)", "option_5 (E)",
+        "option_6 (F)", "option_7 (G)", "option_8 (H)", "Ans", "Explanation"]
+        .into_iter()
+        .map(anki::notetype::NoteField::new)
+        .collect();
+    mcq.templates = vec![anki::notetype::CardTemplate::new(
+        "Card 1",
+        include_str!("../../../app/tests/fixtures/mcq_front.html"),
+        include_str!("../../../app/tests/fixtures/mcq_back.html"),
+    )];
+    mcq.config.css = include_str!("../../../app/tests/fixtures/mcq.css").into();
+    col.add_notetype(&mut mcq, false).unwrap();
     // ANKINX_SAMPLE_ONLY=<deck>: only that deck, for screenshots of one card type.
     let only = std::env::var("ANKINX_SAMPLE_ONLY").ok();
     let wanted = |deck: &str| only.as_deref().map_or(true, |o| deck.starts_with(o));
@@ -98,6 +115,12 @@ fn main() {
              <script>window.pick = 1 + Math.floor(Math.random() * 6);</script>",
             "Tokyo. You rolled <b id=\"r\"></b>.<script>document.getElementById('r').textContent = window.pick;</script>",
         ],
+    );
+    add(
+        "Scripts::Multiple choice",
+        &mcq,
+        &["Which of these is the capital of Australia?", "Sydney", "Canberra", "Melbourne", "Perth", "", "",
+            "", "", "B", "Canberra was purpose-built as a compromise between Sydney and Melbourne."],
     );
     // {{type:Back}}: an answer box on the question, a comparison on the answer.
     add("Typing", &typing, &["あ (romaji)", "a"]);

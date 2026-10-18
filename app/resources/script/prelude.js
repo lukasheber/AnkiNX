@@ -48,10 +48,16 @@ def("innerHTML", function () { return n.html(this); }, function (v) { n.setHtml(
 def("outerHTML", function () { return n.outer(this); });
 def("isConnected", function () { for (let x = this; x; x = n.parent(x)) if (x === n.body()) return true; return false; });
 
-method("getAttribute", function (name) { return n.getAttr(this, String(name).toLowerCase()); });
-method("setAttribute", function (name, value) { n.setAttr(this, String(name).toLowerCase(), String(value)); });
-method("removeAttribute", function (name) { n.removeAttr(this, String(name).toLowerCase()); });
-method("hasAttribute", function (name) { return n.getAttr(this, String(name).toLowerCase()) !== null; });
+// HTML attribute names are case-insensitive; SVG ones (viewBox) are not.
+function attrName(el, name) {
+    name = String(name);
+    for (let x = el; x && x.nodeType === 1; x = n.parent(x)) if (n.tagName(x) === "svg") return name;
+    return name.toLowerCase();
+}
+method("getAttribute", function (name) { return n.getAttr(this, attrName(this, name)); });
+method("setAttribute", function (name, value) { n.setAttr(this, attrName(this, name), String(value)); });
+method("removeAttribute", function (name) { n.removeAttr(this, attrName(this, name)); });
+method("hasAttribute", function (name) { return n.getAttr(this, attrName(this, name)) !== null; });
 method("toggleAttribute", function (name, force) {
     const has = this.hasAttribute(name);
     const want = force === undefined ? !has : !!force;
@@ -230,7 +236,8 @@ function dispatch(target, type, init) {
     event.preventDefault = () => { event.defaultPrevented = true; };
     event.stopPropagation = () => { stopped = true; };
     event.stopImmediatePropagation = () => { stopped = true; };
-    let handled = false;
+    const undo = type === "click" && target !== doc && target !== globalThis ? toggleFor(target) : null;
+    let handled = !!undo;
     // Element ancestors, then document and window.
     const path = [];
     if (target === doc || target === globalThis) path.push(target);
@@ -255,7 +262,48 @@ function dispatch(target, type, init) {
             }
         }
     }
+    if (undo) {
+        if (event.defaultPrevented) undo();
+        else { dispatch(target, "input"); dispatch(target, "change"); }
+    }
+    if (type === "click" && !event.defaultPrevented) {
+        const control = labelControl(target);
+        if (control) { dispatch(control, "click"); handled = true; }
+    }
     return handled;
+}
+
+// Click activation as in browsers: a checkbox or radio toggles before the
+// handlers run (undone if one cancels the click), and a label passes the
+// click on to its control.
+function toggleFor(target) {
+    if (target.nodeType !== 1 || n.tagName(target) !== "input") return null;
+    const type = (n.getAttr(target, "type") || "").toLowerCase();
+    if (type === "checkbox") {
+        const was = target.checked;
+        target.checked = !was;
+        return () => { target.checked = was; };
+    }
+    if (type === "radio" && !target.checked) {
+        const name = n.getAttr(target, "name");
+        const group = name ? [...doc.querySelectorAll("input[type=radio]")].filter(r => n.getAttr(r, "name") === name) : [];
+        const before = group.filter(r => r.checked);
+        before.forEach(r => { r.checked = false; });
+        target.checked = true;
+        return () => { target.checked = false; before.forEach(r => { r.checked = true; }); };
+    }
+    return null;
+}
+function labelControl(target) {
+    for (let x = target; x && x.nodeType === 1; x = n.parent(x)) {
+        const tag = n.tagName(x);
+        if (["input", "button", "select", "textarea", "a"].includes(tag)) return null;
+        if (tag === "label") {
+            const id = n.getAttr(x, "for");
+            return id ? doc.getElementById(id) : n.query(x, "input, select, textarea, button");
+        }
+    }
+    return null;
 }
 
 // --- document and window -------------------------------------------------
@@ -345,7 +393,14 @@ globalThis.sessionStorage = storage("session");
 // Hooks templates register to run when the card is shown.
 globalThis.onUpdateHook = [];
 globalThis.onShownHook = [];
-globalThis.pycmd = () => {};
+// Anki desktop's bridge: "ans" shows the answer, "ease1".."ease4" grade
+// (templates with auto-submit use it). Other commands are ignored.
+globalThis.pycmd = cmd => { n.command(String(cmd)); return false; };
+// No text selection on a console; enough for templates that look at it.
+globalThis.getSelection = () => ({
+    toString() { return ""; }, rangeCount: 0, removeAllRanges() {}, addRange() {},
+    getRangeAt() { return { surroundContents() {}, toString() { return ""; } }; },
+});
 // Anki's Image Occlusion template calls this; the app draws the masks itself
 // (without it, the template's catch block shows "Error loading image occlusion").
 globalThis.anki = { imageOcclusion: { setup() {}, drawShape() {} } };
@@ -355,6 +410,273 @@ globalThis.MathJax = {
     startup: { promise: Promise.resolve(), document: { state() {} } },
     config: {},
 };
+
+// --- jQuery ------------------------------------------------------------------
+// Anki desktop and AnkiDroid load jQuery into every card page, and many
+// templates use $ without loading it. This is a compatible subset of what
+// templates use, on this DOM (full jQuery expects a real browser). A card that
+// loads its own jQuery replaces it.
+(function () {
+    const BOOLEAN_ATTRS = ["checked", "selected", "disabled", "readonly", "multiple", "hidden", "required"];
+    const PX_PROPS = /^(width|height|min-width|max-width|min-height|max-height|top|left|right|bottom|font-size|line-height|margin.*|padding.*|border.*-width)$/;
+    const readyQueue = [];
+    let loaded = false;
+
+    function nodesFrom(sel, ctx) {
+        if (sel == null || sel === "") return [];
+        if (sel instanceof JQ) return sel.toArray();
+        if (typeof sel === "string") {
+            const s = sel.trim();
+            if (s.startsWith("<")) return n.parse(s).filter(x => x.nodeType === 1);
+            const roots = ctx ? nodesFrom(ctx).map(r => (r === document || r === window ? n.body() : r)) : [n.body()];
+            const out = [];
+            for (const root of roots) for (const el of query(root, s)) if (!out.includes(el)) out.push(el);
+            return out;
+        }
+        if (sel === document || sel === window || sel.nodeType) return [sel];
+        if (typeof sel.length === "number") return Array.from(sel);
+        return [];
+    }
+    // jQuery-only selector suffixes: :visible, :hidden, :first, :last.
+    function query(root, s) {
+        const m = s.match(/^(.*?):(visible|hidden|first|last)$/);
+        if (!m) return root === document ? [] : n.queryAll(root, s);
+        let list = n.queryAll(root, m[1] || "*");
+        if (m[2] === "visible") list = list.filter(visible);
+        if (m[2] === "hidden") list = list.filter(e => !visible(e));
+        if (m[2] === "first") list = list.slice(0, 1);
+        if (m[2] === "last") list = list.slice(-1);
+        return list;
+    }
+    function visible(el) {
+        for (let x = el; x && x.nodeType === 1; x = n.parent(x))
+            if (x.style.display === "none" || x.hasAttribute("hidden")) return false;
+        return true;
+    }
+    function content(value) {
+        if (value instanceof JQ) return value.toArray();
+        if (typeof value === "string") return value.trim().startsWith("<") ? n.parse(value) : [document.createTextNode(value)];
+        if (value && value.nodeType) return [value];
+        if (Array.isArray(value)) return value.flatMap(content);
+        return value == null ? [] : [document.createTextNode(String(value))];
+    }
+
+    class JQ {
+        constructor(sel, ctx) {
+            if (typeof sel === "function") {
+                if (loaded) setTimeout(sel, 0); else readyQueue.push(sel);
+                sel = document;
+            }
+            const list = nodesFrom(sel, ctx);
+            list.forEach((x, i) => { this[i] = x; });
+            this.length = list.length;
+        }
+        toArray() { return Array.prototype.slice.call(this, 0, this.length); }
+        get(i) { return i === undefined ? this.toArray() : this[i < 0 ? this.length + i : i]; }
+        each(fn) { this.toArray().forEach((el, i) => fn.call(el, i, el)); return this; }
+        map(fn) { return $(this.toArray().map((el, i) => fn.call(el, i, el))); }
+        eq(i) { return $(this.get(i)); }
+        first() { return this.eq(0); }
+        last() { return this.eq(-1); }
+        index(el) { if (el === undefined) { const p = this[0] && n.parent(this[0]); return p ? n.children(p).filter(x => x.nodeType === 1).indexOf(this[0]) : -1; } return this.toArray().indexOf(el instanceof JQ ? el[0] : el); }
+        find(s) { return $(this.toArray().flatMap(el => el === document || el === window ? query(n.body(), s) : el.nodeType === 1 ? query(el, s) : [])); }
+        filter(s) { return $(this.toArray().filter((el, i) => typeof s === "function" ? s.call(el, i, el) : $(el).is(s))); }
+        not(s) { return $(this.toArray().filter(el => !$(el).is(s))); }
+        is(s) {
+            if (typeof s !== "string") return this.toArray().some(el => nodesFrom(s).includes(el));
+            return this.toArray().some(el => {
+                if (s === ":checked") return el.hasAttribute && el.hasAttribute("checked");
+                if (s === ":visible") return visible(el);
+                if (s === ":hidden") return !visible(el);
+                return el.nodeType === 1 && n.matches(el, s);
+            });
+        }
+        has(s) { return this.filter(function () { return $(this).find(s).length > 0; }); }
+        parent(s) { return $(this.toArray().map(el => n.parent(el)).filter(p => p && p.nodeType === 1 && (!s || n.matches(p, s)))); }
+        parents(s) { const out = []; this.each(function () { for (let p = n.parent(this); p && p.nodeType === 1; p = n.parent(p)) if (!s || n.matches(p, s)) out.push(p); }); return $(out); }
+        closest(s) { return $(this.toArray().map(el => el.closest ? el.closest(s) : null).filter(Boolean)); }
+        children(s) { return $(this.toArray().flatMap(el => el.children || []).filter(c => !s || n.matches(c, s))); }
+        siblings(s) { return $(this.toArray().flatMap(el => { const p = n.parent(el); return p ? p.children.filter(c => c !== el && (!s || n.matches(c, s))) : []; })); }
+        next(s) { return $(this.toArray().map(el => el.nextElementSibling).filter(x => x && (!s || n.matches(x, s)))); }
+        prev(s) { return $(this.toArray().map(el => el.previousElementSibling).filter(x => x && (!s || n.matches(x, s)))); }
+        add(s) { return $(this.toArray().concat(nodesFrom(s))); }
+
+        // Events
+        on(events, selector, handler) {
+            if (typeof selector === "function") { handler = selector; selector = null; }
+            if (!handler) return this;
+            for (const type of String(events).split(/\s+/).filter(Boolean)) {
+                const name = type.split(".")[0];
+                this.each(function () {
+                    const el = this;
+                    const wrapped = selector
+                        ? function (e) { const t = e.target && e.target.closest ? e.target.closest(selector) : null; if (t && el.contains(t)) return handler.call(t, e); }
+                        : function (e) { return handler.call(el, e); };
+                    handler.__jq = handler.__jq || [];
+                    handler.__jq.push({ el, name, wrapped });
+                    el.addEventListener(name, wrapped);
+                });
+            }
+            return this;
+        }
+        off(events, handler) {
+            for (const type of String(events || "").split(/\s+/).filter(Boolean)) {
+                const name = type.split(".")[0];
+                this.each(function () {
+                    if (handler && handler.__jq)
+                        for (const h of handler.__jq.filter(h => h.el === this && h.name === name)) this.removeEventListener(name, h.wrapped);
+                });
+            }
+            return this;
+        }
+        one(events, handler) { const self = this; const once = function (e) { self.off(events, once); return handler.call(this, e); }; return this.on(events, once); }
+        trigger(type) { this.each(function () { dispatch(this, String(type).split(".")[0]); }); return this; }
+        ready(fn) { if (loaded) setTimeout(fn, 0); else readyQueue.push(fn); return this; }
+
+        // Classes, attributes, properties
+        addClass(c) { return this.each(function () { if (this.classList) this.classList.add(...String(c).split(/\s+/).filter(Boolean)); }); }
+        removeClass(c) { return this.each(function () { if (!this.classList) return; if (c === undefined) this.className = ""; else this.classList.remove(...String(c).split(/\s+/).filter(Boolean)); }); }
+        toggleClass(c, state) { return this.each(function () { if (this.classList) for (const x of String(c).split(/\s+/).filter(Boolean)) this.classList.toggle(x, state); }); }
+        hasClass(c) { return this.toArray().some(el => el.classList && el.classList.contains(c)); }
+        attr(name, value) {
+            if (typeof name === "object") { for (const k in name) this.attr(k, name[k]); return this; }
+            const key = String(name).toLowerCase();
+            if (value === undefined) {
+                const el = this[0];
+                if (!el || el.nodeType !== 1) return undefined;
+                const v = el.getAttribute(key);
+                if (BOOLEAN_ATTRS.includes(key)) return v === null ? undefined : key;
+                return v === null ? undefined : v;
+            }
+            return this.each(function (i) {
+                const v = typeof value === "function" ? value.call(this, i, this.getAttribute(key)) : value;
+                if (v === null || v === false) this.removeAttribute(key);
+                else this.setAttribute(key, v === true ? key : v);
+            });
+        }
+        removeAttr(name) { return this.each(function () { if (this.removeAttribute) this.removeAttribute(name); }); }
+        prop(name, value) {
+            if (typeof name === "object") { for (const k in name) this.prop(k, name[k]); return this; }
+            if (value === undefined) {
+                const el = this[0];
+                if (!el) return undefined;
+                return BOOLEAN_ATTRS.includes(name) ? el.hasAttribute(name) : el[name];
+            }
+            return this.each(function () {
+                if (BOOLEAN_ATTRS.includes(name)) this.toggleAttribute(name, !!value); else this[name] = value;
+            });
+        }
+        removeProp(name) { return this.prop(name, false); }
+        data(key, value) {
+            if (value === undefined) {
+                const el = this[0];
+                if (!el || !el.dataset) return undefined;
+                if (key === undefined) return Object.assign({}, el.__data || {});
+                if (el.__data && key in el.__data) return el.__data[key];
+                const v = el.dataset[key];
+                try { return v === undefined ? undefined : JSON.parse(v); } catch (e) { return v; }
+            }
+            return this.each(function () { (this.__data = this.__data || {})[key] = value; });
+        }
+        val(value) {
+            if (value === undefined) return this[0] ? this[0].value : undefined;
+            return this.each(function () { this.value = value; });
+        }
+
+        // Content
+        text(value) {
+            if (value === undefined) return this.toArray().map(el => el.textContent).join("");
+            return this.each(function () { this.textContent = value; });
+        }
+        html(value) {
+            if (value === undefined) return this[0] ? this[0].innerHTML : undefined;
+            return this.each(function () { this.innerHTML = value instanceof JQ ? value.toArray().map(x => x.outerHTML).join("") : value; });
+        }
+        append(...items) { return this.each(function (i) { for (const it of items) for (const x of content(i === 0 ? it : clone(it))) this.appendChild(x); }); }
+        prepend(...items) { return this.each(function (i) { const first = this.firstChild; for (const it of items) for (const x of content(i === 0 ? it : clone(it))) this.insertBefore(x, first); }); }
+        after(...items) { return this.each(function (i) { const next = this.nextSibling, p = this.parentNode; if (p) for (const it of items) for (const x of content(i === 0 ? it : clone(it))) p.insertBefore(x, next); }); }
+        before(...items) { return this.each(function (i) { const p = this.parentNode; if (p) for (const it of items) for (const x of content(i === 0 ? it : clone(it))) p.insertBefore(x, this); }); }
+        appendTo(target) { $(target).append(this); return this; }
+        prependTo(target) { $(target).prepend(this); return this; }
+        insertAfter(target) { $(target).after(this); return this; }
+        insertBefore(target) { $(target).before(this); return this; }
+        wrap(html) { return this.each(function () { const w = n.parse(html)[0]; if (!w) return; this.before(w); w.appendChild(this); }); }
+        empty() { return this.each(function () { for (const c of n.children(this)) n.remove(this, c); }); }
+        remove(s) { (s ? this.filter(s) : this).each(function () { if (this.remove) this.remove(); }); return this; }
+        detach() { return this.remove(); }
+        replaceWith(value) { return this.each(function (i) { const p = this.parentNode; if (!p) return; const v = typeof value === "function" ? value.call(this) : value; for (const x of content(i === 0 ? v : clone(v))) p.insertBefore(x, this); p.removeChild(this); }); }
+        clone() { return $(this.toArray().map(el => el.cloneNode(true))); }
+
+        // Style and visibility (no animation: changes apply at once)
+        css(name, value) {
+            if (typeof name === "object") { for (const k in name) this.css(k, name[k]); return this; }
+            const key = String(name).replace(/[A-Z]/g, c => "-" + c.toLowerCase());
+            if (value === undefined) return this[0] && this[0].style ? this[0].style.getPropertyValue(key) : undefined;
+            return this.each(function (i) {
+                let v = typeof value === "function" ? value.call(this, i, this.style.getPropertyValue(key)) : value;
+                if (typeof v === "number" && PX_PROPS.test(key)) v = v + "px";
+                this.style.setProperty(key, v);
+            });
+        }
+        show() { return this.each(function () { if (this.style) { this.style.removeProperty("display"); if (!visible(this)) this.style.display = "block"; } }); }
+        hide() { return this.each(function () { if (this.style) this.style.display = "none"; }); }
+        toggle(state) {
+            return this.each(function () {
+                const show = typeof state === "boolean" ? state : !visible(this);
+                show ? $(this).show() : $(this).hide();
+            });
+        }
+        width(v) { return v === undefined ? 100 : this.css("width", v); }
+        height(v) { return v === undefined ? 100 : this.css("height", v); }
+        innerWidth() { return 100; }
+        innerHeight() { return 100; }
+        outerWidth() { return 100; }
+        outerHeight() { return 100; }
+        offset() { return { top: 0, left: 0 }; }
+        position() { return { top: 0, left: 0 }; }
+        scrollTop(v) { return v === undefined ? 0 : this; }
+        scrollLeft(v) { return v === undefined ? 0 : this; }
+        animate(props, duration, easing, done) {
+            const cb = [duration, easing, done].find(x => typeof x === "function");
+            this.css(props);
+            if (cb) this.each(function () { setTimeout(() => cb.call(this), 0); });
+            return this;
+        }
+        stop() { return this; }
+        delay() { return this; }
+        promise() { return Promise.resolve(this); }
+        focus() { return this; }
+        blur() { return this; }
+    }
+    for (const name of ["fadeIn", "slideDown"]) JQ.prototype[name] = function () { const cb = [...arguments].find(x => typeof x === "function"); this.show(); if (cb) this.each(function () { setTimeout(() => cb.call(this), 0); }); return this; };
+    for (const name of ["fadeOut", "slideUp"]) JQ.prototype[name] = function () { const cb = [...arguments].find(x => typeof x === "function"); this.hide(); if (cb) this.each(function () { setTimeout(() => cb.call(this), 0); }); return this; };
+    for (const name of ["fadeToggle", "slideToggle"]) JQ.prototype[name] = function () { return this.toggle(); };
+    for (const name of ["click", "change", "dblclick", "mouseup", "mousedown", "keydown", "keyup", "input", "submit", "touchstart", "touchend"])
+        JQ.prototype[name] = function (fn) { return fn ? this.on(name, fn) : this.trigger(name); };
+    function clone(v) { return v instanceof JQ ? v.clone() : v && v.nodeType ? v.cloneNode(true) : v; }
+
+    function $(sel, ctx) { return new JQ(sel, ctx); }
+    $.fn = JQ.prototype;
+    $.fn.jquery = "3.7.1-ankinx";
+    $.each = (obj, fn) => { if (Array.isArray(obj) || (obj && typeof obj.length === "number")) Array.from(obj).forEach((v, i) => fn.call(v, i, v)); else for (const k in obj) fn.call(obj[k], k, obj[k]); return obj; };
+    $.map = (arr, fn) => Array.from(arr).map((v, i) => fn(v, i)).flat().filter(v => v != null);
+    $.grep = (arr, fn) => Array.from(arr).filter((v, i) => fn(v, i));
+    $.inArray = (v, arr) => Array.from(arr).indexOf(v);
+    $.isArray = Array.isArray;
+    $.isFunction = f => typeof f === "function";
+    $.isNumeric = v => !isNaN(parseFloat(v)) && isFinite(v);
+    $.trim = s => String(s == null ? "" : s).trim();
+    $.extend = (...objs) => { const deep = objs[0] === true; if (deep) objs.shift(); return Object.assign(...objs); };
+    $.noop = () => {};
+    $.now = () => Date.now();
+    $.parseJSON = JSON.parse;
+    $.parseHTML = s => n.parse(String(s));
+    $.contains = (a, b) => a !== b && a.contains(b);
+    $.ajax = $.get = $.post = $.getJSON = () => ({ done() { return this; }, fail() { return this; }, always() { return this; }, then() { return this; } });
+    $.Deferred = () => { let resolve; const p = new Promise(r => { resolve = r; }); return { resolve, promise: () => p, done(fn) { p.then(fn); return this; } }; };
+    $.__ready = () => { loaded = true; for (const fn of readyQueue.splice(0)) try { fn.call(document, $); } catch (e) { console.error(String(e)); } };
+    if (typeof globalThis.jQuery === "undefined") globalThis.jQuery = globalThis.$ = $;
+})();
 
 // Native entry points.
 n.dispatch = (target, type) => dispatch(target, type);
@@ -366,6 +688,7 @@ n.fireTimer = id => {
     t.fn(...t.args);
 };
 n.shown = () => {
+    if (globalThis.jQuery && globalThis.jQuery.__ready) globalThis.jQuery.__ready();
     dispatch(doc, "DOMContentLoaded");
     dispatch(globalThis, "load");
     for (const hooks of [globalThis.onUpdateHook, globalThis.onShownHook])

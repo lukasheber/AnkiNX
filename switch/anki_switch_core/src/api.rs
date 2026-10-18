@@ -518,7 +518,7 @@ impl State {
     fn close(&mut self) -> ApiResult {
         self.stop_media_sync();
         self.shown = None;
-        let Some(mut col) = self.col.take() else {
+        let Some(col) = self.col.take() else {
             return Ok(json!({}));
         };
         let backups = self.base.join(BACKUP_FOLDER);

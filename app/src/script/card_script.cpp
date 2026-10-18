@@ -53,6 +53,7 @@ struct CardScript::Native
     JSValue n     = JS_UNDEFINED;
     JSValue proto = JS_UNDEFINED;
     std::vector<std::pair<int, int>> timers;
+    std::vector<std::string> commands;
     Clock::time_point deadline;
 
     JSValue wrap(const dom::NodePtr& node)
@@ -338,6 +339,12 @@ NATIVE(nStorage)
     return JS_UNDEFINED;
 }
 
+NATIVE(nCommand)
+{
+    self(ctx).commands.push_back(argStr(ctx, argc, argv, 0));
+    return JS_UNDEFINED;
+}
+
 int interrupt(JSRuntime*, void* opaque)
 {
     return Clock::now() > ((CardScript::Native*)opaque)->deadline ? 1 : 0;
@@ -398,7 +405,7 @@ CardScript::CardScript(const std::string& prelude, std::string mediaDir)
         { "createElement", nCreateElement, 1 }, { "createText", nCreateText, 1 },
         { "createFragment", nCreateFragment, 0 }, { "parse", nParse, 1 },
         { "log", nLog, 2 },                 { "timer", nTimer, 2 },
-        { "storage", nStorage, 4 },
+        { "storage", nStorage, 4 },         { "command", nCommand, 1 },
     };
     for (const auto& f : functions)
         JS_SetPropertyStr(s.ctx, s.n, f.name, JS_NewCFunction(s.ctx, f.fn, f.name, f.length));
@@ -518,6 +525,13 @@ std::vector<std::pair<int, int>> CardScript::takeTimers()
 {
     std::vector<std::pair<int, int>> out;
     out.swap(native->timers);
+    return out;
+}
+
+std::vector<std::string> CardScript::takeCommands()
+{
+    std::vector<std::string> out;
+    out.swap(native->commands);
     return out;
 }
 

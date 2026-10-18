@@ -3,6 +3,7 @@
 #include "app.hpp"
 #include "util/audio.hpp"
 #include "util/controls.hpp"
+#include "util/inline_svg.hpp"
 #include "util/keyboard.hpp"
 #include "util/settings.hpp"
 
@@ -227,7 +228,7 @@ std::string ReviewerActivity::documentFor(const std::string& body) const
     if (nightMode())
         html += std::string("<style>") + NIGHT_CSS + "</style>";
     html += "</head><body class=\"" + card.value("body_class", "card") + "\">";
-    html += body;
+    html += inlineSvgToImages(body, anki::dataDir() + "/cache/svg");
     html += "</body></html>";
     return html;
 }
@@ -309,7 +310,7 @@ void ReviewerActivity::runScripts()
         return;
     script->show(shownBody, card.value("body_class", "card"));
     shownBody = script->html();
-    scheduleTimers();
+    afterScript();
 }
 
 // After scripts ran (a tap, a timer, a hint): show their changes.
@@ -323,6 +324,21 @@ void ReviewerActivity::afterScript()
         cardView->setHtml(documentFor(shownBody), true);
     }
     scheduleTimers();
+    // pycmd("ans") etc. Next frame: this can run inside the card view's tap
+    // handling, and showing the answer replaces its document.
+    for (const std::string& command : script->takeCommands())
+        brls::sync([this, token = alive, generation = scriptGeneration, command] {
+            if (!*token || generation != scriptGeneration)
+                return;
+            if (command == "ans" && state == State::Question)
+                showAnswer();
+            else if (command.rfind("ease", 0) == 0 && state == State::Answer)
+            {
+                int ease = std::atoi(command.c_str() + 4);
+                if (ease >= 1 && ease <= 4)
+                    answer(ease);
+            }
+        });
 }
 
 void ReviewerActivity::scheduleTimers()
