@@ -11,6 +11,8 @@ namespace audio
 // Replace the queue with `paths` and start playing. Missing files are skipped.
 void play(const std::vector<std::string>& paths);
 void stop();
+// Whether something is playing, being decoded, or queued.
+bool playing();
 // Release the audio device (call before exit).
 void shutdown();
 

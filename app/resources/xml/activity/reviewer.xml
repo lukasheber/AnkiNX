@@ -16,7 +16,11 @@
             height="40"
             axis="row"
             alignItems="center">
-            <brls:Box width="0" height="auto" grow="1.0" />
+            <!-- Answer timer (deck option), mirroring the menu on the right -->
+            <brls:Box width="0" height="auto" grow="1.0" axis="row" alignItems="center">
+                <brls:Label id="timerLabel" width="auto" height="auto" fontSize="22" textColor="#888888" marginLeft="40"
+                    visibility="gone" />
+            </brls:Box>
             <brls:Label id="countNew" width="auto" height="auto" fontSize="22" textColor="#42a5f5" marginRight="28" />
             <brls:Label id="countLearn" width="auto" height="auto" fontSize="22" textColor="#ef5350" marginRight="28" />
             <brls:Label id="countReview" width="auto" height="auto" fontSize="22" textColor="#66bb6a" />

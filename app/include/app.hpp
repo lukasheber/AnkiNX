@@ -19,4 +19,7 @@ void registerQuit(brls::View* contentView);
 // clock (the reviewer needs the room), the hints centred, and no greyed A hint.
 void hideStatus(brls::View* frame);
 
+// The same for a dropdown (which has its own frame); returns it, to push.
+brls::Dropdown* withoutStatus(brls::Dropdown* dropdown);
+
 } // namespace app

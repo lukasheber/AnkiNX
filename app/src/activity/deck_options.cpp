@@ -127,10 +127,7 @@ void DeckOptionsActivity::fill(const anki::json& options)
     steps(t("relearn_steps"), "relearn_steps");
     number(t("minimum_interval"), "minimum_lapse_interval", false);
     number(t("leech_threshold"), "leech_threshold", false);
-    auto* leech = new brls::SelectorCell();
-    leech->init(t("leech_action"), { t("leech_suspend"), t("leech_tag") }, values["leech_action"] == "tag" ? 1 : 0,
-                [this](int selected) { apply({ { "values", { { "leech_action", selected ? "tag" : "suspend" } } } }); });
-    list->addView(leech);
+    choice(t("leech_action"), "leech_action", { "suspend", "tag" }, { t("leech_suspend"), t("leech_tag") });
 
     list->addView(header(t("burying")));
     toggle(t("bury_new"), "bury_new");
@@ -140,6 +137,20 @@ void DeckOptionsActivity::fill(const anki::json& options)
     list->addView(header(t("audio")));
     toggle(t("no_autoplay"), "disable_autoplay");
     toggle(t("skip_question_audio"), "skip_question_when_replaying_answer");
+
+    list->addView(header(t("timer")));
+    toggle(t("show_timer"), "show_timer");
+    toggle(t("stop_timer"), "stop_timer_on_answer");
+    number(t("cap_answer_time"), "cap_answer_time_to_secs", false);
+
+    list->addView(header(t("auto_advance")));
+    number(t("question_secs"), "seconds_to_show_question", true);
+    number(t("answer_secs"), "seconds_to_show_answer", true);
+    toggle(t("wait_for_audio"), "wait_for_audio");
+    choice(t("question_action"), "question_action", { "show_answer", "reminder" },
+           { t("qa_show_answer"), t("qa_reminder") });
+    choice(t("answer_action"), "answer_action", { "bury", "again", "good", "hard", "reminder" },
+           { t("aa_bury"), t("aa_again"), t("aa_good"), t("aa_hard"), t("aa_reminder") });
 
     list->addView(header(t("advanced")));
     number(t("maximum_interval"), "maximum_review_interval", false);
@@ -197,6 +208,21 @@ void DeckOptionsActivity::steps(const std::string& title, const std::string& key
         return true;
     });
     details[key] = { cell, false };
+    list->addView(cell);
+}
+
+void DeckOptionsActivity::choice(const std::string& title, const std::string& key,
+                                 const std::vector<std::string>& options, const std::vector<std::string>& names)
+{
+    int selected = 0;
+    for (size_t i = 0; i < options.size(); i++)
+        if (values.value(key, "") == options[i])
+            selected = (int)i;
+    auto* cell = new brls::SelectorCell();
+    cell->init(title, names, selected, [this, key, options](int index) {
+        if (index >= 0 && index < (int)options.size())
+            apply({ { "values", { { key, options[index] } } } });
+    });
     list->addView(cell);
 }
 

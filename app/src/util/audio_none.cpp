@@ -5,5 +5,6 @@ namespace audio
 {
 void play(const std::vector<std::string>&) { }
 void stop() { }
+bool playing() { return false; }
 void shutdown() { }
 } // namespace audio

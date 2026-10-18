@@ -44,8 +44,8 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Touch: tap to flip, tap buttons/links, drag to scroll; stick-click zoom | ✅ | |
 | Hint fields (`{{hint:...}}`) | ✅ | Native, no JavaScript: tap the link or press X |
 | Custom key bindings | ✅ | See the backlog: Settings > Controls |
-| Deck options (new cards/day, max reviews/day, steps) | ⬜ | Backend: `Collection::get_deck_config`/`update_deck_configs` exposed through new JSON commands; UI: borealis list of number/selector cells |
-| Custom study, tag filters | ⬜ | Backend: `custom_study` and filtered decks (`add_or_update_filtered_deck`) with search strings such as `tag:verbs is:due`; UI: dialog like AnkiDroid's custom study menu |
+| Deck options (new cards/day, max reviews/day, steps) | ✅ | Y on the deck overview: limits, steps, intervals, lapses and leeches, burying, audio, maximum interval, FSRS (collection-wide) with desired retention, or SM-2 ease and multipliers; through Anki's `get_deck_configs_for_update` / `update_deck_configs`. Not covered: preset management (add, rename, switch), display order, timer, FSRS parameter optimisation |
+| Custom study, tag filters | ✅ | X on the deck overview: Anki's choices (raise today's limits, forgotten, ahead, preview, by card state with one tag), studied at once in "Custom Study Session". Not covered: excluding tags, several tags |
 
 ## 2. Sync and account
 
@@ -98,11 +98,11 @@ template JavaScript, then this list, taken in groups of related features
 | Card actions menu: flag (colours), mark, bury card/note, suspend card/note, forget, set due date | ✅ | Hold the replay button (Y; stick press on one Joy-Con) or tap ⋯ in the header: a list of actions (borealis dropdown); flag and ★ shown in the header, flag colour along the card's top. Every action is undoable. Needs an on-console check |
 | Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | ✅ | From the card menu: rslib `card_stats` as a page of tables (card view); B closes |
 | Leech, daily-limit and "learning card due in N min" messages | ✅ | Leech dialog after answering; the finished screen says when the next learning card is due (and resumes then), and when limits stopped cards or some were buried |
-| Answer timer and auto advance (show answer / answer after N seconds) | P2 | Anki 23.12+ auto advance, from deck options; good for hands-free audio decks |
+| Answer timer and auto advance (show answer / answer after N seconds) | ✅ | Timer in the header (deck option; red at the cap, frozen on the answer with "Stop timer on answer"). Auto advance started per session from the card menu, as in Anki: seconds per side, waits for audio, question and answer actions. Both set in deck options |
 | Whiteboard (draw on the card with the touchscreen) | P2 | AnkiDroid feature, very useful for kanji and handwriting; handheld mode only |
 | Tap zones and swipe gestures (handheld) | P2 | AnkiDroid-style: tap left/right/bottom areas for answer buttons |
 | Persistent card zoom / text size per deck | P2 | Stick-click zoom exists but resets each card |
-| Audio options: autoplay on/off, replay question only, playback speed | P2 | |
+| Audio options: autoplay on/off, replay question only, playback speed | 🔶 | "Don't play audio automatically" honoured; "Skip question when replaying answer" editable in deck options but not applied yet; no playback speed (SDL_mixer can't change it) |
 | Redo, multiple undo levels shown | P3 | Undo exists |
 | Rumble on answer (HD Rumble) | P3 | Light feedback when grading |
 
@@ -110,9 +110,9 @@ template JavaScript, then this list, taken in groups of related features
 
 | Feature | Priority | Notes |
 | --- | --- | --- |
-| Deck overview screen before studying (counts, description, "Study now", custom study) | P1 | AnkiDroid's Study Options screen |
-| Deck options (limits, learning steps, FSRS on/off, desired retention) | P1 | Already listed in section 1 |
-| Custom study and filtered decks (study ahead, forgotten cards, by tag, increase today's limit) | P1 | Already listed in section 1 |
+| Deck overview screen before studying (counts, description, "Study now", custom study) | ✅ | R or ⋯ on a deck row: counts, description, Study now (A), Custom study (X), Options (Y) |
+| Deck options (limits, learning steps, FSRS on/off, desired retention) | ✅ | See section 1 |
+| Custom study and filtered decks (study ahead, forgotten cards, by tag, increase today's limit) | ✅ | See section 1 |
 | Statistics: today (cards, time), forecast, review heatmap, retention | P2 | rslib graphs data; draw natively |
 | Multiple profiles, one per Switch user | P2 | Families share consoles; pick the profile from the Switch user selector (`/switch/ankinx/<user>/`) |
 | Custom sync server (self-hosted Anki sync server) | P2 | The backend already accepts an endpoint at login; needs a settings field |

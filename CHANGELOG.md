@@ -25,6 +25,21 @@ build, then commit and tag (`git tag v0.2.0`).
   jQuery), as do `pycmd("ans")` / `pycmd("ease3")`, checkbox and radio taps,
   `<label>` taps and more selectors (`:nth-of-type`, `:checked`, ...).
   Tested with a shared multiple-choice note type.
+- Deck overview: R on a deck (or tap ⋯ at the end of its row) shows
+  today's counts and the deck's description, with Study now (A), Custom
+  study (X) and Options (Y).
+- Deck options: limits, learning steps, intervals, lapses and leeches,
+  burying, audio, FSRS and desired retention (or SM-2's ease and
+  multipliers), saved to the deck's preset at once; a shared preset says so.
+  "Don't play audio automatically" is honoured while studying.
+- Custom study: raise today's limits, review forgotten cards, review ahead,
+  preview new cards, or study by card state and tag; the session starts at
+  once.
+- Answer timer (deck option) in the reviewer's header, and auto advance as
+  in Anki 23.12+: started from the card menu, it shows the answer and then
+  answers (or buries, or reminds) after the deck's seconds, waiting for the
+  audio if the deck says so. Both are set in deck options.
+- Dropdown menus show only their button hints too (no clock).
 - + quits only from the deck list (it syncs first when automatic sync is
   on); the reviewer and settings have no + (B goes back).
 - Footer: only button hints, centred (no battery, Wi-Fi or clock); X shows

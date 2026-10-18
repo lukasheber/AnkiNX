@@ -1,6 +1,7 @@
 #pragma once
 
 #include <borealis.hpp>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -71,6 +72,12 @@ class ReviewerActivity : public brls::Activity
     // The replay button: a short press replays, holding opens the card menu.
     void pressReplay(brls::ControllerButton button);
     void doneMessages(std::string& body);
+    // Answer timer and auto advance (deck options in card["timing"]).
+    void startTimer();
+    void tickTimer(int generation);
+    void scheduleAdvance();
+    void advance();
+    bool canAutoAdvance() const;
     bool menuAvailable() const;
     bool sideHasAudio() const;
     // Run `f` on the UI thread unless the activity was closed meanwhile. Background
@@ -102,6 +109,13 @@ class ReviewerActivity : public brls::Activity
     // Bumped when the done screen's "resume when learning cards are due" timer
     // must no longer fire.
     int resumeGeneration = 0;
+    // The answer timer: when the card was shown, and its tick chain.
+    std::chrono::steady_clock::time_point shownAt;
+    int timerGeneration = 0;
+    bool timerFrozen    = false;
+    // Auto advance: turned on for the session from the card menu, as in Anki.
+    bool autoAdvance       = false;
+    int advanceGeneration  = 0;
 
     BRLS_BIND(brls::AppletFrame, frame, "frame");
     BRLS_BIND(CardView, cardView, "card");
@@ -116,4 +130,5 @@ class ReviewerActivity : public brls::Activity
     BRLS_BIND(brls::Label, menuIcon, "menuIcon");
     BRLS_BIND(brls::Box, menuButton, "menuButton");
     BRLS_BIND(brls::Box, flagBar, "flagBar");
+    BRLS_BIND(brls::Label, timerLabel, "timerLabel");
 };

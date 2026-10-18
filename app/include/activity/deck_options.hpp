@@ -7,11 +7,13 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "anki/api.hpp"
 
 // A deck's options (Y on the deck overview), as Anki's deck options screen:
-// daily limits, steps, lapses, burying, audio, FSRS or SM-2 values. Changes
+// daily limits, steps, lapses, burying, audio, timer, auto advance, FSRS or
+// SM-2 values. Changes
 // apply at once to the deck's preset (shared presets say so at the top).
 class DeckOptionsActivity : public brls::Activity
 {
@@ -35,6 +37,9 @@ class DeckOptionsActivity : public brls::Activity
     void number(const std::string& title, const std::string& key, bool decimal);
     void steps(const std::string& title, const std::string& key);
     void toggle(const std::string& title, const std::string& key);
+    // A choice among `options` (backend values), shown as `names`.
+    void choice(const std::string& title, const std::string& key, const std::vector<std::string>& options,
+                const std::vector<std::string>& names);
 
     int64_t deckId;
     anki::json values;

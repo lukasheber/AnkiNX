@@ -41,6 +41,8 @@ std::deque<std::string> queue;
 // dropped, and so are "finished" notices of a sound that has been replaced
 // (read on SDL's audio thread, hence atomic).
 std::atomic<unsigned> generation { 0 };
+// An FFmpeg decode for the current queue is running.
+bool decoding = false;
 
 // Upper bound for fully decoded clips: 10 minutes.
 constexpr size_t MAX_SAMPLES = 10 * 60 * 48000 * 2;
@@ -182,6 +184,7 @@ static void playNextFromQueue()
     freeCurrent();
 
     // Not a format SDL_mixer handles: decode with FFmpeg off the UI thread.
+    decoding = true;
     unsigned gen = generation;
     int rate = outRate, channels = outChannels;
     brls::async([path, gen, rate, channels] {
@@ -189,6 +192,7 @@ static void playNextFromQueue()
         brls::sync([path, gen, decoded] {
             if (gen != generation)
                 return; // stopped or replaced meanwhile
+            decoding = false;
             if (!decoded)
             {
                 brls::Logger::warning("audio: cannot decode {}", path);
@@ -212,9 +216,15 @@ void play(const std::vector<std::string>& paths)
     playNextFromQueue();
 }
 
+bool playing()
+{
+    return available && (Mix_PlayingMusic() || Mix_Playing(-1) > 0 || decoding || !queue.empty());
+}
+
 void stop()
 {
     generation++;
+    decoding = false;
     queue.clear();
     if (available)
     {

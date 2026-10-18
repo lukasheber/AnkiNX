@@ -426,6 +426,8 @@ void ReviewerActivity::showQuestion()
     showCardState();
     if (card.value("autoplay", true)) // deck option "Don't play audio automatically"
         playAudio(card["question_av"]);
+    startTimer();
+    scheduleAdvance();
 }
 
 // Flag and mark of the shown card, in the header and as the flag bar.
@@ -467,6 +469,8 @@ void ReviewerActivity::openCardMenu()
 {
     using Item = std::pair<std::string, std::function<void()>>;
     int64_t cardId = card["card_id"].get<int64_t>();
+    // No auto advance under the menu (it resumes on the next side).
+    ++advanceGeneration;
     std::vector<Item> items = {
         { "ankinx/review/flag"_i18n + "  \xE2\x96\xB8", [this] { chooseFlag(); } },
         { card.value("marked", false) ? "ankinx/review/unmark"_i18n : "ankinx/review/mark"_i18n,
@@ -486,6 +490,14 @@ void ReviewerActivity::openCardMenu()
     };
     if (previousCardId)
         items.push_back({ "ankinx/review/previous_info"_i18n, [this, id = previousCardId] { showCardInfo(id); } });
+    // As Anki's "Auto Advance" toggle: only when the deck sets its times.
+    if (canAutoAdvance() || autoAdvance)
+        items.push_back({ autoAdvance ? "ankinx/review/advance_stop"_i18n : "ankinx/review/advance_start"_i18n, [this] {
+                             autoAdvance = !autoAdvance;
+                             brls::Application::notify(autoAdvance ? "ankinx/review/advance_on"_i18n
+                                                                   : "ankinx/review/advance_off"_i18n);
+                             scheduleAdvance();
+                         } });
 
     std::vector<std::string> names;
     for (const Item& item : items)
@@ -501,7 +513,7 @@ void ReviewerActivity::openCardMenu()
                                                     action();
                                             });
                                         });
-    brls::Application::pushActivity(new brls::Activity(dropdown));
+    brls::Application::pushActivity(new brls::Activity(app::withoutStatus(dropdown)));
 }
 
 void ReviewerActivity::chooseFlag()
@@ -518,7 +530,7 @@ void ReviewerActivity::chooseFlag()
                 cardAction("flag", { { "flag", flag } }, brls::getStr("ankinx/review/flag_set", flagName(flag)));
         },
         card.value("flag", 0));
-    brls::Application::pushActivity(new brls::Activity(dropdown));
+    brls::Application::pushActivity(new brls::Activity(app::withoutStatus(dropdown)));
 }
 
 // As Anki's "Set Due Date": days from today, a range, "!" to set the interval too.
@@ -762,6 +774,9 @@ void ReviewerActivity::showAnswer()
     setBar(true);
     if (card.value("autoplay", true))
         playAudio(card["answer_av"]);
+    if (card["timing"].is_object() && card["timing"].value("stop_timer_on_answer", false))
+        timerFrozen = true;
+    scheduleAdvance();
 }
 
 void ReviewerActivity::answer(int ease)
@@ -858,6 +873,8 @@ void ReviewerActivity::showDone()
     std::string body = "<div style=\"text-align:center; margin-top:100px; font-size:26px\">" +
                        escapeHtml("ankinx/review/congrats"_i18n) + "</div>";
     doneMessages(body);
+    ++timerGeneration;
+    timerLabel->setVisibility(brls::Visibility::GONE);
     card["css"]        = "";
     card["body_class"] = nightMode() ? "card nightMode" : "card";
     cardView->setHtml(documentFor(body));
@@ -865,6 +882,110 @@ void ReviewerActivity::showDone()
     easeButtons->setVisibility(brls::Visibility::GONE);
     showCardState();
     refreshControls();
+}
+
+// The answer timer (deck option "Show answer timer"): seconds since the card
+// was shown, up to the deck's cap, then red, as in Anki; frozen on the answer
+// side with "Stop timer on answer".
+void ReviewerActivity::startTimer()
+{
+    const anki::json& timing = card["timing"];
+    int generation           = ++timerGeneration;
+    shownAt                  = std::chrono::steady_clock::now();
+    timerFrozen              = false;
+    bool show                = timing.is_object() && timing.value("show_timer", false);
+    timerLabel->setVisibility(show ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    if (show)
+        tickTimer(generation);
+}
+
+void ReviewerActivity::tickTimer(int generation)
+{
+    if (generation != timerGeneration || (state != State::Question && state != State::Answer))
+        return;
+    if (!timerFrozen)
+    {
+        long secs = (long)std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - shownAt)
+                        .count();
+        long cap  = card["timing"].value("cap_answer_secs", 60);
+        bool over = cap > 0 && secs >= cap;
+        if (over)
+            secs = cap;
+        char text[16];
+        std::snprintf(text, sizeof text, "%ld:%02ld", secs / 60, secs % 60);
+        timerLabel->setText(text);
+        timerLabel->setTextColor(over ? nvgRGB(239, 83, 80) : nvgRGB(136, 136, 136));
+    }
+    brls::delay(1000, [this, token = alive, generation] {
+        if (*token)
+            tickTimer(generation);
+    });
+}
+
+bool ReviewerActivity::canAutoAdvance() const
+{
+    const anki::json& timing = card["timing"];
+    return timing.is_object() &&
+           (timing.value("question_secs", 0.0) > 0 || timing.value("answer_secs", 0.0) > 0);
+}
+
+// Auto advance (Anki 23.12+): after the deck's seconds on each side (counted
+// once the side's audio has finished, if the deck says so), show the answer
+// or answer the card. Anything the user does first replaces the side, which
+// cancels the pending step.
+void ReviewerActivity::scheduleAdvance()
+{
+    int generation = ++advanceGeneration;
+    if (!autoAdvance || (state != State::Question && state != State::Answer))
+        return;
+    const anki::json& timing = card["timing"];
+    double secs = timing.value(state == State::Question ? "question_secs" : "answer_secs", 0.0);
+    if (secs <= 0)
+        return;
+    bool waitForAudio = timing.value("wait_for_audio", true);
+    auto poll         = std::make_shared<std::function<void()>>();
+    *poll = [this, token = alive, generation, secs, waitForAudio, weak = std::weak_ptr<std::function<void()>>(poll)] {
+        if (!*token || generation != advanceGeneration)
+            return;
+        if (waitForAudio && audio::playing())
+        {
+            if (auto again = weak.lock())
+                brls::delay(200, [again] { (*again)(); });
+            return;
+        }
+        brls::delay((long)(secs * 1000), [this, token, generation] {
+            if (*token && generation == advanceGeneration)
+                advance();
+        });
+    };
+    // Give the side's audio a moment to start before checking it.
+    brls::delay(100, [poll] { (*poll)(); });
+}
+
+void ReviewerActivity::advance()
+{
+    const anki::json& timing = card["timing"];
+    if (state == State::Question)
+    {
+        if (timing.value("question_action", "show_answer") == "reminder")
+            brls::Application::notify("ankinx/review/advance_show_reminder"_i18n);
+        else
+            showAnswer();
+        return;
+    }
+    if (state != State::Answer)
+        return;
+    std::string action = timing.value("answer_action", "bury");
+    if (action == "again")
+        answer(1);
+    else if (action == "hard")
+        answer(2);
+    else if (action == "good")
+        answer(3);
+    else if (action == "reminder")
+        brls::Application::notify("ankinx/review/advance_answer_reminder"_i18n);
+    else
+        cardAction("bury_card", anki::json::object(), "ankinx/review/buried_card"_i18n);
 }
 
 // What Anki's congratulations screen adds: learning cards due later (studying

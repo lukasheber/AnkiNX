@@ -304,6 +304,8 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "deck_overview" => state.deck_overview(&args),
         "deck_options" => state.deck_options(&args),
         "set_deck_options" => state.set_deck_options(&args),
+        "custom_study_defaults" => state.custom_study_defaults(&args),
+        "custom_study" => state.custom_study(&args),
         "next_card" => state.next_card(&args),
         "answer" => state.answer(&args),
         "type_answer" => state.type_answer(&args),
@@ -661,6 +663,78 @@ impl State {
         Ok(json!({}))
     }
 
+    /// `custom_study_defaults {deck_id}`: what Anki's custom study dialog
+    /// starts with: how much to extend today's limits, how many cards are
+    /// available beyond them, and the deck's tags.
+    fn custom_study_defaults(&mut self, args: &Value) -> ApiResult {
+        let did = DeckId(i64_arg(args, "deck_id")?);
+        let tr = self.tr.clone();
+        let d = self.col()?.custom_study_defaults(did).map_err(|e| ApiError::anki(e, &tr))?;
+        let tags: Vec<&str> = d.tags.iter().map(|t| t.name.as_str()).collect();
+        Ok(json!({
+            "extend_new": d.extend_new,
+            "extend_review": d.extend_review,
+            "available_new": d.available_new + d.available_new_in_children,
+            "available_review": d.available_review + d.available_review_in_children,
+            "tags": tags,
+        }))
+    }
+
+    /// `custom_study {deck_id, kind, value, tags?}`, as Anki's custom study:
+    /// new_limit / review_limit (cards more today), forgot / ahead / preview
+    /// (days), cram_new / cram_due / cram_review / cram_all (card limit, `tags`
+    /// to include). Returns the deck to study: the same one after raising a
+    /// limit, else the "Custom Study Session" filtered deck.
+    fn custom_study(&mut self, args: &Value) -> ApiResult {
+        use anki_proto::scheduler::custom_study_request::cram::CramKind;
+        use anki_proto::scheduler::custom_study_request::Cram;
+        use anki_proto::scheduler::custom_study_request::Value as Study;
+        use anki_proto::scheduler::CustomStudyRequest;
+        let did = DeckId(i64_arg(args, "deck_id")?);
+        let kind = str_arg(args, "kind")?.to_string();
+        let value = i64_arg(args, "value")?;
+        if !(1..=9999).contains(&value) {
+            return Err(ApiError::new("args", format!("invalid value {value}")));
+        }
+        let tags: Vec<String> = args
+            .get("tags")
+            .and_then(Value::as_array)
+            .map(|tags| tags.iter().filter_map(Value::as_str).map(String::from).collect())
+            .unwrap_or_default();
+        let cram = |kind: CramKind| {
+            Study::Cram(Cram {
+                kind: kind as i32,
+                card_limit: value as u32,
+                tags_to_include: tags.clone(),
+                tags_to_exclude: vec![],
+            })
+        };
+        let study = match kind.as_str() {
+            "new_limit" => Study::NewLimitDelta(value as i32),
+            "review_limit" => Study::ReviewLimitDelta(value as i32),
+            "forgot" => Study::ForgotDays(value as u32),
+            "ahead" => Study::ReviewAheadDays(value as u32),
+            "preview" => Study::PreviewDays(value as u32),
+            "cram_new" => cram(CramKind::New),
+            "cram_due" => cram(CramKind::Due),
+            "cram_review" => cram(CramKind::Review),
+            "cram_all" => cram(CramKind::All),
+            other => return Err(ApiError::new("args", format!("unknown custom study {other}"))),
+        };
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let session_name = tr.custom_study_custom_study_session().to_string();
+        let col = self.col()?;
+        col.custom_study(CustomStudyRequest { deck_id: did.0, value: Some(study) }).map_err(err)?;
+        let study_deck = if kind.ends_with("_limit") {
+            did
+        } else {
+            col.get_deck_id(&session_name).map_err(err)?.unwrap_or(did)
+        };
+        let name = col.get_deck(study_deck).map_err(err)?.map(|d| d.human_name()).unwrap_or_default();
+        Ok(json!({ "deck_id": study_deck.0, "name": name }))
+    }
+
     fn select_deck(&mut self, args: &Value) -> ApiResult {
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
@@ -721,13 +795,12 @@ impl State {
         } else {
             proto_card.deck_id
         });
-        let autoplay = match col.get_deck(home_deck).map_err(err)?.and_then(|d| d.config_id()) {
-            Some(dcid) => !col
-                .get_deck_config(dcid, true)
-                .map_err(err)?
-                .is_some_and(|config| config.inner.disable_autoplay),
-            None => true,
+        let config = match col.get_deck(home_deck).map_err(err)?.and_then(|d| d.config_id()) {
+            Some(dcid) => col.get_deck_config(dcid, true).map_err(err)?,
+            None => None,
         };
+        let autoplay = !config.as_ref().is_some_and(|c| c.inner.disable_autoplay);
+        let timing = config.as_ref().map_or(Value::Null, |c| study_timing(&c.inner));
         let marked = note_has_tag(col, note_id, "marked").map_err(err)?;
         let render = col.render_existing_card(card_id, false, false).map_err(err)?;
         let (question, q_av) = extract_av_tags(render.question().into_owned(), true, &tr);
@@ -794,6 +867,8 @@ impl State {
             "marked": marked,
             // Play the side's audio when it is shown (deck option).
             "autoplay": autoplay,
+            // Answer timer and auto advance (deck options; see study_timing).
+            "timing": timing,
             // "New", "Learning" or "Review": which count the card belongs to.
             "queue": format!("{:?}", card.kind),
             "counts": counts,
@@ -1285,6 +1360,41 @@ fn current_preset(
         .ok_or_else(|| ApiError::new("no_deck", "the deck has no options preset"))
 }
 
+/// The deck options the reviewer needs while studying: the answer timer and
+/// auto advance (which the user turns on per session, as in Anki).
+fn study_timing(c: &DeckConfigInner) -> Value {
+    json!({
+        "show_timer": c.show_timer,
+        "stop_timer_on_answer": c.stop_timer_on_answer,
+        "cap_answer_secs": c.cap_answer_time_to_secs,
+        "question_secs": c.seconds_to_show_question,
+        "answer_secs": c.seconds_to_show_answer,
+        "wait_for_audio": c.wait_for_audio,
+        "question_action": question_action_name(c.question_action),
+        "answer_action": answer_action_name(c.answer_action),
+    })
+}
+
+fn question_action_name(action: i32) -> &'static str {
+    use anki_proto::deck_config::deck_config::config::QuestionAction;
+    if action == QuestionAction::ShowReminder as i32 {
+        "reminder"
+    } else {
+        "show_answer"
+    }
+}
+
+fn answer_action_name(action: i32) -> &'static str {
+    use anki_proto::deck_config::deck_config::config::AnswerAction;
+    match AnswerAction::try_from(action).unwrap_or(AnswerAction::BuryCard) {
+        AnswerAction::BuryCard => "bury",
+        AnswerAction::AnswerAgain => "again",
+        AnswerAction::AnswerGood => "good",
+        AnswerAction::AnswerHard => "hard",
+        AnswerAction::ShowReminder => "reminder",
+    }
+}
+
 fn deck_option_values(c: &DeckConfigInner) -> Value {
     use anki_proto::deck_config::deck_config::config::LeechAction;
     json!({
@@ -1309,6 +1419,14 @@ fn deck_option_values(c: &DeckConfigInner) -> Value {
         "new_interval": c.lapse_multiplier,
         "disable_autoplay": c.disable_autoplay,
         "skip_question_when_replaying_answer": c.skip_question_when_replaying_answer,
+        "show_timer": c.show_timer,
+        "stop_timer_on_answer": c.stop_timer_on_answer,
+        "cap_answer_time_to_secs": c.cap_answer_time_to_secs,
+        "seconds_to_show_question": c.seconds_to_show_question,
+        "seconds_to_show_answer": c.seconds_to_show_answer,
+        "wait_for_audio": c.wait_for_audio,
+        "question_action": question_action_name(c.question_action),
+        "answer_action": answer_action_name(c.answer_action),
     })
 }
 
@@ -1352,6 +1470,35 @@ fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::re
         "new_interval" => c.lapse_multiplier = Some(ratio()?).filter(|r| *r <= 1.0).ok_or_else(bad)?,
         "disable_autoplay" => c.disable_autoplay = flag()?,
         "skip_question_when_replaying_answer" => c.skip_question_when_replaying_answer = flag()?,
+        "show_timer" => c.show_timer = flag()?,
+        "stop_timer_on_answer" => c.stop_timer_on_answer = flag()?,
+        "cap_answer_time_to_secs" => {
+            c.cap_answer_time_to_secs = value.as_u64().filter(|n| (1..=7200).contains(n)).ok_or_else(bad)? as u32
+        }
+        "seconds_to_show_question" => {
+            c.seconds_to_show_question = Some(ratio()?).filter(|s| *s <= 9999.0).ok_or_else(bad)?
+        }
+        "seconds_to_show_answer" => c.seconds_to_show_answer = Some(ratio()?).filter(|s| *s <= 9999.0).ok_or_else(bad)?,
+        "wait_for_audio" => c.wait_for_audio = flag()?,
+        "question_action" => {
+            use anki_proto::deck_config::deck_config::config::QuestionAction;
+            c.question_action = match value.as_str() {
+                Some("show_answer") => QuestionAction::ShowAnswer as i32,
+                Some("reminder") => QuestionAction::ShowReminder as i32,
+                _ => return Err(bad()),
+            }
+        }
+        "answer_action" => {
+            use anki_proto::deck_config::deck_config::config::AnswerAction;
+            c.answer_action = match value.as_str() {
+                Some("bury") => AnswerAction::BuryCard as i32,
+                Some("again") => AnswerAction::AnswerAgain as i32,
+                Some("good") => AnswerAction::AnswerGood as i32,
+                Some("hard") => AnswerAction::AnswerHard as i32,
+                Some("reminder") => AnswerAction::ShowReminder as i32,
+                _ => return Err(bad()),
+            }
+        }
         _ => return Err(ApiError::new("args", format!("unknown deck option {key}"))),
     }
     Ok(())

@@ -5,10 +5,12 @@
 #include <memory>
 #include <string>
 
+#include "anki/api.hpp"
 #include "view/card_view.hpp"
 
 // Deck overview (R on a deck, as AnkiDroid's Study Options screen): today's
-// counts, the deck's description, Study now (A) and Options (Y).
+// counts, the deck's description, Study now (A), Custom study (X) and
+// Options (Y).
 class DeckOverviewActivity : public brls::Activity
 {
   public:
@@ -23,6 +25,11 @@ class DeckOverviewActivity : public brls::Activity
     void load();
     void study();
     void openOptions();
+    // Custom study (X): choose, give a number (and state/tag), then study.
+    void openCustomStudy();
+    void chooseCram(const anki::json& defaults);
+    void askNumber(const std::string& prompt, int initial, const std::string& kind, anki::json tags);
+    void runCustomStudy(const std::string& kind, int value, anki::json tags);
 
     int64_t deckId;
     std::string deckName;
@@ -43,4 +50,6 @@ class DeckOverviewActivity : public brls::Activity
     BRLS_BIND(brls::Label, studyLabel, "studyLabel");
     BRLS_BIND(brls::Box, optionsButton, "optionsButton");
     BRLS_BIND(brls::Label, optionsLabel, "optionsLabel");
+    BRLS_BIND(brls::Box, customButton, "customButton");
+    BRLS_BIND(brls::Label, customLabel, "customLabel");
 };

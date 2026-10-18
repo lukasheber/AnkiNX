@@ -97,6 +97,8 @@ fn study_flow() {
     assert_eq!(error_kind("deck_overview", json!({ "deck_id": 12345 })), "no_deck");
 
     // Deck options: Anki's defaults, then a change read back and undone.
+    // (Selecting a deck is undoable too: do it first.)
+    ok("select_deck", json!({ "deck_id": verbs }));
     let options = ok("deck_options", json!({ "deck_id": verbs }));
     assert_eq!(options["preset"], "Default");
     assert_eq!(options["fsrs"], false);
@@ -112,11 +114,34 @@ fn study_flow() {
     assert_eq!(values["new_per_day"], 5);
     assert_eq!(values["learn_steps"], "30s 2h 1d");
     assert_eq!(values["bury_new"], true);
+    assert_eq!(values["answer_action"], "bury");
+    ok(
+        "set_deck_options",
+        json!({ "deck_id": verbs, "values": { "answer_action": "good", "seconds_to_show_answer": 4.5, "show_timer": true } }),
+    );
+    let values = &ok("deck_options", json!({ "deck_id": verbs }))["values"];
+    assert_eq!((values["answer_action"].clone(), values["seconds_to_show_answer"].clone()), (json!("good"), json!(4.5)));
+    let timing = &ok("next_card", json!({}))["timing"];
+    assert_eq!((timing["show_timer"].clone(), timing["answer_secs"].clone()), (json!(true), json!(4.5)));
+    assert_eq!(ok("undo", json!({}))["undone"], true);
     for bad in [json!({ "learn_steps": "1x" }), json!({ "desired_retention": 1.5 }), json!({ "bogus": 1 })] {
         assert_eq!(error_kind("set_deck_options", json!({ "deck_id": verbs, "values": bad })), "args");
     }
     assert_eq!(ok("undo", json!({}))["undone"], true);
     assert_eq!(ok("deck_options", json!({ "deck_id": verbs }))["values"]["new_per_day"], 20);
+
+    // Custom study: two new cards in a "Custom Study Session" deck, undone.
+    let defaults = ok("custom_study_defaults", json!({ "deck_id": verbs }));
+    assert_eq!(defaults["available_new"], 3, "{defaults}"); // the deck's new cards
+    let session = ok("custom_study", json!({ "deck_id": verbs, "kind": "cram_new", "value": 2 }));
+    assert_eq!(session["name"], "Custom Study Session");
+    // (Building it makes it the current deck, as in Anki.)
+    assert_eq!(ok("next_card", json!({}))["counts"]["new"], 2);
+    assert_eq!(ok("deck_overview", json!({ "deck_id": session["deck_id"] }))["filtered"], true);
+    assert_eq!(error_kind("custom_study", json!({ "deck_id": verbs, "kind": "bogus", "value": 1 })), "args");
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+    assert_eq!(error_kind("deck_overview", json!({ "deck_id": session["deck_id"] })), "no_deck");
+    ok("select_deck", json!({ "deck_id": verbs }));
 
     // Study.
     ok("select_deck", json!({ "deck_id": verbs }));
