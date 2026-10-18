@@ -587,6 +587,7 @@ void ReviewerActivity::showCardInfo(int64_t cardId)
                 view->setHtml(html);
                 auto* frame = new brls::AppletFrame(view);
                 frame->setTitle("ankinx/review/card_info"_i18n);
+                app::hideStatus(frame);
                 brls::Application::pushActivity(new brls::Activity(frame));
             });
         }

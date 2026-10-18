@@ -24,6 +24,15 @@ void registerQuit(brls::View* contentView)
         quit();
         return true;
     });
+    hideStatus(contentView);
+}
+
+void hideStatus(brls::View* frame)
+{
+    // Ids from borealis' BottomBar (lib/views/bottom_bar.cpp).
+    for (const char* id : { "brls/battery", "brls/wireless", "brls/hints/time" })
+        if (brls::View* view = frame->getView(id))
+            view->setVisibility(brls::Visibility::GONE);
 }
 
 } // namespace app

@@ -10,7 +10,12 @@ namespace app
 // borealis' global quit, which exits immediately.
 void quit();
 
-// Register + (quit) on a screen. Every activity calls this.
+// Register + (quit) on a screen, and hide the footer's status (see
+// hideStatus). Every activity calls this.
 void registerQuit(brls::View* contentView);
+
+// Leave the footer of an AppletFrame to button hints: no battery, Wi-Fi or
+// clock: the reviewer needs the room for its hints.
+void hideStatus(brls::View* frame);
 
 } // namespace app
