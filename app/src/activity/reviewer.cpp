@@ -940,7 +940,9 @@ controls::Action ReviewerActivity::actionFor(brls::ControllerButton button) cons
     if (state == State::Question)
         order = { Action::ShowAnswer, Action::Hints, Action::ReplayAudio, Action::Undo };
     else if (state == State::Answer)
-        order = { Action::Again, Action::Hard, Action::Good, Action::Easy, Action::ShowAnswer,
+        // Show Answer's button (A) does nothing here: grading is on the ease
+        // buttons (and A only grades where a layout binds it, as one Joy-Con's Good).
+        order = { Action::Again, Action::Hard, Action::Good, Action::Easy,
                   Action::Undo,  Action::Hints, Action::ReplayAudio };
     else
         order = { Action::ShowAnswer, Action::Undo };
@@ -962,8 +964,6 @@ bool ReviewerActivity::onButton(brls::ControllerButton button)
                 typeAnswer();
             else if (state == State::Question)
                 showAnswer();
-            else if (state == State::Answer)
-                answer(3);
             else if (state == State::Done || state == State::Failed)
                 brls::Application::popActivity();
             break;
@@ -1022,7 +1022,11 @@ void ReviewerActivity::applyControls()
         std::string hint;
         switch (actionFor(button))
         {
-            case Action::ShowAnswer: hint = "hints/ok"_i18n; break;
+            case Action::ShowAnswer:
+                // The Show Answer button shows its button already.
+                if (state != State::Question)
+                    hint = "hints/ok"_i18n;
+                break;
             case Action::Undo: hint = "ankinx/review/undo"_i18n; break;
             case Action::ReplayAudio:
                 // Without audio on this side the button only opens the menu.

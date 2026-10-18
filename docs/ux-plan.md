@@ -21,7 +21,7 @@ backlog groups) at the level of screens, buttons and placement. Principles:
 | --- | --- | --- |
 | Show answer | A | A |
 | Again / Hard / Good / Easy | ZL / L / R / ZR | SL / Y / A / SR |
-| Good (shortcut) | A | A |
+| Good (shortcut) | — (A does nothing on the answer side) | A (Good's own button) |
 | Undo | − | X on the answer side |
 | Replay audio | Y | Stick press |
 | Show hints / toggle masks | X | X on the question side |

@@ -39,6 +39,10 @@ void hideStatus(brls::View* frame)
         return;
     status->setVisibility(brls::Visibility::GONE);
     row->setJustifyContent(brls::JustifyContent::CENTER);
+    // No greyed "A OK" when A does nothing (borealis adds one by default).
+    for (brls::View* child : row->getChildren())
+        if (auto* hints = dynamic_cast<brls::Hints*>(child))
+            hints->setAddUnableAButtonAction(false);
 }
 
 } // namespace app

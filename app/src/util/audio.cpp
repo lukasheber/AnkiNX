@@ -2,6 +2,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_mixer.h>
+#include <atomic>
 #include <borealis.hpp>
 #include <cstdint>
 #include <deque>
@@ -36,8 +37,10 @@ Mix_Music* music   = nullptr;
 Mix_Chunk* chunk   = nullptr;
 std::shared_ptr<std::vector<int16_t>> pcm; // backing store of `chunk`
 std::deque<std::string> queue;
-// Bumped by stop()/play(): decodes that finish late for an old queue are dropped.
-unsigned generation = 0;
+// Bumped by stop()/play(): decodes that finish late for an old queue are
+// dropped, and so are "finished" notices of a sound that has been replaced
+// (read on SDL's audio thread, hence atomic).
+std::atomic<unsigned> generation { 0 };
 
 // Upper bound for fully decoded clips: 10 minutes.
 constexpr size_t MAX_SAMPLES = 10 * 60 * 48000 * 2;
@@ -154,9 +157,15 @@ std::shared_ptr<std::vector<int16_t>> ffmpegDecode(const std::string& path, int 
 } // namespace
 
 // Runs on SDL's audio thread, where SDL_mixer must not be called: hop to the UI thread.
+// A sound that ends just before play() starts another posts this first; without
+// the generation check it would free the new sound as soon as it started.
 static void onFinished()
 {
-    brls::sync([] { playNextFromQueue(); });
+    unsigned gen = generation.load();
+    brls::sync([gen] {
+        if (gen == generation.load())
+            playNextFromQueue();
+    });
 }
 
 static void playNextFromQueue()
