@@ -94,6 +94,7 @@ fn study_flow() {
     assert_eq!(overview["name"], "Spanish::Verbs");
     assert_eq!((overview["new"].clone(), overview["review"].clone()), (json!(3), json!(0)));
     assert_eq!((overview["description"].clone(), overview["filtered"].clone()), (json!(""), json!(false)));
+    assert_eq!((overview["total_cards"].clone(), overview["total_new"].clone()), (json!(3), json!(3)));
     assert_eq!(error_kind("deck_overview", json!({ "deck_id": 12345 })), "no_deck");
 
     // Deck options: Anki's defaults, then a change read back and undone.
@@ -234,6 +235,8 @@ fn study_flow() {
             assert_eq!(congrats["secs_until_next_learn"], Value::Null, "{card}");
             assert_eq!(congrats["new_limit_reached"], false, "{card}");
             assert_eq!(congrats["buried"], false, "{card}");
+            let studied = card["studied_today"].as_str().unwrap_or_default();
+            assert!(studied.starts_with("Studied ") && studied.contains("today"), "{card}");
             break;
         }
         ok("answer", json!({ "ease": 4 }));

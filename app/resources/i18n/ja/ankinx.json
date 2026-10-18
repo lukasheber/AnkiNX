@@ -7,6 +7,10 @@
     "study": "学習する",
     "sync": "同期",
     "toggle": "展開 / 折りたたみ",
+    "expand": "展開",
+    "collapse": "折りたたむ",
+    "due_one": "期日のカード {} 枚",
+    "due_other": "期日のカード {} 枚",
     "overview": "概要",
     "account": "AnkiWebアカウント",
     "empty": "まだカードがありません。\n\nXを押してAnkiWebにログインし、コレクションをダウンロードするか、\nパソコン版Ankiのcollection.anki2とcollection.mediaを\nSDカードの/switch/ankinx/にコピーしてください。",
@@ -81,6 +85,11 @@
     "advance_answer_reminder": "回答する時間です"
   },
   "overview": {
+    "new": "新規",
+    "learning": "学習中",
+    "to_review": "復習",
+    "total_new": "新規カードの合計",
+    "total_cards": "カードの合計",
     "study_now": "今すぐ学習",
     "custom_study": "カスタム学習",
     "options": "オプション"

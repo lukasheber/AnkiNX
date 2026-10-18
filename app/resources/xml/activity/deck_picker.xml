@@ -7,20 +7,33 @@
         width="auto"
         height="auto"
         axis="column"
+        alignItems="center"
         grow="1.0">
 
-        <!-- Column titles, aligned with the counts in deck_cell.xml -->
+        <!-- The table is as wide as its longest deck name needs (fitTable()),
+             centred. The account on the left, in line with the title; the
+             column titles above the table's counts. -->
         <brls:Box
             width="auto"
             height="40"
             axis="row"
-            alignItems="center"
-            paddingLeft="60"
-            paddingRight="110">
-            <brls:Label id="account" width="auto" height="auto" grow="1.0" fontSize="16" singleLine="true" />
-            <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#42a5f5" text="@i18n/ankinx/decks/col_new" />
-            <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#ef5350" text="@i18n/ankinx/decks/col_learn" />
-            <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#66bb6a" text="@i18n/ankinx/decks/col_due" />
+            alignSelf="stretch"
+            justifyContent="center"
+            alignItems="center">
+            <brls:Label id="account" positionType="absolute" positionLeft="65" positionTop="10" width="auto"
+                height="auto" fontSize="16" singleLine="true" />
+            <brls:Box
+                id="columns"
+                width="auto"
+                height="40"
+                axis="row"
+                justifyContent="flexEnd"
+                alignItems="center"
+                paddingRight="70">
+                <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#42a5f5" text="@i18n/ankinx/decks/col_new" />
+                <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#ef5350" text="@i18n/ankinx/decks/col_learn" />
+                <brls:Label width="90" height="auto" fontSize="16" horizontalAlign="right" textColor="#66bb6a" text="@i18n/ankinx/decks/col_due" />
+            </brls:Box>
         </brls:Box>
 
         <brls:Label
@@ -38,8 +51,6 @@
             width="auto"
             height="auto"
             grow="1.0"
-            paddingLeft="40"
-            paddingRight="40"
             paddingBottom="20" />
     </brls:Box>
 </brls:AppletFrame>

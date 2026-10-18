@@ -7,6 +7,10 @@
     "study": "Estudiar",
     "sync": "Sincronizar",
     "toggle": "Expandir / contraer",
+    "expand": "Expandir",
+    "collapse": "Contraer",
+    "due_one": "{} tarjeta pendiente",
+    "due_other": "{} tarjetas pendientes",
     "overview": "Resumen",
     "account": "Cuenta de AnkiWeb",
     "empty": "Todavía no hay tarjetas.\n\nPulsa X para iniciar sesión en AnkiWeb y descargar tu colección,\no copia collection.anki2 y collection.media de Anki para escritorio\nen /switch/ankinx/ de la tarjeta SD.",
@@ -81,6 +85,11 @@
     "advance_answer_reminder": "Es hora de responder"
   },
   "overview": {
+    "new": "Nuevas",
+    "learning": "Aprendiendo",
+    "to_review": "Para repasar",
+    "total_new": "Total de tarjetas nuevas",
+    "total_cards": "Total de tarjetas",
     "study_now": "Estudiar ahora",
     "custom_study": "Estudio personalizado",
     "options": "Opciones"

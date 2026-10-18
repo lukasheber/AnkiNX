@@ -10,6 +10,22 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## Unreleased
 
+- Deck list: the table is only as wide as the deck names need, centred, so
+  the counts sit close to the names; the header shows "N cards due" under
+  AnkiNX; Y reads Expand or Collapse for the highlighted deck and is greyed
+  out on decks without subdecks; A reads Study.
+- Slimmer top bar on every screen (72 px instead of 88).
+- Finished screen: "Studied N cards in X minutes today (Ys/card)" under the
+  congratulations, as in Anki.
+
+## 0.3.0 (2026-10-18)
+
+Built and tested in the desktop preview; hardware checks pending for most
+items.
+
+- Deck overview laid out as AnkiDroid's: the deck's name centred in the
+  header, then New / Learning / To Review / Total new cards / Total cards
+  in a centred table, with Study now right below.
 - Maths in cards (`\(...\)` inline, `\[...\]` display, as Anki's MathJax):
   typeset natively with Typst (LaTeX converted by MiTeX), drawn as SVG on the
   text baseline, cached on the SD card. The `.nro` grows to about 76 MB.

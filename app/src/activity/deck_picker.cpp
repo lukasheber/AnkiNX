@@ -7,6 +7,8 @@
 #include "activity/settings.hpp"
 #include "util/sync_flow.hpp"
 
+#include <algorithm>
+
 using namespace brls::literals;
 
 namespace
@@ -66,6 +68,7 @@ DeckCell::DeckCell()
             onOverview();
         return true;
     });
+    this->updateActionHint(brls::BUTTON_A, "ankinx/decks/study"_i18n);
     moreIcon->setText("\xEE\x97\x93"); // Material more_horiz
     more->addGestureRecognizer(new brls::TapGestureRecognizer(more, [this] {
         if (onOverview)
@@ -84,6 +87,11 @@ void DeckCell::bind(const DeckEntry& deck)
     setCount(newCount, deck.newCount, COLOR_NEW);
     setCount(learnCount, deck.learnCount, COLOR_LEARN);
     setCount(reviewCount, deck.reviewCount, COLOR_REVIEW);
+    // Y says what it would do here; greyed out on decks without subdecks.
+    this->updateActionHint(brls::BUTTON_Y,
+                           deck.hasChildren && !deck.collapsed ? "ankinx/decks/collapse"_i18n
+                                                               : "ankinx/decks/expand"_i18n);
+    this->setActionAvailable(brls::BUTTON_Y, deck.hasChildren);
 }
 
 void DeckPickerActivity::onContentAvailable()
@@ -94,6 +102,26 @@ void DeckPickerActivity::onContentAvailable()
 
     auto* frame = (brls::AppletFrame*)this->getView("frame");
     frame->setTitle("ankinx/title"_i18n);
+    // A second, smaller line under the title: the cards due today, as in
+    // AnkiDroid's toolbar.
+    if (auto* title = dynamic_cast<brls::Label*>(frame->getView("brls/applet_frame/title_label")))
+    {
+        if (auto* titleBox = dynamic_cast<brls::Box*>(title->getParent()))
+        {
+            titleBox->setAxis(brls::Axis::COLUMN);
+            titleBox->setJustifyContent(brls::JustifyContent::CENTER);
+            titleBox->setPaddingTop(0);
+            titleBox->setPaddingBottom(0);
+            title->setMarginTop(0);
+            dueLabel = new brls::Label();
+            dueLabel->setFontSize(16);
+            dueLabel->setMarginTop(2);
+            dueLabel->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+            dueLabel->setVisibility(brls::Visibility::INVISIBLE);
+            titleBox->addView(dueLabel);
+        }
+    }
+    fitTable();
     // This is the root screen: B must not quit by accident (+ quits).
     frame->registerAction("", brls::BUTTON_B, [](brls::View*) { return true; }, true);
     frame->registerAction("ankinx/decks/sync"_i18n, brls::BUTTON_X, [this](brls::View*) {
@@ -172,6 +200,8 @@ void DeckPickerActivity::refresh()
                     d["learn"].get<int>(), d["review"].get<int>() });
             brls::sync([this, list] {
                 entries = list;
+                updateDueLabel();
+                fitTable();
                 if (entries.empty())
                 {
                     showMessage("ankinx/decks/empty"_i18n);
@@ -270,6 +300,47 @@ void DeckPickerActivity::updateAccountLabel(const std::string& username)
 {
     account->setText(username.empty() ? "ankinx/decks/not_logged_in"_i18n
                                       : "ankinx/decks/logged_in_as"_i18n + " " + username);
+}
+
+// Top-level decks' counts already include their subdecks' (within limits).
+void DeckPickerActivity::updateDueLabel()
+{
+    if (!dueLabel)
+        return;
+    int due = 0;
+    for (const auto& deck : entries)
+        if (deck.level == 1)
+            due += deck.newCount + deck.learnCount + deck.reviewCount;
+    dueLabel->setText(brls::getStr(due == 1 ? "ankinx/decks/due_one" : "ankinx/decks/due_other", std::to_string(due)));
+    dueLabel->setVisibility(brls::Visibility::VISIBLE);
+}
+
+// The table is only as wide as the longest deck name (with its indent)
+// needs, centred on the screen, so the counts stay close to the names.
+void DeckPickerActivity::fitTable()
+{
+    // Widths from deck_cell.xml: padding 20 + arrow 36 ... counts 3 × 90 +
+    // ⋯ 60 + padding 10.
+    const float FIXED = 20 + 36 + 3 * 90 + 60 + 10;
+    const float GAP   = 48; // between the name and the first count
+    float names       = 0;
+    NVGcontext* vg    = brls::Application::getNVGContext();
+    if (vg)
+    {
+        nvgSave(vg);
+        nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
+        nvgFontSize(vg, 22);
+        for (const auto& deck : entries)
+        {
+            float bounds[4];
+            nvgTextBounds(vg, 0, 0, deck.name.c_str(), nullptr, bounds);
+            names = std::max(names, (float)(deck.level - 1) * 32.0f + bounds[2] - bounds[0]);
+        }
+        nvgRestore(vg);
+    }
+    float width = std::clamp(FIXED + names + GAP, 760.0f, 1200.0f);
+    decks->setWidth(width);
+    columns->setWidth(width);
 }
 
 void DeckPickerActivity::showMessage(const std::string& text)

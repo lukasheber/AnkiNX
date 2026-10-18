@@ -39,9 +39,14 @@ DeckOverviewActivity::~DeckOverviewActivity() { *alive = false; }
 void DeckOverviewActivity::onContentAvailable()
 {
     app::hideStatus(frame);
-    newCaption->setText("ankinx/decks/col_new"_i18n);
-    learnCaption->setText("ankinx/decks/col_learn"_i18n);
-    reviewCaption->setText("ankinx/decks/col_due"_i18n);
+    newCaption->setText("ankinx/overview/new"_i18n);
+    learnCaption->setText("ankinx/overview/learning"_i18n);
+    reviewCaption->setText("ankinx/overview/to_review"_i18n);
+    totalNewCaption->setText("ankinx/overview/total_new"_i18n);
+    totalCaption->setText("ankinx/overview/total_cards"_i18n);
+    // The deck's name centred in the header, as AnkiDroid shows it.
+    if (auto* header = dynamic_cast<brls::Box*>(frame->getView("brls/applet_frame/header")))
+        header->setJustifyContent(brls::JustifyContent::CENTER);
     studyLabel->setText(brls::Hint::getKeyIcon(brls::BUTTON_A, true) + "  " + "ankinx/overview/study_now"_i18n);
     studyButton->addGestureRecognizer(new brls::TapGestureRecognizer(studyButton, [this] { study(); }));
     frame->registerAction("ankinx/overview/study_now"_i18n, brls::BUTTON_A, [this](brls::View*) {
@@ -264,6 +269,8 @@ void DeckOverviewActivity::load()
                 newCount->setText(std::to_string(overview.value("new", 0)));
                 learnCount->setText(std::to_string(overview.value("learn", 0)));
                 reviewCount->setText(std::to_string(overview.value("review", 0)));
+                totalNewCount->setText(std::to_string(overview.value("total_new", 0)));
+                totalCount->setText(std::to_string(overview.value("total_cards", 0)));
                 bool night       = nightMode();
                 std::string html = std::string("<html><head><style>") + DESCRIPTION_CSS + "</style></head><body" +
                                    (night ? " class=\"nightMode\"" : "") + ">" +

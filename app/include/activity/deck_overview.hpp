@@ -45,6 +45,10 @@ class DeckOverviewActivity : public brls::Activity
     BRLS_BIND(brls::Label, newCaption, "newCaption");
     BRLS_BIND(brls::Label, learnCaption, "learnCaption");
     BRLS_BIND(brls::Label, reviewCaption, "reviewCaption");
+    BRLS_BIND(brls::Label, totalNewCaption, "totalNewCaption");
+    BRLS_BIND(brls::Label, totalCaption, "totalCaption");
+    BRLS_BIND(brls::Label, totalNewCount, "totalNewCount");
+    BRLS_BIND(brls::Label, totalCount, "totalCount");
     BRLS_BIND(CardView, description, "description");
     BRLS_BIND(brls::Box, studyButton, "studyButton");
     BRLS_BIND(brls::Label, studyLabel, "studyLabel");

@@ -49,6 +49,8 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
     brls::Application::createWindow("ankinx/title"_i18n);
+    // A slimmer top bar than borealis' 88 px: more room for cards and lists.
+    brls::getStyle().addMetric("brls/applet_frame/header_height", 72.0f);
     // "+" quits from every screen through app::quit (sync first), registered
     // by each activity instead of borealis' global quit.
     brls::Application::registerXMLView("CardView", CardView::create);

@@ -9,19 +9,33 @@
         axis="column"
         grow="1.0">
 
-        <!-- Today's counts, as in Anki's overview -->
-        <brls:Box width="auto" height="110" axis="row" justifyContent="center" alignItems="center">
-            <brls:Box width="200" height="auto" axis="column" alignItems="center">
-                <brls:Label id="newCount" width="auto" height="auto" fontSize="40" textColor="#42a5f5" />
-                <brls:Label id="newCaption" width="auto" height="auto" fontSize="18" textColor="#888888" />
+        <!-- Counts, as AnkiDroid's overview: captions and values in two
+             columns, the block centred -->
+        <brls:Box width="auto" height="auto" axis="row" justifyContent="center" marginTop="28">
+            <brls:Box width="auto" height="auto" axis="column" marginRight="56">
+                <brls:Label id="newCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
+                <brls:Label id="learnCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
+                <brls:Label id="reviewCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
+                <brls:Label id="totalNewCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
+                <brls:Label id="totalCaption" width="auto" height="auto" fontSize="26" />
             </brls:Box>
-            <brls:Box width="200" height="auto" axis="column" alignItems="center">
-                <brls:Label id="learnCount" width="auto" height="auto" fontSize="40" textColor="#ef5350" />
-                <brls:Label id="learnCaption" width="auto" height="auto" fontSize="18" textColor="#888888" />
+            <brls:Box width="auto" height="auto" axis="column">
+                <brls:Label id="newCount" width="auto" height="auto" fontSize="26" textColor="#42a5f5"
+                    marginBottom="6" />
+                <brls:Label id="learnCount" width="auto" height="auto" fontSize="26" textColor="#ef5350"
+                    marginBottom="6" />
+                <brls:Label id="reviewCount" width="auto" height="auto" fontSize="26" textColor="#66bb6a"
+                    marginBottom="6" />
+                <brls:Label id="totalNewCount" width="auto" height="auto" fontSize="26" marginBottom="6" />
+                <brls:Label id="totalCount" width="auto" height="auto" fontSize="26" />
             </brls:Box>
-            <brls:Box width="200" height="auto" axis="column" alignItems="center">
-                <brls:Label id="reviewCount" width="auto" height="auto" fontSize="40" textColor="#66bb6a" />
-                <brls:Label id="reviewCaption" width="auto" height="auto" fontSize="18" textColor="#888888" />
+        </brls:Box>
+
+        <!-- Study now, right below the counts -->
+        <brls:Box width="auto" height="auto" axis="row" justifyContent="center" marginTop="24">
+            <brls:Box id="studyButton" width="320" height="72" axis="column" justifyContent="center"
+                alignItems="center" cornerRadius="10" backgroundColor="#3b82f6">
+                <brls:Label id="studyLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
             </brls:Box>
         </brls:Box>
 
@@ -31,31 +45,28 @@
             width="auto"
             height="auto"
             grow="1.0"
+            marginTop="12"
             marginLeft="60"
             marginRight="60" />
 
-        <brls:Box id="buttons" width="auto" height="110" axis="row" justifyContent="center" alignItems="center">
-            <brls:Box id="studyButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
-                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#3b82f6">
-                <brls:Label id="studyLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
-            </brls:Box>
-            <brls:Box id="customButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
+        <brls:Box id="buttons" width="auto" height="100" axis="row" justifyContent="center" alignItems="center">
+            <brls:Box id="customButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
                 visibility="gone">
-                <brls:Label id="customLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+                <brls:Label id="customLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
             </brls:Box>
-            <brls:Box id="optionsButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="optionsButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
                 visibility="gone">
-                <brls:Label id="optionsLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+                <brls:Label id="optionsLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
             </brls:Box>
-            <brls:Box id="browseButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="browseButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575">
-                <brls:Label id="browseLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+                <brls:Label id="browseLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
             </brls:Box>
-            <brls:Box id="statsButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="statsButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575">
-                <brls:Label id="statsLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+                <brls:Label id="statsLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
             </brls:Box>
         </brls:Box>
     </brls:Box>

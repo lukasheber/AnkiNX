@@ -7,6 +7,10 @@
     "study": "Study",
     "sync": "Sync",
     "toggle": "Expand / collapse",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "due_one": "{} card due",
+    "due_other": "{} cards due",
     "overview": "Overview",
     "account": "AnkiWeb account",
     "empty": "No cards yet.\n\nPress X to log in to AnkiWeb and download your collection,\nor copy collection.anki2 and collection.media from Anki desktop\ninto /switch/ankinx/ on the SD card.",
@@ -81,6 +85,11 @@
     "advance_answer_reminder": "Time to answer"
   },
   "overview": {
+    "new": "New",
+    "learning": "Learning",
+    "to_review": "To Review",
+    "total_new": "Total new cards",
+    "total_cards": "Total cards",
     "study_now": "Study now",
     "custom_study": "Custom study",
     "options": "Options"

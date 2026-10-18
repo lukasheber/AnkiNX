@@ -603,8 +603,17 @@ impl State {
             DeckKind::Normal(normal) => normal.description.clone(),
             _ => String::new(),
         };
+        // All cards in the deck and its subdecks, and how many are new (as
+        // AnkiDroid's overview shows).
+        use anki::search::SortMode;
+        let search = deck_search(&deck.human_name());
+        let total_cards = col.search_cards(search.as_str(), SortMode::NoOrder).map_err(err)?.len();
+        let total_new =
+            col.search_cards(format!("{search} is:new").as_str(), SortMode::NoOrder).map_err(err)?.len();
         Ok(json!({
             "name": deck.human_name(),
+            "total_cards": total_cards,
+            "total_new": total_new,
             "new": node.map_or(0, |n| n.new_count),
             "learn": node.map_or(0, |n| n.learn_count),
             "review": node.map_or(0, |n| n.review_count),
@@ -754,15 +763,7 @@ impl State {
                     .get_deck(DeckId(id))
                     .map_err(err)?
                     .ok_or_else(|| ApiError::new("no_deck", "the deck no longer exists"))?;
-                let name: String = deck
-                    .human_name()
-                    .chars()
-                    .flat_map(|c| match c {
-                        '\\' | '"' | '*' | '_' => vec!['\\', c],
-                        _ => vec![c],
-                    })
-                    .collect();
-                format!("deck:\"{name}\"")
+                deck_search(&deck.human_name())
             }
             None => String::new(),
         };
@@ -939,9 +940,12 @@ impl State {
             let info = col.congrats_info().map_err(err)?;
             let next_learn = (info.learn_remaining > 0 && info.secs_until_next_learn < 86_400)
                 .then_some(info.secs_until_next_learn);
+            // "Studied N cards in X minutes today (Ys/card)", as Anki shows.
+            let studied_today = without_bidi_isolates(&col.studied_today().map_err(err)?);
             return Ok(json!({
                 "done": true,
                 "counts": counts,
+                "studied_today": studied_today,
                 "congrats": {
                     // Learning cards due later today, and in how many seconds.
                     "learn_remaining": info.learn_remaining,
@@ -1728,6 +1732,18 @@ fn parse_steps(text: &str) -> Option<Vec<f32>> {
             Some(number * minutes)
         })
         .collect()
+}
+
+/// An Anki search for a deck and its subdecks, the name escaped.
+fn deck_search(name: &str) -> String {
+    let escaped: String = name
+        .chars()
+        .flat_map(|c| match c {
+            '\\' | '"' | '*' | '_' => vec!['\\', c],
+            _ => vec![c],
+        })
+        .collect();
+    format!("deck:\"{escaped}\"")
 }
 
 fn find_deck_node(node: &DeckTreeNode, deck_id: i64) -> Option<&DeckTreeNode> {

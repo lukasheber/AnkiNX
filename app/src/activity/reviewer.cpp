@@ -900,6 +900,9 @@ void ReviewerActivity::showDone()
     updateCounts(card["counts"], "");
     std::string body = "<div style=\"text-align:center; margin-top:100px; font-size:26px\">" +
                        escapeHtml("ankinx/review/congrats"_i18n) + "</div>";
+    std::string studied = card.value("studied_today", "");
+    if (!studied.empty())
+        body += "<p style=\"text-align:center; font-size:22px\">" + escapeHtml(studied) + "</p>";
     doneMessages(body);
     ++timerGeneration;
     timerLabel->setVisibility(brls::Visibility::GONE);

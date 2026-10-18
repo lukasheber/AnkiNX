@@ -61,10 +61,15 @@ class DeckPickerActivity : public brls::Activity
     void openSettings();
     void updateAccountLabel(const std::string& username);
     void showMessage(const std::string& text);
+    void fitTable();
+    void updateDueLabel();
 
     BRLS_BIND(brls::RecyclerFrame, decks, "decks");
     BRLS_BIND(brls::Label, message, "message");
     BRLS_BIND(brls::Label, account, "account");
+    BRLS_BIND(brls::Box, columns, "columns");
+    // "N cards due", under the title in the header.
+    brls::Label* dueLabel = nullptr;
 
     std::vector<DeckEntry> entries;
     size_t focusedIndex = 0;
