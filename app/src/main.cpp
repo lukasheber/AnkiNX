@@ -9,6 +9,7 @@
 #include "script/card_script.hpp"
 #include "util/audio.hpp"
 #include "util/controls.hpp"
+#include "util/settings.hpp"
 #include "view/card_view.hpp"
 
 using namespace brls::literals;
@@ -38,7 +39,10 @@ int main(int argc, char* argv[])
         if (std::strcmp(argv[i], "-d") == 0)
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
 
-    brls::Platform::APP_LOCALE_DEFAULT = brls::LOCALE_AUTO;
+    // The console's language, unless Settings > About picks one.
+    anki::json language = settings::get("language");
+    brls::Platform::APP_LOCALE_DEFAULT =
+        language.is_string() && !language.get<std::string>().empty() ? language.get<std::string>() : brls::LOCALE_AUTO;
     if (!brls::Application::init())
     {
         brls::Logger::error("Unable to init the borealis application");

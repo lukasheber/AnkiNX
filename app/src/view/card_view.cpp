@@ -521,32 +521,10 @@ class NvgContainer : public document_container
         return id;
     }
 
-    // Cards draw with the regular font (on the Switch, Nintendo's Standard
-    // font, whose kanji are Japanese-style). borealis hangs the Switch's other
-    // shared fonts on the Chinese font only, the one its labels use; give the
-    // regular font the same fallbacks so Korean, Chinese-only characters and
-    // symbols show in cards too. (On PC the regular font already has them.)
-    void systemFallbacks()
-    {
-        static bool done = false;
-        if (done || !vg)
-            return;
-        done = true;
-#ifdef __SWITCH__
-        int regular = brls::Application::getFont(brls::FONT_REGULAR);
-        for (const std::string& fallback :
-             { brls::FONT_CHINESE_SIMPLIFIED, brls::FONT_CHINESE_SIMPLIFIED_EXT, brls::FONT_CHINESE_TRADITIONAL,
-               brls::FONT_KOREAN_REGULAR, brls::FONT_SWITCH_ICONS, brls::FONT_MATERIAL_ICONS, brls::FONT_EMOJI })
-            if (int f = brls::Application::getFont(fallback); f >= 0 && regular >= 0)
-                nvgAddFallbackFontId(vg, regular, f);
-#endif
-        rtlFallback();
-    }
-
   public:
     uint_ptr create_font(const font_description& descr, const document*, font_metrics* fm) override
     {
-        systemFallbacks();
+        rtlFallback(); // the system fallbacks are set up in main.cpp
         auto* f       = new Font();
         f->face       = brls::Application::getFont(brls::FONT_REGULAR);
         f->size       = std::max(1.0f, (float)descr.size);

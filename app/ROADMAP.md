@@ -114,7 +114,7 @@ template JavaScript, then this list, taken in groups of related features
 | Deck options (limits, learning steps, FSRS on/off, desired retention) | ✅ | See section 1 |
 | Custom study and filtered decks (study ahead, forgotten cards, by tag, increase today's limit) | ✅ | See section 1 |
 | Statistics: today (cards, time), forecast, review heatmap, retention | ✅ | R on the deck overview (that deck and subdecks) or Settings > Statistics (all decks): Today, Forecast, Heatmap, Retention panels drawn natively from rslib's graph data; L/R or tap to switch |
-| Multiple profiles, one per Switch user | P2 | Families share consoles; pick the profile from the Switch user selector (`/switch/ankinx/<user>/`) |
+| Multiple profiles, one per Switch user | — | Not planned (2026-10-18): one profile per console |
 | Custom sync server (self-hosted Anki sync server) | ✅ | Settings > Account > Sync server; used at login (changing it logs out) |
 | Read-only card browser (search, preview, suspend/flag from the list) | ✅ | L (or Browse) on the deck overview: an Anki search (starts with the deck), up to 200 cards by sort field with deck, flag and suspension; preview of the answer side with X flag and Y suspend/unsuspend. No editing |
 | Deck list actions: collapse all, filter, show only decks with due cards | P3 | |
@@ -123,7 +123,7 @@ template JavaScript, then this list, taken in groups of related features
 
 | Feature | Priority | Notes |
 | --- | --- | --- |
-| Interface translations (Portuguese, Spanish, Japanese, ...) | P1 | Anki's own strings (scheduler, errors) are already translated through rslib; the app's own strings are English only |
+| Interface translations (Portuguese, Spanish, Japanese, ...) | ✅ | Portuguese (Brazil; also used for Portugal), Spanish (also Latin America), Japanese; follows the console, or Settings > About > Language (after a restart). Anki's own strings come from rslib |
 | Docked/TV layout: larger card text and buttons at 1080p | P2 | |
 | In-app theme choice (light/dark/follow system) | P3 | Follows the system theme today |
 | Night mode adapted to card CSS | P3 | Moved here: the app already follows the Switch's dark theme |

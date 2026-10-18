@@ -309,6 +309,26 @@ brls::View* SettingsActivity::aboutTab()
     brls::ScrollingFrame* scroller;
     brls::Box* box = column(&scroller);
     box->addView(header("AnkiNX"));
+
+    // The language (also of Anki's own messages): the console's, or one of
+    // the translations. borealis reads it at start, so it applies after a restart.
+    static const char* CODES[] = { "", "en-US", "pt-BR", "es", "ja" };
+    std::vector<std::string> names = { "ankinx/settings/language_auto"_i18n, "English", "Português (Brasil)", "Español",
+                                       "日本語" };
+    anki::json chosen = settings::get("language");
+    int selected      = 0;
+    for (int i = 1; i < 5; i++)
+        if (chosen.is_string() && chosen.get<std::string>() == CODES[i])
+            selected = i;
+    auto* language = new brls::SelectorCell();
+    language->init("ankinx/settings/language"_i18n, names, selected, [](int index) {
+        if (index < 0 || index > 4)
+            return;
+        settings::set("language", index ? anki::json(CODES[index]) : anki::json());
+        brls::Application::notify("ankinx/settings/language_restart"_i18n);
+    });
+    box->addView(language);
+
     box->addView(detail("ankinx/settings/version"_i18n, ANKINX_VERSION));
     box->addView(detail("ankinx/settings/backend"_i18n, std::string("Anki ") + anki_buildhash()));
     box->addView(detail("ankinx/settings/data_folder"_i18n, anki::dataDir()));

@@ -42,6 +42,8 @@ build, then commit and tag (`git tag v0.2.0`).
 - Statistics: today's study, a 30-day forecast, a 26-week review heatmap,
   true retention and card counts, for a deck (R on its overview) or the
   whole collection (Settings > Statistics).
+- Translations: Portuguese (Brazil), Spanish and Japanese, following the
+  console's language or Settings > About > Language.
 - Read-only card browser (L on the deck overview): any Anki search, the
   matching cards with deck, flag and suspension, a preview, and flag /
   suspend / unsuspend from it.
@@ -70,8 +72,6 @@ build, then commit and tag (`git tag v0.2.0`).
 - Messages as in Anki: a leech dialog after answering; on the finished
   screen, when the next learning card is due (studying resumes then), and
   whether daily limits held cards back or some were buried.
-- Card text on the Switch: Korean, Chinese-only characters and symbols now
-  show in cards (the system font used there had no fallbacks).
 - Card buttons without touch: the D-pad (Left/Right, then Up/Down) highlights
   what a tap could activate (template buttons and options, links such as
   audio replay, form controls); A taps it, B removes the highlight. With
