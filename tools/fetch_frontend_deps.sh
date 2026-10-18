@@ -19,6 +19,10 @@ DEPS=(
 )
 
 pinned() { [[ -f "$PINS" ]] && awk -v n="$1" '$1 == n {print $2}' "$PINS"; }
+# Our fixes to a library: app/patches/<name>/*.patch, applied in order with
+# `patch -p1` after extraction. The stamp changes when they do.
+PATCHES="$ANKISWITCH_SRC/app/patches"
+patch_stamp() { cat "$PATCHES/$1"/*.patch 2>/dev/null | sha1sum | cut -c1-12; }
 
 for dep in "${DEPS[@]}"; do
     read -r name url ref <<< "$dep"
@@ -29,7 +33,8 @@ for dep in "${DEPS[@]}"; do
         echo "$name $sha $url" >> "$PINS"
     fi
     dest="$LIB/$name"
-    if [[ -f "$dest/.pinned-sha" && $(cat "$dest/.pinned-sha") == "$sha" ]]; then
+    stamp="$sha $(patch_stamp "$name")"
+    if [[ -f "$dest/.pinned-sha" && $(cat "$dest/.pinned-sha") == "$stamp" ]]; then
         echo "$name already at $sha"; continue
     fi
     echo "$name -> $url @ $sha"
@@ -41,7 +46,12 @@ for dep in "${DEPS[@]}"; do
     git -C "$tmp" submodule update -q --init --depth 1 --recursive 2>/dev/null || true
     rm -rf "$dest" && mkdir -p "$dest"
     (cd "$tmp" && tar --exclude=.git -cf - .) | tar -xf - -C "$dest"
-    echo "$sha" > "$dest/.pinned-sha"
+    for p in "$PATCHES/$name"/*.patch; do
+        [[ -f "$p" ]] || continue
+        echo "  patch $(basename "$p")"
+        patch -s -p1 -d "$dest" < "$p"
+    done
+    echo "$stamp" > "$dest/.pinned-sha"
     rm -rf "$tmp"
 done
 # The desktop preview needs the Switch system fonts, which borealis ships.

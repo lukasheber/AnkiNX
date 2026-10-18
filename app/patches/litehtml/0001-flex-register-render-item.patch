@@ -1,0 +1,14 @@
+render_item_flex::init() replaces render_item::init() without registering
+the render item with its element, so get_placement() of any display:flex
+element is 0x0 (render_item::init does `src_el()->add_render(...)`).
+AnkiNX needs placements to highlight card elements for the controller.
+
+--- a/src/render_flex.cpp
++++ b/src/render_flex.cpp
+@@ -330,5 +330,6 @@
+ std::shared_ptr<litehtml::render_item> litehtml::render_item_flex::init()
+ {
++    src_el()->add_render(shared_from_this());
+     auto                 doc = src_el()->get_document();
+     decltype(m_children) new_children;
+     decltype(m_children) inlines;

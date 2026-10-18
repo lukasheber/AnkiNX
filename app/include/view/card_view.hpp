@@ -71,6 +71,14 @@ class CardView : public brls::View
     // scripts); returning true means it was handled (onTap isn't called).
     void setOnElementTap(std::function<bool(int serial)> callback);
 
+    // Controller access to what a tap could activate (links, buttons, form
+    // controls, labels, elements with script click handlers): Left/Right, and
+    // Up/Down once one is highlighted, move a highlight between them.
+    bool hasFocusedElement() const { return focusIndex >= 0; }
+    // Tap the highlighted element. Returns false if there is none.
+    bool activateFocused();
+    void clearElementFocus();
+
     void scrollBy(float dy);
     void setZoom(float zoom);
     float getZoom() const { return zoom; }
@@ -84,6 +92,11 @@ class CardView : public brls::View
     void layout(float width);
     float maxScroll() const;
     void handleTap(brls::Point point);
+    void tapAt(float docX, float docY);
+    std::vector<litehtml::element::ptr> focusables() const;
+    // Move the highlight by `delta` elements; false at either end.
+    bool moveFocus(int delta);
+    void drawFocus(NVGcontext* vg);
 
     std::unique_ptr<NvgContainer> container;
     litehtml::document::ptr document;
@@ -100,4 +113,9 @@ class CardView : public brls::View
     std::function<bool(int)> onElementTap;
     std::vector<Occlusion> occlusions;
     bool masksHidden = false;
+    // The highlighted element: its index in focusables(), and its script
+    // serial (0 if none) to find it again after a script changes the card.
+    int focusIndex  = -1;
+    int focusSerial = 0;
+    std::vector<litehtml::element::ptr> focusList; // focusables() after layout
 };

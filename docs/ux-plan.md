@@ -170,6 +170,11 @@ the deck overview:
   transparent drawing layer over the card. A thin toolbar on the right edge:
   pen, eraser, clear, hide. Cleared on the next card. Handheld only.
 - **Zoom**: stick presses or pinch; remembered per deck.
+- **Card elements without touch** (done): D-pad Left/Right highlights what a
+  tap could activate (template buttons and options, links, form controls);
+  Up/Down then move the highlight, A taps it, B removes it. Without a
+  highlight, A and Up/Down keep their usual jobs. Left/Right bound to a
+  reviewer action take precedence.
 - **Rumble** (Settings > Study): short pulse on grading.
 
 ## 5. Audio and timing

@@ -25,6 +25,10 @@ build, then commit and tag (`git tag v0.2.0`).
   jQuery), as do `pycmd("ans")` / `pycmd("ease3")`, checkbox and radio taps,
   `<label>` taps and more selectors (`:nth-of-type`, `:checked`, ...).
   Tested with a shared multiple-choice note type.
+- Card buttons without touch: the D-pad (Left/Right, then Up/Down) highlights
+  what a tap could activate (template buttons and options, links such as
+  audio replay, form controls); A taps it, B removes the highlight. With
+  nothing highlighted, A and Up/Down work as before.
 - Inline `<svg>` in cards, and `data:` image URIs (such as SVG icons in CSS
   backgrounds), are drawn.
 - Fix: script-edited cards no longer garble characters whose UTF-8 encoding

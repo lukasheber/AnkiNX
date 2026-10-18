@@ -204,7 +204,24 @@ function addListener(target, type, fn, options) {
     if (!byType.has(type)) byType.set(type, []);
     const list = byType.get(type);
     if (!list.some(l => l.fn === fn)) list.push({ fn, once: !!(options && options.once) });
+    markClickable(target, type);
 }
+// Elements with click handlers can be reached with the controller (the
+// reviewer highlights them in turn; see CardView). Not body or html: a
+// handler there listens to the whole card.
+const CLICK_TYPES = ["click", "mousedown", "mouseup", "touchstart", "touchend", "pointerdown", "pointerup"];
+function markClickable(target, type) {
+    if (CLICK_TYPES.includes(type) && target && target.nodeType === 1 && !["body", "html"].includes(n.tagName(target)))
+        n.markClickable(target);
+}
+const handlerProps = new WeakMap();
+for (const type of CLICK_TYPES)
+    def("on" + type, function () { const m = handlerProps.get(this); return (m && m[type]) || null; }, function (fn) {
+        let m = handlerProps.get(this);
+        if (!m) handlerProps.set(this, (m = {}));
+        m[type] = typeof fn === "function" ? fn : null;
+        if (m[type]) markClickable(this, type);
+    });
 function removeListener(target, type, fn) {
     const byType = listeners.get(target);
     if (byType && byType.has(type)) byType.set(type, byType.get(type).filter(l => l.fn !== fn));

@@ -33,6 +33,9 @@ struct Node : std::enable_shared_from_this<Node>
     // Stable id for this document, written as data-ankinx-node so taps on
     // litehtml's layout can be traced back here.
     int serial = 0;
+    // A script attached a click handler: written as data-ankinx-click so the
+    // reviewer can offer the element to the controller.
+    bool clickable = false;
 
     bool isElement() const { return type == Type::Element; }
     const std::string* attr(const std::string& name) const;

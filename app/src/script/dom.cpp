@@ -359,6 +359,8 @@ void write(std::string& out, const NodePtr& node, bool serials, bool rawParent)
                 out += " " + k + "=\"" + escape(v, true) + "\"";
             if (serials)
                 out += " data-ankinx-node=\"" + std::to_string(node->serial) + "\"";
+            if (serials && node->clickable)
+                out += " data-ankinx-click=\"\"";
             out += ">";
             if (isVoid(node->tag))
                 return;

@@ -4,13 +4,17 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iterator>
 #include <lunasvg.h>
 #include <map>
+#include <strings.h>
 #include <sys/stat.h>
 #include <webp/decode.h>
+
+#include "util/controls.hpp"
 
 using namespace litehtml;
 
@@ -715,30 +719,42 @@ CardView::CardView()
     this->setFocusable(true);
     this->setHideHighlight(true);
 
+    // Up/Down scroll, or move the highlight once there is one (past either
+    // end it goes away and scrolling resumes). Left/Right move the highlight.
+    // borealis sends a D-pad press as both BUTTON_<dir> and BUTTON_NAV_<dir>
+    // (the stick only as NAV), so only the NAV buttons are registered.
+    auto vertical = [this](int delta) {
+        if (focusIndex >= 0 && moveFocus(delta))
+            return true;
+        clearElementFocus();
+        this->scrollBy(160.0f * delta);
+        return true;
+    };
+    // (Unless the user bound Left/Right to a reviewer action.)
+    auto horizontal = [this](brls::ControllerButton button, int delta) {
+        if (focusList.empty() || !controls::actionsFor(controls::activeLayout(), button).empty())
+            return false;
+        moveFocus(delta);
+        return true;
+    };
+    this->registerAction("", brls::BUTTON_NAV_UP, [vertical](brls::View*) { return vertical(-1); }, true, true);
+    this->registerAction("", brls::BUTTON_NAV_DOWN, [vertical](brls::View*) { return vertical(1); }, true, true);
     this->registerAction(
-        "", brls::BUTTON_UP, [this](brls::View*) {
-            this->scrollBy(-80);
+        "", brls::BUTTON_NAV_LEFT, [horizontal](brls::View*) { return horizontal(brls::BUTTON_LEFT, -1); }, true, true);
+    this->registerAction(
+        "", brls::BUTTON_NAV_RIGHT, [horizontal](brls::View*) { return horizontal(brls::BUTTON_RIGHT, 1); }, true, true);
+    // With a highlight, A taps it and B removes it; otherwise both go on to
+    // the reviewer (show answer / grade, back).
+    this->registerAction(
+        "", brls::BUTTON_A, [this](brls::View*) { return activateFocused(); }, true);
+    this->registerAction(
+        "", brls::BUTTON_B, [this](brls::View*) {
+            if (focusIndex < 0)
+                return false;
+            clearElementFocus();
             return true;
         },
-        true, true);
-    this->registerAction(
-        "", brls::BUTTON_DOWN, [this](brls::View*) {
-            this->scrollBy(80);
-            return true;
-        },
-        true, true);
-    this->registerAction(
-        "", brls::BUTTON_NAV_UP, [this](brls::View*) {
-            this->scrollBy(-80);
-            return true;
-        },
-        true, true);
-    this->registerAction(
-        "", brls::BUTTON_NAV_DOWN, [this](brls::View*) {
-            this->scrollBy(80);
-            return true;
-        },
-        true, true);
+        true);
 
     // Touch: drag to scroll, tap to activate links (or flip the card).
     this->addGestureRecognizer(new brls::PanGestureRecognizer(
@@ -766,6 +782,7 @@ void CardView::setHtml(const std::string& value, bool keepScroll)
     {
         scroll         = 0;
         scrollToAnswer = false;
+        clearElementFocus();
     }
 }
 
@@ -814,6 +831,147 @@ void CardView::layout(float width)
             if (auto hr = root->select_one("#answer"))
                 scroll = std::clamp((float)hr->get_placement().y * zoom - 20.0f, 0.0f, maxScroll());
     }
+
+    // Keep the highlight on the same element (scripts re-render the card).
+    focusList = focusables();
+    if (focusIndex >= 0)
+    {
+        int found = -1;
+        for (size_t i = 0; i < focusList.size() && focusSerial; i++)
+            if (const char* s = focusList[i]->get_attr("data-ankinx-node"); s && std::atoi(s) == focusSerial)
+                found = (int)i;
+        if (found < 0 && !focusList.empty())
+            found = std::min(focusIndex, (int)focusList.size() - 1);
+        focusIndex = found;
+        if (found < 0)
+            focusSerial = 0;
+    }
+}
+
+namespace
+{
+
+// Placement in document coordinates, as plain floats.
+struct Box
+{
+    float x, y, width, height;
+};
+
+Box placement(const element::ptr& el)
+{
+    position p = el->get_placement();
+    return { (float)p.x, (float)p.y, (float)p.width, (float)p.height };
+}
+
+bool isFocusable(const element::ptr& el)
+{
+    const char* tagName = el->get_tagName();
+    if (!tagName || !*tagName)
+        return false;
+    std::string tag = tagName;
+    const char* type = el->get_attr("type", "");
+    bool candidate   = el->get_attr("data-ankinx-click") || el->get_attr("onclick") ||
+                     (tag == "a" && el->get_attr("href")) || tag == "button" || tag == "select" ||
+                     tag == "textarea" || tag == "label" || tag == "summary" ||
+                     (tag == "input" && strcasecmp(type, "hidden") != 0);
+    if (!candidate || el->css().get_visibility() != visibility_visible)
+        return false;
+    Box p = placement(el);
+    return p.width > 0 && p.height > 0;
+}
+
+// Outermost focusable elements, in document order (a label, not also the
+// checkbox inside it).
+void collectFocusable(const element::ptr& el, std::vector<element::ptr>& out)
+{
+    if (isFocusable(el))
+    {
+        out.push_back(el);
+        return;
+    }
+    for (const auto& child : el->children())
+        collectFocusable(child, out);
+}
+
+} // namespace
+
+std::vector<litehtml::element::ptr> CardView::focusables() const
+{
+    std::vector<element::ptr> out;
+    if (document && document->root())
+        collectFocusable(document->root(), out);
+    return out;
+}
+
+bool CardView::moveFocus(int delta)
+{
+    if (focusList.empty())
+        return false;
+    int next;
+    if (focusIndex < 0)
+    {
+        // Start at the first element on screen (or the last, going back).
+        float top = scroll / zoom, bottom = (scroll + viewHeight) / zoom;
+        next      = delta > 0 ? 0 : (int)focusList.size() - 1;
+        for (size_t i = 0; i < focusList.size(); i++)
+        {
+            size_t k   = delta > 0 ? i : focusList.size() - 1 - i;
+            Box p = placement(focusList[k]);
+            if (p.y + p.height > top && p.y < bottom)
+            {
+                next = (int)k;
+                break;
+            }
+        }
+    }
+    else
+    {
+        next = focusIndex + delta;
+        if (next < 0 || next >= (int)focusList.size())
+            return false;
+    }
+    focusIndex          = next;
+    const char* serial  = focusList[next]->get_attr("data-ankinx-node");
+    focusSerial         = serial ? std::atoi(serial) : 0;
+
+    // Scroll it into view, with a margin.
+    Box p    = placement(focusList[next]);
+    float top     = p.y * zoom - 24.0f;
+    float bottom  = (p.y + p.height) * zoom + 24.0f;
+    if (top < scroll || bottom - top > viewHeight)
+        scroll = top;
+    else if (bottom > scroll + viewHeight)
+        scroll = bottom - viewHeight;
+    scroll = std::clamp(scroll, 0.0f, maxScroll());
+    return true;
+}
+
+void CardView::clearElementFocus()
+{
+    focusIndex  = -1;
+    focusSerial = 0;
+}
+
+bool CardView::activateFocused()
+{
+    if (focusIndex < 0 || focusIndex >= (int)focusList.size())
+        return false;
+    Box p = placement(focusList[focusIndex]);
+    tapAt(p.x + p.width / 2.0f, p.y + p.height / 2.0f);
+    return true;
+}
+
+void CardView::drawFocus(NVGcontext* vg)
+{
+    if (focusIndex < 0 || focusIndex >= (int)focusList.size())
+        return;
+    Box p  = placement(focusList[focusIndex]);
+    float pad   = 4.0f / zoom;
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, p.x - pad, p.y - pad, p.width + 2 * pad, p.height + 2 * pad, 6.0f / zoom);
+    nvgStrokeColor(vg, nvgRGB(13, 182, 213)); // borealis' highlight colour
+    nvgStrokeWidth(vg, 3.0f / zoom);
+    nvgStroke(vg);
 }
 
 void CardView::handleTap(brls::Point point)
@@ -821,8 +979,13 @@ void CardView::handleTap(brls::Point point)
     if (!document)
         return;
     // Screen point -> document coordinates.
-    float docX = (point.x - this->getX()) / zoom;
-    float docY = (point.y - this->getY() + scroll) / zoom;
+    tapAt((point.x - this->getX()) / zoom, (point.y - this->getY() + scroll) / zoom);
+}
+
+void CardView::tapAt(float docX, float docY)
+{
+    if (!document)
+        return;
     auto redraw   = [](const position&) {}; // the whole view is redrawn every frame anyway
     linkActivated = false;
     // litehtml acts on the element found by the last mouse-over; touch has no
@@ -862,6 +1025,7 @@ void CardView::draw(NVGcontext* vg, float x, float y, float width, float height,
     nvgScale(vg, zoom, zoom);
     position clip(0, scroll / zoom, width / zoom, height / zoom);
     document->draw(0, 0, 0, &clip);
+    drawFocus(vg);
     nvgRestore(vg);
 
     // Scroll indicator when the card is taller than the screen.

@@ -274,6 +274,21 @@ int main(int argc, char** argv)
                   has(html, "preserveAspectRatio=\"none\""),
               "SVG names keep their case and namespace prefixes", html);
     }
+    {
+        CardScript s(prelude, ".");
+        s.show("<div id=\"a\">a</div><div id=\"b\">b</div><div id=\"c\">c</div><script>"
+               "document.getElementById('a').addEventListener('click', () => {});"
+               "document.getElementById('b').onclick = () => {};"
+               "document.body.addEventListener('click', () => {});</script>",
+               "card");
+        std::string html = s.html();
+        auto marked      = [&](const char* id) {
+            size_t at = html.find(std::string("id=\"") + id + "\"");
+            return at != std::string::npos && html.find("data-ankinx-click", at) < html.find('>', at);
+        };
+        check(marked("a") && marked("b") && !marked("c") && !has(html, "<body data-ankinx-click"),
+              "elements with click handlers are marked for the controller", html);
+    }
     check(CardScript::wanted("<b onclick=\"x()\">a</b>") && CardScript::wanted("<script>1</script>") &&
               !CardScript::wanted("<p>plain, with \"on\" = text</p>"),
           "scripts detected only where present");

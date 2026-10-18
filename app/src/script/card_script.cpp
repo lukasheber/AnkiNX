@@ -209,6 +209,17 @@ NATIVE(nRemoveAttr)
     return JS_UNDEFINED;
 }
 
+NATIVE(nMarkClickable)
+{
+    NODE(node, 0);
+    if (!node->clickable)
+    {
+        node->clickable = true;
+        self(ctx).changed();
+    }
+    return JS_UNDEFINED;
+}
+
 NATIVE(nAttrNames)
 {
     NODE(node, 0);
@@ -397,7 +408,8 @@ CardScript::CardScript(const std::string& prelude, std::string mediaDir)
         { "html", nHtml, 1 },               { "setHtml", nSetHtml, 2 },
         { "outer", nOuter, 1 },             { "getAttr", nGetAttr, 2 },
         { "setAttr", nSetAttr, 3 },         { "removeAttr", nRemoveAttr, 2 },
-        { "attrNames", nAttrNames, 1 },     { "append", nAppend, 2 },
+        { "attrNames", nAttrNames, 1 },     { "markClickable", nMarkClickable, 1 },
+        { "append", nAppend, 2 },
         { "insertBefore", nInsertBefore, 3 }, { "remove", nRemove, 2 },
         { "clone", nClone, 2 },             { "query", nQuery, 2 },
         { "queryAll", nQueryAll, 2 },       { "matches", nMatches, 2 },
