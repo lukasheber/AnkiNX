@@ -72,6 +72,7 @@ class ReviewerActivity : public brls::Activity
     void pressReplay(brls::ControllerButton button);
     void doneMessages(std::string& body);
     bool menuAvailable() const;
+    bool sideHasAudio() const;
     // Run `f` on the UI thread unless the activity was closed meanwhile. Background
     // tasks must take `token` (a copy of `alive`) when they are created, on the
     // UI thread, never read `alive` themselves.

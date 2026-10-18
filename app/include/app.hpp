@@ -15,7 +15,7 @@ void quit();
 void registerQuit(brls::View* contentView);
 
 // Leave the footer of an AppletFrame to button hints: no battery, Wi-Fi or
-// clock: the reviewer needs the room for its hints.
+// clock (the reviewer needs the room), and the hints centred.
 void hideStatus(brls::View* frame);
 
 } // namespace app

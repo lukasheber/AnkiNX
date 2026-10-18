@@ -444,6 +444,19 @@ void ReviewerActivity::showCardState()
     menuButton->setVisibility(shown ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
 }
 
+// Whether replay has something to play on the side shown (sound files; TTS
+// tags aren't played).
+bool ReviewerActivity::sideHasAudio() const
+{
+    const char* key = state == State::Answer ? "answer_av" : "question_av";
+    if (!card.contains(key) || !card[key].is_array())
+        return false;
+    for (const anki::json& tag : card[key])
+        if (tag.value("kind", "") == "sound")
+            return true;
+    return false;
+}
+
 bool ReviewerActivity::menuAvailable() const
 {
     return (state == State::Question || state == State::Answer) && card.contains("card_id");
@@ -1012,7 +1025,13 @@ void ReviewerActivity::applyControls()
             case Action::ShowAnswer: hint = "hints/ok"_i18n; break;
             case Action::Undo: hint = "ankinx/review/undo"_i18n; break;
             case Action::ReplayAudio:
-                hint = menuAvailable() ? "ankinx/review/replay_hold"_i18n : "ankinx/review/replay"_i18n;
+                // Without audio on this side the button only opens the menu.
+                if (!menuAvailable())
+                    hint = "ankinx/review/replay"_i18n;
+                else if (sideHasAudio())
+                    hint = "ankinx/review/replay_hold"_i18n;
+                else
+                    hint = "ankinx/review/hold_menu"_i18n;
                 break;
             case Action::Hints:
                 hint = masksToggle() ? "ankinx/review/toggle_masks"_i18n : "ankinx/review/hints"_i18n;

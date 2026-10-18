@@ -29,10 +29,16 @@ void registerQuit(brls::View* contentView)
 
 void hideStatus(brls::View* frame)
 {
-    // Ids from borealis' BottomBar (lib/views/bottom_bar.cpp).
-    for (const char* id : { "brls/battery", "brls/wireless", "brls/hints/time" })
-        if (brls::View* view = frame->getView(id))
-            view->setVisibility(brls::Visibility::GONE);
+    // borealis' BottomBar (lib/views/bottom_bar.cpp): a row of the hints and
+    // a box with battery, Wi-Fi and clock, spread to both ends. Without the
+    // status box, the hints go in the middle.
+    brls::View* battery = frame->getView("brls/battery");
+    brls::Box* status   = battery ? dynamic_cast<brls::Box*>(battery->getParent()) : nullptr;
+    brls::Box* row      = status ? dynamic_cast<brls::Box*>(status->getParent()) : nullptr;
+    if (!status || !row)
+        return;
+    status->setVisibility(brls::Visibility::GONE);
+    row->setJustifyContent(brls::JustifyContent::CENTER);
 }
 
 } // namespace app
