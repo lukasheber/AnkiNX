@@ -99,12 +99,12 @@ template JavaScript, then this list, taken in groups of related features
 | Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | ✅ | From the card menu: rslib `card_stats` as a page of tables (card view); B closes |
 | Leech, daily-limit and "learning card due in N min" messages | ✅ | Leech dialog after answering; the finished screen says when the next learning card is due (and resumes then), and when limits stopped cards or some were buried |
 | Answer timer and auto advance (show answer / answer after N seconds) | ✅ | Timer in the header (deck option; red at the cap, frozen on the answer with "Stop timer on answer"). Auto advance started per session from the card menu, as in Anki: seconds per side, waits for audio, question and answer actions. Both set in deck options |
-| Whiteboard (draw on the card with the touchscreen) | P2 | AnkiDroid feature, very useful for kanji and handwriting; handheld mode only |
-| Tap zones and swipe gestures (handheld) | P2 | AnkiDroid-style: tap left/right/bottom areas for answer buttons |
-| Persistent card zoom / text size per deck | P2 | Stick-click zoom exists but resets each card |
+| Whiteboard (draw on the card with the touchscreen) | ✅ | Pen in the header (handheld mode): drawing over the card instead of scrolling; bin clears; cleared on the next card. No eraser or colours yet |
+| Tap zones and swipe gestures (handheld) | 🔶 | Swipes (Settings > Study, off by default): ← Again, ↓ Hard, → Good, ↑ Easy; vertical ones only on cards that don't scroll. Tap zones not done |
+| Persistent card zoom / text size per deck | ✅ | Stick-press zoom remembered per deck. No pinch zoom (borealis has no pinch gesture) |
 | Audio options: autoplay on/off, replay question only, playback speed | 🔶 | "Don't play audio automatically" honoured; "Skip question when replaying answer" editable in deck options but not applied yet; no playback speed (SDL_mixer can't change it) |
-| Redo, multiple undo levels shown | P3 | Undo exists |
-| Rumble on answer (HD Rumble) | P3 | Light feedback when grading |
+| Redo, multiple undo levels shown | ✅ | Redo in the card menu (Anki's redo stack) |
+| Rumble on answer (HD Rumble) | ✅ | Settings > Study, off by default; a 60 ms pulse on the handheld or player-1 controller. Needs an on-console check |
 
 ### Around studying
 

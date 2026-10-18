@@ -236,6 +236,16 @@ brls::View* SettingsActivity::studyTab()
     scripts->init("ankinx/settings/card_scripts"_i18n, settings::cardScripts(),
                   [](bool on) { settings::setCardScripts(on); });
     box->addView(scripts);
+
+    box->addView(header("ankinx/settings/answering"_i18n));
+    auto* swipes = new brls::BooleanCell();
+    swipes->init("ankinx/settings/swipe_answers"_i18n, settings::get("swipe_answers") == true,
+                 [](bool on) { settings::set("swipe_answers", on); });
+    box->addView(swipes);
+    auto* rumble = new brls::BooleanCell();
+    rumble->init("ankinx/settings/rumble"_i18n, settings::get("rumble") == true,
+                 [](bool on) { settings::set("rumble", on); });
+    box->addView(rumble);
     return scroller;
 }
 

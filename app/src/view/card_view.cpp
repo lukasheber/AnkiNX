@@ -1042,12 +1042,34 @@ CardView::CardView()
         true);
 
     // Touch: drag to scroll, tap to activate links (or flip the card).
+    // Any direction: vertical movement scrolls; a long, mostly straight pan
+    // is also reported as a swipe (vertical ones only on cards that don't
+    // scroll, where dragging can't mean scrolling).
     this->addGestureRecognizer(new brls::PanGestureRecognizer(
         [this](brls::PanGestureStatus status, brls::Sound*) {
+            if (whiteboard)
+            {
+                if (!strokeOpen)
+                    strokes.push_back({ { status.startPosition.x - this->getX(),
+                                          status.startPosition.y - this->getY() } });
+                strokes.back().push_back({ status.position.x - this->getX(), status.position.y - this->getY() });
+                strokeOpen = status.state != brls::GestureState::END && status.state != brls::GestureState::FAILED &&
+                             status.state != brls::GestureState::INTERRUPTED;
+                return;
+            }
             if (status.state == brls::GestureState::STAY || status.state == brls::GestureState::END)
                 this->scrollBy(-status.delta.y);
+            if (status.state != brls::GestureState::END || !onSwipe)
+                return;
+            float dx = status.position.x - status.startPosition.x;
+            float dy = status.position.y - status.startPosition.y;
+            constexpr float MIN_SWIPE = 150;
+            if (std::fabs(dx) >= MIN_SWIPE && std::fabs(dx) > 2 * std::fabs(dy))
+                onSwipe(dx < 0 ? Swipe::Left : Swipe::Right);
+            else if (std::fabs(dy) >= MIN_SWIPE && std::fabs(dy) > 2 * std::fabs(dx) && maxScroll() <= 0)
+                onSwipe(dy < 0 ? Swipe::Up : Swipe::Down);
         },
-        brls::PanAxis::VERTICAL));
+        brls::PanAxis::ANY));
     this->addGestureRecognizer(new brls::TapGestureRecognizer(
         [this](brls::TapGestureStatus status, brls::Sound*) {
             if (status.state == brls::GestureState::END)
@@ -1260,9 +1282,31 @@ void CardView::drawFocus(NVGcontext* vg)
     nvgStroke(vg);
 }
 
+void CardView::drawWhiteboard(NVGcontext* vg, float x, float y)
+{
+    if (!whiteboard || strokes.empty())
+        return;
+    bool dark = brls::Application::getThemeVariant() == brls::ThemeVariant::DARK;
+    nvgSave(vg);
+    nvgScissor(vg, x, y, this->getWidth(), this->getHeight());
+    nvgStrokeColor(vg, dark ? nvgRGBA(240, 240, 240, 230) : nvgRGBA(30, 30, 30, 230));
+    nvgStrokeWidth(vg, 4.0f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgLineJoin(vg, NVG_ROUND);
+    for (const auto& stroke : strokes)
+    {
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x + stroke[0].x, y + stroke[0].y);
+        for (size_t i = 1; i < stroke.size(); i++)
+            nvgLineTo(vg, x + stroke[i].x, y + stroke[i].y);
+        nvgStroke(vg);
+    }
+    nvgRestore(vg);
+}
+
 void CardView::handleTap(brls::Point point)
 {
-    if (!document)
+    if (!document || whiteboard)
         return;
     // Screen point -> document coordinates.
     tapAt((point.x - this->getX()) / zoom, (point.y - this->getY() + scroll) / zoom);
@@ -1329,6 +1373,7 @@ void CardView::draw(NVGcontext* vg, float x, float y, float width, float height,
     document->draw(0, 0, 0, &clip);
     drawFocus(vg);
     nvgRestore(vg);
+    drawWhiteboard(vg, x, y);
 
     // Scroll indicator when the card is taller than the screen.
     float total = (float)document->height() * zoom;

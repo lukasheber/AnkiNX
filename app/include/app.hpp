@@ -19,6 +19,9 @@ void registerQuit(brls::View* contentView);
 // clock (the reviewer needs the room), the hints centred, and no greyed A hint.
 void hideStatus(brls::View* frame);
 
+// Whether the console is in handheld mode (touch available); true off the Switch.
+bool isHandheld();
+
 // The same for a dropdown (which has its own frame); returns it, to push.
 brls::Dropdown* withoutStatus(brls::Dropdown* dropdown);
 

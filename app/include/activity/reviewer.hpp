@@ -39,6 +39,8 @@ class ReviewerActivity : public brls::Activity
     void showAnswer();
     void answer(int ease);
     void undo();
+    void redo();
+    void undoOrRedo(bool redo);
     void replay();
     void revealHint(const std::string& id);
     void revealAllHints();
@@ -80,6 +82,10 @@ class ReviewerActivity : public brls::Activity
     bool canAutoAdvance() const;
     bool menuAvailable() const;
     bool sideHasAudio() const;
+    // Card zoom, remembered per deck (settings "zoom": deck id -> zoom).
+    void setZoom(float zoom);
+    // Whiteboard (touch): the pen toggles drawing over the card.
+    void setWhiteboard(bool on);
     // Run `f` on the UI thread unless the activity was closed meanwhile. Background
     // tasks must take `token` (a copy of `alive`) when they are created, on the
     // UI thread, never read `alive` themselves.
@@ -131,4 +137,8 @@ class ReviewerActivity : public brls::Activity
     BRLS_BIND(brls::Box, menuButton, "menuButton");
     BRLS_BIND(brls::Box, flagBar, "flagBar");
     BRLS_BIND(brls::Label, timerLabel, "timerLabel");
+    BRLS_BIND(brls::Box, penButton, "penButton");
+    BRLS_BIND(brls::Label, penIcon, "penIcon");
+    BRLS_BIND(brls::Box, clearButton, "clearButton");
+    BRLS_BIND(brls::Label, clearIcon, "clearIcon");
 };

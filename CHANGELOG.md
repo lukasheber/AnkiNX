@@ -39,6 +39,11 @@ build, then commit and tag (`git tag v0.2.0`).
   in Anki 23.12+: started from the card menu, it shows the answer and then
   answers (or buries, or reminds) after the deck's seconds, waiting for the
   audio if the deck says so. Both are set in deck options.
+- Whiteboard (handheld): the pen in the reviewer's header lets you draw over
+  the card; the bin clears it, and each new card starts clean.
+- Settings > Study: swipe to answer (← Again, ↓ Hard, → Good, ↑ Easy) and
+  rumble when answering, both off by default.
+- Card zoom (stick presses) is remembered per deck; Redo in the card menu.
 - Dropdown menus show only their button hints too (no clock).
 - + quits only from the deck list (it syncs first when automatic sync is
   on); the reviewer and settings have no + (B goes back).

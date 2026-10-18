@@ -70,6 +70,16 @@ class CardView : public brls::View
     // Called first for a tap on an element tagged data-ankinx-node (card
     // scripts); returning true means it was handled (onTap isn't called).
     void setOnElementTap(std::function<bool(int serial)> callback);
+    // Swipes (touch): horizontal ones always, vertical ones on cards that
+    // fit without scrolling.
+    enum class Swipe
+    {
+        Left,
+        Right,
+        Up,
+        Down,
+    };
+    void setOnSwipe(std::function<void(Swipe)> callback) { onSwipe = std::move(callback); }
 
     // Controller access to what a tap could activate (links, buttons, form
     // controls, labels, elements with script click handlers): Left/Right, and
@@ -78,6 +88,12 @@ class CardView : public brls::View
     // Tap the highlighted element. Returns false if there is none.
     bool activateFocused();
     void clearElementFocus();
+
+    // Whiteboard (touch): drawing over the card. While on, dragging draws
+    // instead of scrolling and taps do nothing; off hides the drawing.
+    void setWhiteboard(bool on) { whiteboard = on; }
+    bool getWhiteboard() const { return whiteboard; }
+    void clearWhiteboard() { strokes.clear(); }
 
     void scrollBy(float dy);
     void setZoom(float zoom);
@@ -111,6 +127,7 @@ class CardView : public brls::View
     std::function<void(const std::string&)> onLink;
     std::function<void()> onTap;
     std::function<bool(int)> onElementTap;
+    std::function<void(Swipe)> onSwipe;
     std::vector<Occlusion> occlusions;
     bool masksHidden = false;
     // The highlighted element: its index in focusables(), and its script
@@ -118,4 +135,9 @@ class CardView : public brls::View
     int focusIndex  = -1;
     int focusSerial = 0;
     std::vector<litehtml::element::ptr> focusList; // focusables() after layout
+    bool whiteboard = false;
+    // Strokes in view coordinates (the drawing stays put when the card scrolls).
+    std::vector<std::vector<brls::Point>> strokes;
+    bool strokeOpen = false;
+    void drawWhiteboard(NVGcontext* vg, float x, float y);
 };

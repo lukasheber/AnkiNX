@@ -179,6 +179,12 @@ fn study_flow() {
     let card = ok("next_card", json!({}));
     assert_eq!(card["card_id"].as_i64().unwrap(), first_card);
     assert_eq!(card["counts"]["new"], 3);
+    // Redo answers it again; undo once more for the checks below.
+    assert_eq!(ok("redo", json!({}))["redone"], true);
+    assert_eq!(ok("next_card", json!({}))["counts"]["new"], 2);
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+    let card = ok("next_card", json!({}));
+    assert_eq!(card["card_id"].as_i64().unwrap(), first_card);
     assert_eq!(error_kind("answer", json!({ "ease": 7 })), "args");
 
     // Card menu: flag and mark show on the card; card info.

@@ -6,6 +6,7 @@
 #include "util/inline_svg.hpp"
 #include "util/keyboard.hpp"
 #include "util/ruby.hpp"
+#include "util/rumble.hpp"
 #include "util/settings.hpp"
 
 #include <algorithm>
@@ -80,7 +81,9 @@ bool nightMode() { return brls::Application::getThemeVariant() == brls::ThemeVar
 // Material icons (resources/material): star, more_horiz. (The flag is a
 // coloured dot: Material's flag codepoint is taken by the Switch symbol font.)
 const char* ICON_STAR = "\xEE\xA0\xB8";
-const char* ICON_MORE = "\xEE\x97\x93";
+const char* ICON_MORE   = "\xEE\x97\x93";
+const char* ICON_EDIT   = "\xEE\x8F\x89"; // edit: the whiteboard pen
+const char* ICON_DELETE = "\xEE\xA1\xB2"; // delete: clear the whiteboard
 
 // Anki's flag colours, 1 (red) to 7 (purple).
 NVGcolor flagColor(int flag)
@@ -276,6 +279,18 @@ void ReviewerActivity::onContentAvailable()
     showAnswerBox->addGestureRecognizer(new brls::TapGestureRecognizer(showAnswerBox, [this] { showAnswer(); }));
     markIcon->setText(ICON_STAR);
     menuIcon->setText(ICON_MORE);
+    penIcon->setText(ICON_EDIT);
+    clearIcon->setText(ICON_DELETE);
+    // A tap gives focus to what was tapped: hand it back to the card, whose
+    // D-pad scrolling and highlight depend on it.
+    penButton->addGestureRecognizer(new brls::TapGestureRecognizer(penButton, [this] {
+        setWhiteboard(!cardView->getWhiteboard());
+        brls::Application::giveFocus(cardView);
+    }));
+    clearButton->addGestureRecognizer(new brls::TapGestureRecognizer(clearButton, [this] {
+        cardView->clearWhiteboard();
+        brls::Application::giveFocus(cardView);
+    }));
     menuButton->addGestureRecognizer(new brls::TapGestureRecognizer(menuButton, [this] {
         if (menuAvailable())
             openCardMenu();
@@ -284,6 +299,19 @@ void ReviewerActivity::onContentAvailable()
     cardView->setOnTap([this] {
         if (state == State::Question)
             showAnswer();
+    });
+    // Settings > Study, "Swipe to answer" (off by default, as in AnkiDroid):
+    // ← Again, ↓ Hard, → Good, ↑ Easy on the answer side.
+    cardView->setOnSwipe([this](CardView::Swipe swipe) {
+        if (state != State::Answer || settings::get("swipe_answers") != true)
+            return;
+        switch (swipe)
+        {
+            case CardView::Swipe::Left: answer(1); break;
+            case CardView::Swipe::Down: answer(2); break;
+            case CardView::Swipe::Right: answer(3); break;
+            case CardView::Swipe::Up: answer(4); break;
+        }
     });
     // Taps on card elements go to card scripts first (onclick etc.).
     cardView->setOnElementTap([this](int serial) {
@@ -307,6 +335,11 @@ void ReviewerActivity::onContentAvailable()
         if (index >= 0 && index < (int)tags.size())
             playAudio(anki::json::array({ tags[index] }));
     });
+
+    // The deck's card zoom from the last session (stick presses change it).
+    anki::json zooms = settings::get("zoom");
+    if (zooms.is_object() && zooms[std::to_string(deckId)].is_number())
+        cardView->setZoom(zooms[std::to_string(deckId)].get<float>());
 
     // Buttons follow the bindings of the controller layout in use
     // (util/controls); see onButton and refreshControls.
@@ -415,6 +448,7 @@ void ReviewerActivity::showQuestion()
 {
     state = State::Question;
     typed.clear();
+    cardView->clearWhiteboard(); // a new card: a clean whiteboard (it stays on)
     updateCounts(card["counts"], card.value("queue", ""));
     shownBody = questionBody();
     startScripts();
@@ -444,7 +478,31 @@ void ReviewerActivity::showCardState()
         flagBar->setBackgroundColor(flagColor(flag));
     }
     markIcon->setVisibility(mark ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    // The whiteboard needs the touchscreen.
+    bool pen = shown && app::isHandheld();
+    if (!pen && cardView->getWhiteboard())
+        setWhiteboard(false);
+    penButton->setVisibility(pen ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     menuButton->setVisibility(shown ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
+}
+
+// As AnkiDroid's whiteboard: drawing over the card (touch), kept until the
+// next card; the pen shows blue while on.
+void ReviewerActivity::setWhiteboard(bool on)
+{
+    cardView->setWhiteboard(on);
+    penIcon->setTextColor(on ? nvgRGB(59, 130, 246) : brls::Application::getTheme()["brls/text"]);
+    clearButton->setVisibility(on ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+}
+
+void ReviewerActivity::setZoom(float zoom)
+{
+    cardView->setZoom(zoom);
+    anki::json zooms = settings::get("zoom");
+    if (!zooms.is_object())
+        zooms = anki::json::object();
+    zooms[std::to_string(deckId)] = cardView->getZoom(); // as clamped by the view
+    settings::set("zoom", zooms);
 }
 
 // Whether replay has something to play on the side shown (sound files; TTS
@@ -490,6 +548,7 @@ void ReviewerActivity::openCardMenu()
     };
     if (previousCardId)
         items.push_back({ "ankinx/review/previous_info"_i18n, [this, id = previousCardId] { showCardInfo(id); } });
+    items.push_back({ "ankinx/review/redo"_i18n, [this] { redo(); } });
     // As Anki's "Auto Advance" toggle: only when the deck sets its times.
     if (canAutoAdvance() || autoAdvance)
         items.push_back({ autoAdvance ? "ankinx/review/advance_stop"_i18n : "ankinx/review/advance_start"_i18n, [this] {
@@ -786,6 +845,8 @@ void ReviewerActivity::answer(int ease)
     state = State::Loading;
     audio::stop();
     previousCardId = card.value("card_id", (int64_t)0);
+    if (settings::get("rumble") == true)
+        rumble::pulse();
     brls::async([this, ease, token = alive] {
         try
         {
@@ -811,18 +872,25 @@ void ReviewerActivity::answer(int ease)
     });
 }
 
-void ReviewerActivity::undo()
+void ReviewerActivity::undo() { undoOrRedo(false); }
+
+void ReviewerActivity::redo() { undoOrRedo(true); }
+
+void ReviewerActivity::undoOrRedo(bool redo)
 {
     if (state == State::Loading)
         return;
     state = State::Loading;
-    brls::async([this, token = alive] {
+    brls::async([this, redo, token = alive] {
         try
         {
-            bool undone = anki::call("undo")["undone"].get<bool>();
-            onUi(token, [this, undone] {
-                brls::Application::notify(undone ? "ankinx/review/undone"_i18n
-                                                 : "ankinx/review/nothing_to_undo"_i18n);
+            bool done = anki::call(redo ? "redo" : "undo")[redo ? "redone" : "undone"].get<bool>();
+            onUi(token, [this, redo, done] {
+                if (redo)
+                    brls::Application::notify(done ? "ankinx/review/redone"_i18n : "ankinx/review/nothing_to_redo"_i18n);
+                else
+                    brls::Application::notify(done ? "ankinx/review/undone"_i18n
+                                                   : "ankinx/review/nothing_to_undo"_i18n);
                 loadNext();
             });
         }
@@ -1103,8 +1171,8 @@ bool ReviewerActivity::onButton(brls::ControllerButton button)
             else
                 revealAllHints();
             break;
-        case Action::ZoomOut: cardView->setZoom(cardView->getZoom() - 0.1f); break;
-        case Action::ZoomIn: cardView->setZoom(cardView->getZoom() + 0.1f); break;
+        case Action::ZoomOut: setZoom(cardView->getZoom() - 0.1f); break;
+        case Action::ZoomIn: setZoom(cardView->getZoom() + 0.1f); break;
         default: break;
     }
     return true;

@@ -2,6 +2,10 @@
 
 #include "util/sync_flow.hpp"
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 using namespace brls::literals;
 
 namespace app
@@ -25,6 +29,15 @@ void registerQuit(brls::View* contentView)
         return true;
     });
     hideStatus(contentView);
+}
+
+bool isHandheld()
+{
+#ifdef __SWITCH__
+    return appletGetOperationMode() == AppletOperationMode_Handheld;
+#else
+    return true;
+#endif
 }
 
 brls::Dropdown* withoutStatus(brls::Dropdown* dropdown)

@@ -310,6 +310,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "answer" => state.answer(&args),
         "type_answer" => state.type_answer(&args),
         "undo" => state.undo(),
+        "redo" => state.redo(),
         "card_action" => state.card_action(&args),
         "card_info" => state.card_info(&args),
         "login" => state.login(&args),
@@ -1084,6 +1085,18 @@ impl State {
         }
         col.undo().map_err(|e| ApiError::anki(e, &tr))?;
         Ok(json!({ "undone": true }))
+    }
+
+    /// `redo`: redo what `undo` undid last, if nothing changed since.
+    fn redo(&mut self) -> ApiResult {
+        let tr = self.tr.clone();
+        self.shown = None;
+        let col = self.col()?;
+        if col.can_redo().is_none() {
+            return Ok(json!({ "redone": false }));
+        }
+        col.redo().map_err(|e| ApiError::anki(e, &tr))?;
+        Ok(json!({ "redone": true }))
     }
 
     // ----- AnkiWeb sync (mirrors rslib/src/backend/sync.rs) -----
