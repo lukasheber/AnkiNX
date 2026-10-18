@@ -93,7 +93,7 @@ template JavaScript, then this list, taken in groups of related features
 
 | Feature | Priority | Notes |
 | --- | --- | --- |
-| Single Joy-Con (sideways) and custom key bindings | ✅ | Automatic layout detection, SL/Y/A/SR grading, Settings > Controls to rebind (`util/controls.cpp`). Needs an on-console check. Card menu on holding Y comes with the card actions |
+| Single Joy-Con (sideways) and custom key bindings | ✅ | Automatic layout detection, SL/Y/A/SR grading, Settings > Controls to rebind (`util/controls.cpp`). Verified on console: both Joy-Cons detached (grip screen) or only one detached. Card menu on holding Y comes with the card actions |
 | Card actions menu: flag (colours), mark, bury card/note, suspend card/note, forget, set due date | P1 | AnkiDroid's reviewer menu; all are scheduler operations in rslib, not editing |
 | Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | P1 | rslib `card_stats` |
 | Leech, daily-limit and "learning card due in N min" messages | P1 | Anki shows these; today the app just says "finished" |
