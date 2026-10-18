@@ -103,18 +103,34 @@ std::vector<Action> allActions()
 
 std::string actionName(Action action) { return std::string("ankinx/controls/") + ACTION_KEYS[(size_t)action]; }
 
+// Decided as borealis decides its button mapping (switch_input.cpp): from the
+// controllers that are connected now (PadState), where a style without the
+// "full control" styles is a single sideways Joy-Con. (hidGetNpadStyleSet
+// kept reporting the console's Joy-Cons after they were detached.)
 bool oneJoyConDetected()
 {
 #ifdef __SWITCH__
-    bool single = false, full = false;
-    if (hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld)
-        full = true;
-    for (int id = HidNpadIdType_No1; id <= HidNpadIdType_No8; id++)
+    static PadState handheld, pads[8];
+    static bool initialized = false;
+    if (!initialized)
     {
-        u32 style = hidGetNpadStyleSet((HidNpadIdType)id);
-        if (style & (HidNpadStyleTag_NpadFullKey | HidNpadStyleTag_NpadJoyDual))
+        padInitialize(&handheld, HidNpadIdType_Handheld);
+        for (int i = 0; i < 8; i++)
+            padInitialize(&pads[i], (HidNpadIdType)(HidNpadIdType_No1 + i));
+        initialized = true;
+    }
+    padUpdate(&handheld);
+    if (padIsHandheld(&handheld))
+        return false;
+    bool single = false, full = false;
+    for (auto& pad : pads)
+    {
+        padUpdate(&pad);
+        if (pad.style_set == 0)
+            continue;
+        if (pad.style_set & HidNpadStyleSet_NpadFullCtrl)
             full = true;
-        if (style & (HidNpadStyleTag_NpadJoyLeft | HidNpadStyleTag_NpadJoyRight))
+        else
             single = true;
     }
     return single && !full;
@@ -132,25 +148,6 @@ void showControllerSupport()
     HidLaControllerSupportResultInfo info;
     if (R_FAILED(hidLaShowControllerSupport(&info, &arg)))
         brls::Logger::error("controls: controller applet failed");
-#endif
-}
-
-void watchControllers()
-{
-#ifdef __SWITCH__
-    static bool wasHandheld = hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld;
-    bool handheld = hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld;
-    if (wasHandheld && !handheld)
-    {
-        bool proController = false;
-        for (int id = HidNpadIdType_No1; id <= HidNpadIdType_No8; id++)
-            if (hidGetNpadStyleSet((HidNpadIdType)id) & HidNpadStyleTag_NpadFullKey)
-                proController = true;
-        if (!proController)
-            showControllerSupport();
-    }
-    wasHandheld = handheld;
-    brls::delay(1000, [] { watchControllers(); });
 #endif
 }
 
