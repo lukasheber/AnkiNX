@@ -7,6 +7,7 @@
 #include "activity/deck_picker.hpp"
 #include "anki/api.hpp"
 #include "util/audio.hpp"
+#include "util/controls.hpp"
 #include "view/card_view.hpp"
 
 using namespace brls::literals;
@@ -49,6 +50,9 @@ int main(int argc, char* argv[])
     setupCardFontFallbacks();
 
     brls::Application::pushActivity(new DeckPickerActivity());
+    // Joy-Cons taken off the console: offer the system grip screen (one
+    // sideways Joy-Con), as games do.
+    controls::watchControllers();
 
     // Applet mode (hbmenu via the Album) has far less memory than title
     // override; warn, but let the user continue.

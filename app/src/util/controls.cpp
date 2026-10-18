@@ -107,25 +107,63 @@ std::string actionName(Action action) { return std::string("ankinx/controls/") +
 // controllers that are connected now (PadState), where a style without the
 // "full control" styles is a single sideways Joy-Con. (hidGetNpadStyleSet
 // kept reporting the console's Joy-Cons after they were detached.)
-bool oneJoyConDetected()
-{
 #ifdef __SWITCH__
-    static PadState handheld, pads[8];
+namespace
+{
+
+struct Pads
+{
+    PadState handheld;
+    PadState players[8];
+};
+
+// Controller states, refreshed. PadState only counts connected controllers.
+Pads& pads()
+{
+    static Pads p;
     static bool initialized = false;
     if (!initialized)
     {
-        padInitialize(&handheld, HidNpadIdType_Handheld);
+        padInitialize(&p.handheld, HidNpadIdType_Handheld);
         for (int i = 0; i < 8; i++)
-            padInitialize(&pads[i], (HidNpadIdType)(HidNpadIdType_No1 + i));
+            padInitialize(&p.players[i], (HidNpadIdType)(HidNpadIdType_No1 + i));
         initialized = true;
     }
-    padUpdate(&handheld);
-    if (padIsHandheld(&handheld))
+    padUpdate(&p.handheld);
+    for (auto& pad : p.players)
+        padUpdate(&pad);
+    return p;
+}
+
+std::string styleName(u32 style)
+{
+    if (style & HidNpadStyleTag_NpadFullKey)
+        return "Pro Controller";
+    if (style & HidNpadStyleTag_NpadJoyDual)
+        return "Joy-Con pair";
+    if (style & HidNpadStyleTag_NpadJoyLeft)
+        return "Joy-Con (L)";
+    if (style & HidNpadStyleTag_NpadJoyRight)
+        return "Joy-Con (R)";
+    return "style " + std::to_string(style);
+}
+
+} // namespace
+#endif
+
+// Decided as borealis decides its button mapping (switch_input.cpp): from the
+// controllers connected now (PadState), where a style without the "full
+// control" styles is a single sideways Joy-Con. (hidGetNpadStyleSet alone
+// kept reporting the console's Joy-Cons after they were detached.)
+bool oneJoyConDetected()
+{
+#ifdef __SWITCH__
+    Pads& p = pads();
+    if (padIsHandheld(&p.handheld))
         return false;
     bool single = false, full = false;
-    for (auto& pad : pads)
+    for (auto& pad : p.players)
     {
-        padUpdate(&pad);
         if (pad.style_set == 0)
             continue;
         if (pad.style_set & HidNpadStyleSet_NpadFullCtrl)
@@ -136,6 +174,41 @@ bool oneJoyConDetected()
     return single && !full;
 #else
     return false;
+#endif
+}
+
+std::string describeControllers()
+{
+#ifdef __SWITCH__
+    Pads& p = pads();
+    std::string out;
+    for (int i = 0; i < 8; i++)
+        if (p.players[i].style_set != 0)
+            out += "Player " + std::to_string(i + 1) + ": " + styleName(p.players[i].style_set) + " · ";
+    out += std::string("Handheld: ") + (padIsHandheld(&p.handheld) ? "yes" : "no");
+    return out;
+#else
+    return "Keyboard / desktop";
+#endif
+}
+
+void watchControllers()
+{
+#ifdef __SWITCH__
+    static bool wasHandheld = padIsHandheld(&pads().handheld);
+    Pads& p          = pads();
+    bool handheld    = padIsHandheld(&p.handheld);
+    if (wasHandheld && !handheld)
+    {
+        bool other = false;
+        for (auto& pad : p.players)
+            if (pad.style_set & HidNpadStyleTag_NpadFullKey)
+                other = true;
+        if (!other)
+            showControllerSupport();
+    }
+    wasHandheld = handheld;
+    brls::delay(1000, [] { watchControllers(); });
 #endif
 }
 

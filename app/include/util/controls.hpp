@@ -55,6 +55,12 @@ bool oneJoyConDetected();
 // sideways Joy-Con (Settings > Controls). Detaching from the console assigns
 // single Joy-Cons by itself; this covers grips and switching back.
 void showControllerSupport();
+// When the Joy-Cons come off the console with nothing else connected, open
+// showControllerSupport once (games do the same). Polls once a second.
+void watchControllers();
+// What the system reports, for Settings > Controls: e.g.
+// "Player 1: Joy-Con (L) · Handheld: no".
+std::string describeControllers();
 
 brls::ControllerButton binding(Layout layout, Action action);
 // Bind `button`; an action that had it gets this action's old button.

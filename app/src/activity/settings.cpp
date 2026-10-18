@@ -148,6 +148,8 @@ brls::View* SettingsActivity::controlsTab()
                  });
     box->addView(layout);
 
+    box->addView(detail("ankinx/controls/detected"_i18n, controls::describeControllers()));
+
     auto* grip = detail("ankinx/controls/change_grip"_i18n, "");
     grip->registerClickAction([this, token = alive](brls::View*) {
         controls::showControllerSupport();

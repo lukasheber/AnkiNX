@@ -80,6 +80,7 @@
     "layout_standard": "Pro Controller / two Joy-Cons",
     "layout_one_joycon": "One Joy-Con",
     "change_grip": "Change grip / order (use one Joy-Con sideways)",
+    "detected": "Detected",
     "buttons": "Buttons",
     "reset": "Reset to defaults",
     "reset_done": "Buttons reset to defaults",
