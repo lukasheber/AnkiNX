@@ -27,7 +27,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Image Occlusion (stock note type, Anki 23.10+) | ✅ | Masks drawn natively over the image (rect, ellipse, polygon, text) following `review.ts`; "occlude inactive"; X toggles masks on the answer. Verified in preview and host tests; needs an on-console check |
 | `[sound:...]`, replay buttons | ✅ | |
 | `{{tts ...}}` | ⬜ | See section 3 |
-| MathJax `\(...\)`, `\[...\]` | ✅ | Native: LaTeX → Typst (MiTeX) → SVG, cached in `/switch/ankinx/cache/math`, sized in `em` and on the text baseline (`switch/anki_switch_core/src/math.rs`). ~25 ms per new formula on PC; adds ~25 MB to the `.nro`. Needs an on-console check |
+| MathJax `\(...\)`, `\[...\]` | ✅ | Native: LaTeX → Typst (MiTeX) → SVG, cached in `/switch/ankinx/cache/math`, sized in `em` and on the text baseline (`switch/anki_switch_core/src/math.rs`). ~25 ms per new formula on PC; adds ~25 MB to the `.nro`. Verified on console |
 | Template JavaScript | ⬜ | See the JavaScript evaluation |
 | CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables; flexbox partial; to audit against popular shared-deck styles |
 | Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
@@ -42,7 +42,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | Controller mapping (A, ZL/L/R/ZR, X hints, −, B, Y) | ✅ | |
 | Touch: tap to flip, tap buttons/links, drag to scroll; stick-click zoom | ✅ | |
 | Hint fields (`{{hint:...}}`) | ✅ | Native, no JavaScript: tap the link or press X |
-| Custom key bindings | ⬜ | Settings screen; map actions (show answer, ease 1–4, undo, replay, hints) to buttons; store in `/switch/ankinx/settings.json`; the reviewer already registers actions in one place (`ReviewerActivity::onContentAvailable`) |
+| Custom key bindings | ✅ | See the backlog: Settings > Controls |
 | Deck options (new cards/day, max reviews/day, steps) | ⬜ | Backend: `Collection::get_deck_config`/`update_deck_configs` exposed through new JSON commands; UI: borealis list of number/selector cells |
 | Custom study, tag filters | ⬜ | Backend: `custom_study` and filtered decks (`add_or_update_filtered_deck`) with search strings such as `tag:verbs is:due`; UI: dialog like AnkiDroid's custom study menu |
 
@@ -93,7 +93,7 @@ template JavaScript, then this list, taken in groups of related features
 
 | Feature | Priority | Notes |
 | --- | --- | --- |
-| Single Joy-Con (sideways) and custom key bindings | P1 | Sideways Joy-Con has no ZL/L/R/ZR, so it can't grade cards today. Detect the layout, map face buttons to Again/Hard/Good/Easy, settings screen for all actions |
+| Single Joy-Con (sideways) and custom key bindings | ✅ | Automatic layout detection, SL/Y/A/SR grading, Settings > Controls to rebind (`util/controls.cpp`). Needs an on-console check. Card menu on holding Y comes with the card actions |
 | Card actions menu: flag (colours), mark, bury card/note, suspend card/note, forget, set due date | P1 | AnkiDroid's reviewer menu; all are scheduler operations in rslib, not editing |
 | Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | P1 | rslib `card_stats` |
 | Leech, daily-limit and "learning card due in N min" messages | P1 | Anki shows these; today the app just says "finished" |

@@ -53,7 +53,7 @@ class DeckPickerActivity : public brls::Activity
     void refresh();
     void sync();
     void afterSync();
-    void showAccountMenu();
+    void openSettings();
     void updateAccountLabel(const std::string& username);
     void showMessage(const std::string& text);
 
@@ -66,4 +66,5 @@ class DeckPickerActivity : public brls::Activity
     bool ready          = false;
     // Back from the study screen: sync the reviews (closing from HOME can't).
     bool returningFromStudy = false;
+    bool returningFromSettings = false;
 };

@@ -3,7 +3,7 @@
 #include "activity/reviewer.hpp"
 #include "anki/api.hpp"
 #include "app.hpp"
-#include "util/settings.hpp"
+#include "activity/settings.hpp"
 #include "util/sync_flow.hpp"
 
 using namespace brls::literals;
@@ -88,8 +88,8 @@ void DeckPickerActivity::onContentAvailable()
         this->sync();
         return true;
     });
-    frame->registerAction("ankinx/decks/account"_i18n, brls::BUTTON_BACK, [this](brls::View*) {
-        this->showAccountMenu();
+    frame->registerAction("ankinx/settings/title"_i18n, brls::BUTTON_BACK, [this](brls::View*) {
+        this->openSettings();
         return true;
     });
     app::registerQuit(frame);
@@ -102,7 +102,14 @@ void DeckPickerActivity::onResume()
     // Also called when a dialog closes (dialogs are activities).
     if (!ready)
         return;
-    refresh();
+    if (returningFromSettings)
+    {
+        // The account may have changed there.
+        returningFromSettings = false;
+        afterSync();
+    }
+    else
+        refresh();
     if (returningFromStudy)
     {
         // Due counts have changed; upload the reviews if automatic sync is on.
@@ -228,45 +235,13 @@ void DeckPickerActivity::afterSync()
     refresh();
 }
 
-void DeckPickerActivity::showAccountMenu()
+// Settings (account, controls, about), docs/ux-plan.md section 1.
+void DeckPickerActivity::openSettings()
 {
     if (!ready)
         return;
-    std::string username;
-    try
-    {
-        anki::json status = anki::call("status");
-        if (status["username"].is_string())
-            username = status["username"].get<std::string>();
-    }
-    catch (const anki::Error&)
-    {
-    }
-
-    std::string text = username.empty() ? "ankinx/decks/not_logged_in"_i18n
-                                        : "ankinx/decks/logged_in_as"_i18n + " " + username;
-    auto* dialog = new brls::Dialog(text + "\n\nAnkiNX " ANKINX_VERSION);
-    dialog->addButton("hints/cancel"_i18n, [] {});
-    if (username.empty())
-        dialog->addButton("ankinx/decks/login"_i18n, [this] {
-            sync_flow::login([this](bool loggedIn) {
-                if (loggedIn)
-                    this->sync();
-            });
-        });
-    else
-        dialog->addButton("ankinx/decks/logout"_i18n, [this] {
-            sync_flow::logout();
-            updateAccountLabel("");
-        });
-    bool autoSync = settings::autoSync();
-    dialog->addButton(autoSync ? "ankinx/decks/auto_sync_off"_i18n : "ankinx/decks/auto_sync_on"_i18n,
-                      [autoSync] {
-                          settings::setAutoSync(!autoSync);
-                          brls::Application::notify(!autoSync ? "ankinx/decks/auto_sync_enabled"_i18n
-                                                              : "ankinx/decks/auto_sync_disabled"_i18n);
-                      });
-    dialog->open();
+    returningFromSettings = true;
+    brls::Application::pushActivity(new SettingsActivity());
 }
 
 void DeckPickerActivity::updateAccountLabel(const std::string& username)

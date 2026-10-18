@@ -14,6 +14,10 @@ build, then commit and tag (`git tag v0.2.0`).
   typeset natively with Typst (LaTeX converted by MiTeX), drawn as SVG on the
   text baseline, cached on the SD card. The `.nro` grows to about 76 MB.
 - Footer shows "Toggle masks" for X on Image Occlusion answers.
+- Controls: one Joy-Con held sideways is detected and grades with SL / Y / A /
+  SR; every reviewer button can be rebound per layout.
+- Settings screen on − (Account & sync, Controls, About), replacing the
+  account dialog.
 
 ## 0.2.0 (2026-10-17)
 

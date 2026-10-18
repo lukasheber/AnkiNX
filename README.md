@@ -19,7 +19,7 @@ images, type-in-the-answer and Image Occlusion cards. Adding and editing notes
 and cards is **not implemented**. Create and maintain your collection in Anki
 desktop or AnkiDroid, and use AnkiNX to review it.
 
-**With AnkiWeb (recommended).** Log in with the − button and sync with X.
+**With AnkiWeb (recommended).** Log in under Settings (− button) > Account & sync, and sync with X.
 Automatic sync is on by default: when the app opens, after studying and before
 exiting with +. Your reviews then reach Anki desktop and AnkiDroid, and new
 cards made there reach the Switch.

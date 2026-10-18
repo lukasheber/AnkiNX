@@ -40,4 +40,12 @@ void setAutoSync(bool enabled)
     save();
 }
 
+anki::json get(const std::string& key) { return values().contains(key) ? values()[key] : anki::json(); }
+
+void set(const std::string& key, anki::json value)
+{
+    values()[key] = std::move(value);
+    save();
+}
+
 } // namespace settings

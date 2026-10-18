@@ -2,7 +2,10 @@
 
 #include "app.hpp"
 #include "util/audio.hpp"
+#include "util/controls.hpp"
 #include "util/keyboard.hpp"
+
+#include <algorithm>
 
 #include <sys/stat.h>
 
@@ -53,7 +56,6 @@ const char* NIGHT_CSS = R"CSS(
 )CSS";
 
 // Ease button glyphs from the Switch's shared symbol font (as in borealis hints).
-const char* EASE_GLYPHS[4] = { "", "", "", "" }; // ZL L R ZR
 const char* EASE_KEYS[4]   = { "ankinx/review/again", "ankinx/review/hard", "ankinx/review/good",
                                "ankinx/review/easy" };
 
@@ -127,9 +129,7 @@ void ReviewerActivity::onContentAvailable()
 
     for (int ease = 1; ease <= 4; ease++)
     {
-        auto* box  = (brls::Box*)this->getView("ease" + std::to_string(ease));
-        auto* name = (brls::Label*)this->getView("ease" + std::to_string(ease) + "Name");
-        name->setText(std::string(EASE_GLYPHS[ease - 1]) + "  " + brls::getStr(EASE_KEYS[ease - 1]));
+        auto* box = (brls::Box*)this->getView("ease" + std::to_string(ease));
         box->addGestureRecognizer(new brls::TapGestureRecognizer(box, [this, ease] { answer(ease); }));
     }
     showAnswerBox->addGestureRecognizer(new brls::TapGestureRecognizer(showAnswerBox, [this] { showAnswer(); }));
@@ -153,52 +153,9 @@ void ReviewerActivity::onContentAvailable()
             playAudio(anki::json::array({ tags[index] }));
     });
 
-    // A: show answer (on type-answer cards, type it first), then "Good".
-    // Controller shortcuts for the four buttons.
-    frame->registerAction("hints/ok"_i18n, brls::BUTTON_A, [this](brls::View*) {
-        if (state == State::Question && card.value("type_answer", false))
-            typeAnswer();
-        else if (state == State::Question)
-            showAnswer();
-        else if (state == State::Answer)
-            answer(3);
-        else if (state == State::Done || state == State::Failed)
-            brls::Application::popActivity();
-        return true;
-    }, true);
-    const brls::ControllerButton easeKeys[4] = { brls::BUTTON_LT, brls::BUTTON_LB, brls::BUTTON_RB,
-                                                 brls::BUTTON_RT };
-    for (int ease = 1; ease <= 4; ease++)
-        frame->registerAction("", easeKeys[ease - 1], [this, ease](brls::View*) {
-            if (state == State::Answer)
-                answer(ease);
-            return true;
-        }, true);
-    frame->registerAction("ankinx/review/undo"_i18n, brls::BUTTON_BACK, [this](brls::View*) {
-        undo();
-        return true;
-    });
-    frame->registerAction("ankinx/review/hints"_i18n, brls::BUTTON_X, [this](brls::View*) {
-        // Image Occlusion answers: Anki's "Toggle masks" button.
-        const anki::json& io = card["occlusions"];
-        if (state == State::Answer && io.is_object() && io.value("can_toggle", false))
-            cardView->setMasksHidden(!cardView->getMasksHidden());
-        else
-            revealAllHints();
-        return true;
-    });
-    frame->registerAction("ankinx/review/replay"_i18n, brls::BUTTON_Y, [this](brls::View*) {
-        replay();
-        return true;
-    });
-    frame->registerAction("", brls::BUTTON_LSB, [this](brls::View*) {
-        cardView->setZoom(cardView->getZoom() - 0.1f);
-        return true;
-    }, true);
-    frame->registerAction("", brls::BUTTON_RSB, [this](brls::View*) {
-        cardView->setZoom(cardView->getZoom() + 0.1f);
-        return true;
-    }, true);
+    // Buttons follow the bindings of the controller layout in use
+    // (util/controls); see onButton and refreshControls.
+    refreshControls();
 
     // Media folder for images and audio, then the first card.
     brls::async([this, token = alive] {
@@ -298,9 +255,6 @@ void ReviewerActivity::showQuestion()
     shownBody = questionBody();
     cardView->setOcclusions(occlusionsFor(card, "question"));
     cardView->setMasksHidden(false);
-    frame->updateActionHint(brls::BUTTON_X, "ankinx/review/hints"_i18n);
-    // updateActionHint doesn't redraw the footer by itself.
-    brls::Application::getGlobalHintsUpdateEvent()->fire();
     cardView->setHtml(documentFor(shownBody));
     setBar(false);
     playAudio(card["question_av"]);
@@ -353,12 +307,6 @@ void ReviewerActivity::showAnswer()
     }
     cardView->setOcclusions(occlusionsFor(card, "answer"));
     cardView->setMasksHidden(false);
-    const anki::json& io = card["occlusions"];
-    if (io.is_object() && io.value("can_toggle", false))
-    {
-        frame->updateActionHint(brls::BUTTON_X, "ankinx/review/toggle_masks"_i18n);
-        brls::Application::getGlobalHintsUpdateEvent()->fire();
-    }
     cardView->setHtml(documentFor(shownBody));
     cardView->scrollToAnswerAfterLayout();
     const anki::json& buttons = card["buttons"];
@@ -455,6 +403,7 @@ void ReviewerActivity::showDone()
     cardView->setHtml(documentFor(body));
     showAnswerBox->setVisibility(brls::Visibility::GONE);
     easeButtons->setVisibility(brls::Visibility::GONE);
+    refreshControls();
 }
 
 void ReviewerActivity::showError(const std::string& message)
@@ -490,4 +439,123 @@ void ReviewerActivity::setBar(bool answerSide)
 {
     showAnswerBox->setVisibility(answerSide ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     easeButtons->setVisibility(answerSide ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    refreshControls();
+}
+
+// What a button does now: the first of its bound actions that applies in the
+// current state, in this order. A button can carry several actions (one
+// Joy-Con: X is hints on the question side, undo on the answer side).
+controls::Action ReviewerActivity::actionFor(brls::ControllerButton button) const
+{
+    using controls::Action;
+    std::vector<Action> bound = controls::actionsFor(controls::activeLayout(), button);
+    auto has = [&](Action a) { return std::find(bound.begin(), bound.end(), a) != bound.end(); };
+    std::vector<Action> order;
+    if (state == State::Question)
+        order = { Action::ShowAnswer, Action::Hints, Action::ReplayAudio, Action::Undo };
+    else if (state == State::Answer)
+        order = { Action::Again, Action::Hard, Action::Good, Action::Easy, Action::ShowAnswer,
+                  Action::Undo,  Action::Hints, Action::ReplayAudio };
+    else
+        order = { Action::ShowAnswer, Action::Undo };
+    order.push_back(Action::ZoomOut);
+    order.push_back(Action::ZoomIn);
+    for (Action a : order)
+        if (has(a))
+            return a;
+    return Action::_Count;
+}
+
+bool ReviewerActivity::onButton(brls::ControllerButton button)
+{
+    using controls::Action;
+    switch (actionFor(button))
+    {
+        case Action::ShowAnswer:
+            if (state == State::Question && card.value("type_answer", false))
+                typeAnswer();
+            else if (state == State::Question)
+                showAnswer();
+            else if (state == State::Answer)
+                answer(3);
+            else if (state == State::Done || state == State::Failed)
+                brls::Application::popActivity();
+            break;
+        case Action::Again: answer(1); break;
+        case Action::Hard: answer(2); break;
+        case Action::Good: answer(3); break;
+        case Action::Easy: answer(4); break;
+        case Action::Undo: undo(); break;
+        case Action::ReplayAudio: replay(); break;
+        case Action::Hints:
+            if (masksToggle())
+                cardView->setMasksHidden(!cardView->getMasksHidden());
+            else
+                revealAllHints();
+            break;
+        case Action::ZoomOut: cardView->setZoom(cardView->getZoom() - 0.1f); break;
+        case Action::ZoomIn: cardView->setZoom(cardView->getZoom() + 0.1f); break;
+        default: break;
+    }
+    return true;
+}
+
+// Image Occlusion answers: X is Anki's "Toggle masks" button.
+bool ReviewerActivity::masksToggle() const
+{
+    const anki::json& io = card["occlusions"];
+    return state == State::Answer && io.is_object() && io.value("can_toggle", false);
+}
+
+// Deferred to the next frame: this is often reached from inside an action
+// (A shows the answer), and the actions can't be replaced while borealis is
+// dispatching one of them.
+void ReviewerActivity::refreshControls()
+{
+    if (refreshPending)
+        return;
+    refreshPending = true;
+    brls::sync([this, token = alive] {
+        if (!*token)
+            return;
+        refreshPending = false;
+        applyControls();
+    });
+}
+
+// Register every bindable button, with footer hints for what it does in the
+// current state and layout, and label the ease buttons with their buttons.
+void ReviewerActivity::applyControls()
+{
+    using controls::Action;
+    for (brls::ActionIdentifier id : buttonActions)
+        frame->unregisterAction(id);
+    buttonActions.clear();
+    for (brls::ControllerButton button : controls::bindableButtons())
+    {
+        std::string hint;
+        switch (actionFor(button))
+        {
+            case Action::ShowAnswer: hint = "hints/ok"_i18n; break;
+            case Action::Undo: hint = "ankinx/review/undo"_i18n; break;
+            case Action::ReplayAudio: hint = "ankinx/review/replay"_i18n; break;
+            case Action::Hints:
+                hint = masksToggle() ? "ankinx/review/toggle_masks"_i18n : "ankinx/review/hints"_i18n;
+                break;
+            default: break; // grading is on the ease buttons; zoom needs no hint
+        }
+        bool zoom = actionFor(button) == Action::ZoomOut || actionFor(button) == Action::ZoomIn;
+        buttonActions.push_back(frame->registerAction(
+            hint, button, [this, button](brls::View*) { return onButton(button); }, hint.empty(), zoom));
+    }
+    brls::Application::getGlobalHintsUpdateEvent()->fire();
+
+    controls::Layout layout = controls::activeLayout();
+    const Action eases[4]   = { Action::Again, Action::Hard, Action::Good, Action::Easy };
+    for (int ease = 1; ease <= 4; ease++)
+    {
+        auto* name = (brls::Label*)this->getView("ease" + std::to_string(ease) + "Name");
+        name->setText(controls::glyph(controls::binding(layout, eases[ease - 1])) + "  " +
+                      brls::getStr(EASE_KEYS[ease - 1]));
+    }
 }

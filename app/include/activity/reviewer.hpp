@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "anki/api.hpp"
+#include "util/controls.hpp"
 #include "view/card_view.hpp"
 
 // Study screen, like AnkiDroid's Reviewer: question, Show Answer, then the four
@@ -43,6 +44,12 @@ class ReviewerActivity : public brls::Activity
     void showError(const std::string& message);
     void updateCounts(const anki::json& counts, const std::string& queue);
     void setBar(bool answerSide);
+    // Controls (util/controls): bindings depend on the controller layout.
+    controls::Action actionFor(brls::ControllerButton button) const;
+    bool onButton(brls::ControllerButton button);
+    bool masksToggle() const;
+    void refreshControls();
+    void applyControls();
     std::string documentFor(const std::string& body) const;
     void playAudio(const anki::json& tags);
     // Run `f` on the UI thread unless the activity was closed meanwhile. Background
@@ -61,6 +68,9 @@ class ReviewerActivity : public brls::Activity
     std::string shownBody;
     // Answer typed on a type-answer card ({{type:Field}}).
     std::string typed;
+    // Actions registered for the bindable buttons (re-registered on changes).
+    std::vector<brls::ActionIdentifier> buttonActions;
+    bool refreshPending = false;
 
     BRLS_BIND(brls::AppletFrame, frame, "frame");
     BRLS_BIND(CardView, cardView, "card");
