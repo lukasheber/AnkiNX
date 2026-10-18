@@ -52,6 +52,18 @@ fn main() {
         "{{FrontSide}}<hr id=answer>{{Back}}",
     )];
     col.add_notetype(&mut furigana, false).unwrap();
+    // A shared deck's back template whose <div is never closed with ">": the
+    // field's replay link turns into attributes of the div (Anki plays it
+    // when the div is clicked, and so must we).
+    let mut broken = (*typing).clone();
+    broken.id = anki::prelude::NotetypeId(0);
+    broken.name = "Typing (unclosed div)".into();
+    broken.templates = vec![anki::notetype::CardTemplate::new(
+        "Card 1",
+        "{{Front}}\n<br>\n{{type:Back}}",
+        "{{FrontSide}}\n<hr id=answer>\n<hr id=answer>\n\n<div \nfont-size: 4px;\ncolor: white;\n{{Back}}\n</div>",
+    )];
+    col.add_notetype(&mut broken, false).unwrap();
     // ANKINX_SAMPLE_ONLY=<deck>: only that deck, for screenshots of one card type.
     let only = std::env::var("ANKINX_SAMPLE_ONLY").ok();
     let wanted = |deck: &str| only.as_deref().map_or(true, |o| deck.starts_with(o));
@@ -169,6 +181,7 @@ fn main() {
     );
     // {{type:Back}}: an answer box on the question, a comparison on the answer.
     add("Typing", &typing, &["あ (romaji)", "a"]);
+    add("Typing::Unclosed div", &broken, &["え", "e[sound:4_e.mp3]"]);
 
     // Image Occlusion: three masks (rectangle, ellipse, polygon) over a
     // generated picture; "oi=1" hides the other masks on the question side.

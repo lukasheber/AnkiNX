@@ -949,7 +949,8 @@ controls::Action ReviewerActivity::actionFor(brls::ControllerButton button) cons
     order.push_back(Action::ZoomOut);
     order.push_back(Action::ZoomIn);
     for (Action a : order)
-        if (has(a))
+        // X only where there are hint fields or Image Occlusion masks to toggle.
+        if (has(a) && (a != Action::Hints || masksToggle() || shownBody.find("href=\"anki-hint:") != std::string::npos))
             return a;
     return Action::_Count;
 }

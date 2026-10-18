@@ -25,6 +25,13 @@ build, then commit and tag (`git tag v0.2.0`).
   jQuery), as do `pycmd("ans")` / `pycmd("ease3")`, checkbox and radio taps,
   `<label>` taps and more selectors (`:nth-of-type`, `:checked`, ...).
   Tested with a shared multiple-choice note type.
+- Footer: only button hints, centred (no battery, Wi-Fi or clock); X shows
+  only on cards with hints (or masks to toggle); A only shows the answer
+  and has no hint (the Show Answer button shows it); Y reads "Hold: card
+  options" on sides without audio.
+- Replay buttons work in templates with broken HTML (an unclosed `<div`
+  that swallows the field's play link), as they do in Anki; and a replay
+  started as another sound ended is no longer silenced.
 - Card menu: hold the replay audio button (Y; the stick press on one
   Joy-Con) or tap ⋯ in the header to flag the card, mark the note, bury,
   suspend, forget, set the due date, or see the card's (or the previous

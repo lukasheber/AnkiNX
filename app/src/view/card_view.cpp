@@ -1281,6 +1281,22 @@ void CardView::tapAt(float docX, float docY)
     document->on_lbutton_up(docX, docY, docX, docY, redraw); // may call on_anchor_click
     if (linkActivated)
         return;
+    // Our links (replay, hints) can lose their <a> in broken card HTML, as in
+    // `<div style=... {{Back}}</div>` without the tag's ">": the field's play
+    // link then becomes attributes of the div, href included. Anki still plays
+    // when that div is clicked (its onclick moves there too), so do the same.
+    for (auto el = document->get_over_element(); el; el = el->parent())
+        if (const char* href = el->get_attr("href"))
+        {
+            std::string url = href;
+            if (url.rfind("playsound:", 0) == 0 || url.rfind("anki-hint:", 0) == 0)
+            {
+                if (onLink)
+                    onLink(url);
+                return;
+            }
+            break;
+        }
     // Card scripts: the innermost element with a node serial gets a click.
     if (onElementTap)
         for (auto el = std::const_pointer_cast<litehtml::element>(document->get_over_element()); el;
