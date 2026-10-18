@@ -200,6 +200,18 @@
     "period_year": "Last year",
     "period_all_time": "All time"
   },
+  "browser": {
+    "title": "Browse",
+    "search": "Search",
+    "search_prompt": "Anki search, e.g. deck:Japanese is:due tag:verbs",
+    "everything": "All cards",
+    "count": "{} cards",
+    "count_some": "First {} of {} cards",
+    "suspended": "Suspended",
+    "preview": "Preview",
+    "unsuspend": "Unsuspend",
+    "unsuspended": "Card unsuspended"
+  },
   "card_info": {
     "added": "Added",
     "first_review": "First review",

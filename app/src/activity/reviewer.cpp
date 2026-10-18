@@ -2,10 +2,9 @@
 
 #include "app.hpp"
 #include "util/audio.hpp"
+#include "util/card_document.hpp"
 #include "util/controls.hpp"
-#include "util/inline_svg.hpp"
 #include "util/keyboard.hpp"
-#include "util/ruby.hpp"
 #include "util/rumble.hpp"
 #include "util/settings.hpp"
 
@@ -24,28 +23,8 @@ using namespace brls::literals;
 namespace
 {
 
-// Reviewer defaults, close to Anki's own reviewer stylesheet. The note type's
-// CSS comes after and can override all of this.
-const char* BASE_CSS = R"CSS(
-body { margin: 20px; overflow-wrap: break-word; word-wrap: break-word; }
-img { max-width: 100%; height: auto; }
-hr#answer { border: none; border-top: 1px solid #888888; margin: 16px 0; }
-.replay-button { text-decoration: none; color: #3b82f6; padding: 0 4px; }
-a.typeans-box { display: block; text-decoration: none; color: inherit; border: 1px solid #888888;
-                border-radius: 6px; padding: 8px 12px; margin: 12px auto; max-width: 90%; }
-.typeans-prompt { color: #888888; }
-#typeans { line-height: 1.75; }
-code#typeans { white-space: pre-wrap; }
-.typeGood { background: #afa; color: black; }
-.typeBad { background: #faa; color: black; }
-.typeMissed { background: #ccc; color: black; }
-button { display: inline-block; border: 1px solid #999999; border-radius: 6px; padding: 4px 12px;
-         margin: 4px; background-color: #e9e9e9; color: #222222; }
-rt { font-size: 0.5em; }
-.ankinx-ruby { display: inline-block; text-align: center; text-indent: 0; }
-.ankinx-ruby > rt { display: block; line-height: 1.2; }
-.ankinx-ruby > rb { display: block; }
-)CSS";
+using card_document::nightMode;
+using card_document::NIGHT_CSS;
 
 std::string escapeHtml(const std::string& text)
 {
@@ -64,19 +43,10 @@ std::string escapeHtml(const std::string& text)
     return out;
 }
 
-// Night mode, applied after the note type's CSS (whose .card rule usually sets
-// black on white); `.card.nightMode` is more specific than `.card`.
-const char* NIGHT_CSS = R"CSS(
-.card.nightMode { color: #e6e6e6; background-color: #2c2c2c; }
-.nightMode a { color: #8ab4f8; }
-.nightMode button { background-color: #3a3a3a; color: #e6e6e6; border-color: #666666; }
-)CSS";
-
 // Ease button glyphs from the Switch's shared symbol font (as in borealis hints).
 const char* EASE_KEYS[4]   = { "ankinx/review/again", "ankinx/review/hard", "ankinx/review/good",
                                "ankinx/review/easy" };
 
-bool nightMode() { return brls::Application::getThemeVariant() == brls::ThemeVariant::DARK; }
 
 // Material icons (resources/material): star, more_horiz. (The flag is a
 // coloured dot: Material's flag codepoint is taken by the Switch symbol font.)
@@ -393,17 +363,7 @@ void ReviewerActivity::loadNext()
 
 std::string ReviewerActivity::documentFor(const std::string& body) const
 {
-    std::string html = "<html><head><style>";
-    html += BASE_CSS;
-    html += "</style><style>";
-    html += card.value("css", "");
-    html += "</style>";
-    if (nightMode())
-        html += std::string("<style>") + NIGHT_CSS + "</style>";
-    html += "</head><body class=\"" + card.value("body_class", "card") + "\">";
-    html += layoutRuby(inlineSvgToImages(body, anki::dataDir() + "/cache/svg"));
-    html += "</body></html>";
-    return html;
+    return card_document::build(body, card.value("css", ""), card.value("body_class", "card"));
 }
 
 // Controller path for hint fields: reveal every hint on the current side.

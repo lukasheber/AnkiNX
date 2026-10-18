@@ -42,6 +42,9 @@ build, then commit and tag (`git tag v0.2.0`).
 - Statistics: today's study, a 30-day forecast, a 26-week review heatmap,
   true retention and card counts, for a deck (R on its overview) or the
   whole collection (Settings > Statistics).
+- Read-only card browser (L on the deck overview): any Anki search, the
+  matching cards with deck, flag and suspension, a preview, and flag /
+  suspend / unsuspend from it.
 - Self-hosted sync server: Settings > Account > Sync server.
 - Whiteboard (handheld): the pen in the reviewer's header lets you draw over
   the card; the bin clears it, and each new card starts clean.

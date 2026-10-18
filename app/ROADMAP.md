@@ -116,7 +116,7 @@ template JavaScript, then this list, taken in groups of related features
 | Statistics: today (cards, time), forecast, review heatmap, retention | ✅ | R on the deck overview (that deck and subdecks) or Settings > Statistics (all decks): Today, Forecast, Heatmap, Retention panels drawn natively from rslib's graph data; L/R or tap to switch |
 | Multiple profiles, one per Switch user | P2 | Families share consoles; pick the profile from the Switch user selector (`/switch/ankinx/<user>/`) |
 | Custom sync server (self-hosted Anki sync server) | ✅ | Settings > Account > Sync server; used at login (changing it logs out) |
-| Read-only card browser (search, preview, suspend/flag from the list) | P3 | Search through rslib; no editing |
+| Read-only card browser (search, preview, suspend/flag from the list) | ✅ | L (or Browse) on the deck overview: an Anki search (starts with the deck), up to 200 cards by sort field with deck, flag and suspension; preview of the answer side with X flag and Y suspend/unsuspend. No editing |
 | Deck list actions: collapse all, filter, show only decks with due cards | P3 | |
 
 ### Interface and platform

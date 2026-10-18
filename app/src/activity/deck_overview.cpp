@@ -1,5 +1,6 @@
 #include "activity/deck_overview.hpp"
 
+#include "activity/browser.hpp"
 #include "activity/deck_options.hpp"
 #include "activity/reviewer.hpp"
 #include "activity/stats.hpp"
@@ -57,6 +58,25 @@ void DeckOverviewActivity::onContentAvailable()
     optionsButton->addGestureRecognizer(new brls::TapGestureRecognizer(optionsButton, [this] { openOptions(); }));
     frame->registerAction("ankinx/overview/options"_i18n, brls::BUTTON_Y, [this](brls::View*) {
         openOptions();
+        return true;
+    }, true);
+    // L: browse this deck's cards (read-only).
+    auto openBrowser = [this] {
+        if (!loaded)
+            return;
+        std::string name;
+        for (char c : deckName) // escaped for Anki's search syntax
+        {
+            if (c == '"' || c == '\\' || c == '*' || c == '_')
+                name += '\\';
+            name += c;
+        }
+        brls::Application::pushActivity(new BrowserActivity("deck:\"" + name + "\""));
+    };
+    browseLabel->setText(brls::Hint::getKeyIcon(brls::BUTTON_LB, true) + "  " + "ankinx/browser/title"_i18n);
+    browseButton->addGestureRecognizer(new brls::TapGestureRecognizer(browseButton, openBrowser));
+    frame->registerAction("ankinx/browser/title"_i18n, brls::BUTTON_LB, [openBrowser](brls::View*) {
+        openBrowser();
         return true;
     }, true);
     // R: this deck's statistics (R opened this screen from the deck list too).

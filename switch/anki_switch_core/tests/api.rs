@@ -242,6 +242,19 @@ fn study_flow() {
     }
     assert_eq!(answered, 3);
 
+    // Browser: the deck's cards by sort field, a preview, suspend/unsuspend.
+    let found = ok("browse", json!({ "search": "deck:Spanish::Verbs" }));
+    assert_eq!(found["total"], 3);
+    let texts: Vec<&str> = found["cards"].as_array().unwrap().iter().map(|c| c["text"].as_str().unwrap()).collect();
+    assert!(texts[0] == "comer" && texts[1].starts_with("hablar") && texts[2] == "vivir", "{found}");
+    let cid = found["cards"][0]["card_id"].as_i64().unwrap();
+    let preview = ok("preview_card", json!({ "card_id": cid }));
+    assert!(preview["answer"].as_str().unwrap().contains("to eat"), "{preview}");
+    ok("card_action", json!({ "card_id": cid, "action": "suspend_card" }));
+    assert_eq!(ok("browse", json!({ "search": "is:suspended" }))["cards"][0]["suspended"], true);
+    ok("card_action", json!({ "card_id": cid, "action": "unsuspend" }));
+    assert_eq!(ok("browse", json!({ "search": "is:suspended" }))["total"], 0);
+
     // Statistics: the three answers show today, in the heatmap's last day and
     // as cards due later (Easy graduated them).
     for args in [json!({ "deck_id": verbs }), json!({})] {

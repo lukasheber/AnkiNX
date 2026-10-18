@@ -303,6 +303,8 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "select_deck" => state.select_deck(&args),
         "deck_overview" => state.deck_overview(&args),
         "stats" => state.stats(&args),
+        "browse" => state.browse(&args),
+        "preview_card" => state.preview_card(&args),
         "deck_options" => state.deck_options(&args),
         "set_deck_options" => state.set_deck_options(&args),
         "custom_study_defaults" => state.custom_study_defaults(&args),
@@ -826,6 +828,85 @@ impl State {
         }))
     }
 
+    /// `browse {search, limit?}`: cards matching an Anki search, by sort
+    /// field, for the read-only browser: id, the note's sort field as text,
+    /// deck, flag and whether the card is suspended. At most `limit` (200)
+    /// rows; `total` counts them all.
+    fn browse(&mut self, args: &Value) -> ApiResult {
+        use anki::browser_table::Column;
+        use anki::search::SortMode;
+        let search = args.get("search").and_then(Value::as_str).unwrap_or("").to_string();
+        let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(200).min(1000) as usize;
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let ids = col
+            .search_cards(search.as_str(), SortMode::Builtin { column: Column::SortField, reverse: false })
+            .map_err(err)?;
+        let mut rows = Vec::new();
+        for &cid in ids.iter().take(limit) {
+            let Some(card) = col.storage.get_card(cid).map_err(err)? else { continue };
+            let proto = anki_proto::cards::Card::from(card.clone());
+            let Some(note) = col.storage.get_note(card.note_id()).map_err(err)? else { continue };
+            let sort_idx = col
+                .get_notetype(note.notetype_id)
+                .map_err(err)?
+                .map_or(0, |nt| nt.config.sort_field_idx as usize);
+            let field = note.fields().get(sort_idx).or_else(|| note.fields().first()).cloned().unwrap_or_default();
+            let text = anki::text::html_to_text_line(&field, false).into_owned();
+            let deck = col.get_deck(card.deck_id()).map_err(err)?.map(|d| d.human_name()).unwrap_or_default();
+            rows.push(json!({
+                "card_id": cid.0,
+                "text": text.chars().take(120).collect::<String>(),
+                "deck": deck,
+                "flag": proto.flags,
+                "suspended": proto.queue == -1,
+            }));
+        }
+        Ok(json!({ "total": ids.len(), "cards": rows }))
+    }
+
+    /// `preview_card {card_id}`: a card's answer side (with its question, as
+    /// the template shows it) for the browser's preview, like next_card's:
+    /// replay links, maths; the type-answer box shows the expected answer.
+    fn preview_card(&mut self, args: &Value) -> ApiResult {
+        let cid = CardId(i64_arg(args, "card_id")?);
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self
+            .col
+            .as_mut()
+            .ok_or_else(|| ApiError::new("not_open", "the collection is not open"))?;
+        let card = col
+            .storage
+            .get_card(cid)
+            .map_err(err)?
+            .ok_or_else(|| ApiError::new("no_card", "the card no longer exists"))?;
+        let render = col.render_existing_card(cid, false, false).map_err(err)?;
+        let (answer, a_av) = extract_av_tags(render.answer().into_owned(), false, &tr);
+        let answer = native_hints(&play_links(&answer, "a"));
+        let typing = prepare_type_answer(col, &card, &answer, &tr).map_err(err)?.1;
+        let mut answer = compare_type_answer(col, &answer, typing.as_ref(), "").map_err(err)?;
+        let night = args.get("night_mode").and_then(Value::as_bool).unwrap_or(false);
+        if answer.contains("\\(") || answer.contains("\\[") {
+            let base = &self.base;
+            let math = self
+                .math
+                .get_or_insert_with(|| crate::math::MathRenderer::new(base.join(MATH_CACHE)));
+            answer = math.render_html(&answer, if night { "#e6e6e6" } else { "#000000" });
+        }
+        let mut body_class = format!("card card{}", card.template_idx() + 1);
+        if night {
+            body_class.push_str(" nightMode night_mode");
+        }
+        Ok(json!({
+            "answer": answer,
+            "answer_av": av_json(&a_av),
+            "css": render.css,
+            "body_class": body_class,
+        }))
+    }
+
     fn select_deck(&mut self, args: &Value) -> ApiResult {
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
@@ -1059,7 +1140,7 @@ impl State {
 
     /// `card_action {card_id, action, flag?, days?}`: the reviewer's card menu.
     /// Actions: flag (with `flag` 0-7), toggle_mark, bury_card, bury_note,
-    /// suspend_card, suspend_note, forget, set_due_date (with `days`, as in
+    /// suspend_card, suspend_note, unsuspend, forget, set_due_date (with `days`, as in
     /// Anki: "0" today, "3-7" a random day in that range, "5!" also sets the
     /// interval). All are undoable with `undo`.
     fn card_action(&mut self, args: &Value) -> ApiResult {
@@ -1100,6 +1181,10 @@ impl State {
                 let mode = if action.starts_with("bury") { Mode::BuryUser } else { Mode::Suspend };
                 col.bury_or_suspend_cards(&cids, mode).map_err(err)?;
             }
+            // The browser's toggle (also unburies).
+            "unsuspend" => {
+                col.unbury_or_unsuspend_cards(&[cid]).map_err(err)?;
+            }
             // As Anki's reviewer: back to the end of the new queue (or its
             // old position), keeping the review and lapse counts.
             "forget" => {
@@ -1113,7 +1198,7 @@ impl State {
             other => return Err(ApiError::new("args", format!("unknown card action '{other}'"))),
         }
         // A card that leaves the queue is no longer the one being shown.
-        if !matches!(action.as_str(), "flag" | "toggle_mark") {
+        if !matches!(action.as_str(), "flag" | "toggle_mark" | "unsuspend") {
             self.shown = None;
         }
         Ok(result)

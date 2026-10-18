@@ -35,21 +35,25 @@
             marginRight="60" />
 
         <brls:Box id="buttons" width="auto" height="110" axis="row" justifyContent="center" alignItems="center">
-            <brls:Box id="studyButton" width="250" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="studyButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#3b82f6">
                 <brls:Label id="studyLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
             </brls:Box>
-            <brls:Box id="customButton" width="250" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="customButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
                 visibility="gone">
                 <brls:Label id="customLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
             </brls:Box>
-            <brls:Box id="optionsButton" width="250" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="optionsButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
                 visibility="gone">
                 <brls:Label id="optionsLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
             </brls:Box>
-            <brls:Box id="statsButton" width="250" height="72" marginLeft="8" marginRight="8" axis="column"
+            <brls:Box id="browseButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
+                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575">
+                <brls:Label id="browseLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
+            </brls:Box>
+            <brls:Box id="statsButton" width="220" height="72" marginLeft="8" marginRight="8" axis="column"
                 justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575">
                 <brls:Label id="statsLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
             </brls:Box>
