@@ -148,6 +148,15 @@ brls::View* SettingsActivity::controlsTab()
                  });
     box->addView(layout);
 
+    auto* grip = detail("ankinx/controls/change_grip"_i18n, "");
+    grip->registerClickAction([this, token = alive](brls::View*) {
+        controls::showControllerSupport();
+        if (*token)
+            fillBindings(); // the layout in use may have changed
+        return true;
+    });
+    box->addView(grip);
+
     bindingsBox = new brls::Box(brls::Axis::COLUMN);
     box->addView(bindingsBox);
     fillBindings();

@@ -123,6 +123,37 @@ bool oneJoyConDetected()
 #endif
 }
 
+void showControllerSupport()
+{
+#ifdef __SWITCH__
+    HidLaControllerSupportArg arg;
+    hidLaCreateControllerSupportArg(&arg);
+    arg.hdr.enable_single_mode = 1; // one player: handheld, dual or one sideways Joy-Con
+    HidLaControllerSupportResultInfo info;
+    if (R_FAILED(hidLaShowControllerSupport(&info, &arg)))
+        brls::Logger::error("controls: controller applet failed");
+#endif
+}
+
+void watchControllers()
+{
+#ifdef __SWITCH__
+    static bool wasHandheld = hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld;
+    bool handheld = hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld;
+    if (wasHandheld && !handheld)
+    {
+        bool proController = false;
+        for (int id = HidNpadIdType_No1; id <= HidNpadIdType_No8; id++)
+            if (hidGetNpadStyleSet((HidNpadIdType)id) & HidNpadStyleTag_NpadFullKey)
+                proController = true;
+        if (!proController)
+            showControllerSupport();
+    }
+    wasHandheld = handheld;
+    brls::delay(1000, [] { watchControllers(); });
+#endif
+}
+
 LayoutChoice layoutChoice()
 {
     std::string choice = stored().value("layout", "automatic");

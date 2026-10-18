@@ -51,6 +51,14 @@ void setLayoutChoice(LayoutChoice choice);
 // True when only single Joy-Cons are connected.
 bool oneJoyConDetected();
 
+// The system's "Change Grip/Order" screen, allowing one player with one
+// sideways Joy-Con. Detached Joy-Cons stay one dual controller until they
+// are assigned there, as games do it.
+void showControllerSupport();
+// Watch the console: when the Joy-Cons come off it (handheld to detached)
+// with no Pro Controller connected, open showControllerSupport once.
+void watchControllers();
+
 brls::ControllerButton binding(Layout layout, Action action);
 // Bind `button`; an action that had it gets this action's old button.
 // Returns the action that was swapped, or _Count.
