@@ -155,12 +155,13 @@ std::string styleName(u32 style)
 // controllers connected now (PadState), where a style without the "full
 // control" styles is a single sideways Joy-Con. (hidGetNpadStyleSet alone
 // kept reporting the console's Joy-Cons after they were detached.)
+// Handheld doesn't count: with one Joy-Con detached the console stays in
+// handheld mode with the other, which alone lacks half the buttons, and the
+// detached one is what's held (found on hardware).
 bool oneJoyConDetected()
 {
 #ifdef __SWITCH__
     Pads& p = pads();
-    if (padIsHandheld(&p.handheld))
-        return false;
     bool single = false, full = false;
     for (auto& pad : p.players)
     {
