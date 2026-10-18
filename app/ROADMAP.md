@@ -32,7 +32,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables, flexbox, `vh`/`vw`, `:checked`, `::before`/`::after`; inline `<svg>` and `data:` images drawn; card fonts from media via `@font-face` (TTF/OTF, picked by weight and style; WOFF not readable, the next `src` is tried; system fonts fill missing glyphs; files over 24 MB skipped). Missing: `box-shadow`, `transform`, `transition`, `filter`, `zoom`. To audit against popular shared-deck styles |
 | Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
 | RTL scripts (Persian, Arabic, Urdu, Hebrew) | ✅ | Arabic-script letters joined via presentation forms (incl. Persian letters, lam-alef, ZWNJ), right-to-left runs reversed per word (`app/src/view/rtl_text.cpp`) and per line (litehtml patch: simplified bidi; `dir="rtl"` makes lines read right to left and right-aligns left-aligned text). Fallback font DejaVu Sans (the Switch fonts have no Arabic). Not covered: CSS `direction`, harakat placement beyond the font's defaults, complex Urdu Nastaliq. Verified in preview |
-| Ruby (furigana `{{furigana:...}}`) | 🔶 | Furigana renders through rslib as `<ruby>`; litehtml's ruby layout to check |
+| Ruby (furigana `{{furigana:...}}`) | ✅ | litehtml has no ruby layout: each base/reading pair is rewritten as an inline block (`app/src/util/ruby.cpp`), reading above, base on the baseline; `<rp>` dropped; deck CSS on `rt` still applies. Verified in preview |
 
 ## 1. Study and review
 

@@ -85,9 +85,10 @@ std::string innerHtml(const NodePtr& node, bool serials = false);
 std::string outerHtml(const NodePtr& node, bool serials = false);
 
 // CSS selectors: type, #id, .class, [attr], [attr=v], [attr~=v], [attr^=v],
-// [attr$=v], [attr*=v], *, :first-child, :last-child, :not(simple), and the
-// descendant, >, + and ~ combinators, in comma lists. Unsupported syntax
-// matches nothing.
+// [attr$=v], [attr*=v], *, :first-child, :last-child, :nth-child(),
+// :nth-last-child(), :nth-of-type(), :nth-last-of-type(), :first-of-type,
+// :last-of-type, :checked, :empty, :not(simple), and the descendant, >, +
+// and ~ combinators, in comma lists. Unsupported syntax matches nothing.
 bool matches(const NodePtr& element, const std::string& selector);
 NodePtr querySelector(const NodePtr& scope, const std::string& selector);
 std::vector<NodePtr> querySelectorAll(const NodePtr& scope, const std::string& selector);

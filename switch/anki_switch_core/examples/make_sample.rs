@@ -42,6 +42,16 @@ fn main() {
     )];
     mcq.config.css = include_str!("../../../app/tests/fixtures/mcq.css").into();
     col.add_notetype(&mut mcq, false).unwrap();
+    // Furigana: Anki's {{furigana:...}} filter (rslib writes <ruby><rb>).
+    let mut furigana = (*basic).clone();
+    furigana.id = anki::prelude::NotetypeId(0);
+    furigana.name = "Japanese (furigana)".into();
+    furigana.templates = vec![anki::notetype::CardTemplate::new(
+        "Card 1",
+        "<div style=\"font-size: 40px\">{{furigana:Front}}</div>",
+        "{{FrontSide}}<hr id=answer>{{Back}}",
+    )];
+    col.add_notetype(&mut furigana, false).unwrap();
     // ANKINX_SAMPLE_ONLY=<deck>: only that deck, for screenshots of one card type.
     let only = std::env::var("ANKINX_SAMPLE_ONLY").ok();
     let wanted = |deck: &str| only.as_deref().map_or(true, |o| deck.starts_with(o));
@@ -64,6 +74,14 @@ fn main() {
     );
     add("Japanese::Vocabulary", &basic, &["犬", "いぬ — dog"]);
     add("Japanese::Kanji", &basic, &["<span style=\"font-size:60px\">学</span>", "learn, study"]);
+    add(
+        "Japanese::Furigana",
+        &furigana,
+        &[
+            "日本語[にほんご]を 勉強[べんきょう]する。<ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>も。",
+            "to study Japanese; kanji too",
+        ],
+    );
     add(
         "Geography",
         &basic,

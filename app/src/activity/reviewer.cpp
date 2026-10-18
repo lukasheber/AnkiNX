@@ -5,6 +5,7 @@
 #include "util/controls.hpp"
 #include "util/inline_svg.hpp"
 #include "util/keyboard.hpp"
+#include "util/ruby.hpp"
 #include "util/settings.hpp"
 
 #include <algorithm>
@@ -35,6 +36,10 @@ code#typeans { white-space: pre-wrap; }
 .typeMissed { background: #ccc; color: black; }
 button { display: inline-block; border: 1px solid #999999; border-radius: 6px; padding: 4px 12px;
          margin: 4px; background-color: #e9e9e9; color: #222222; }
+rt { font-size: 0.5em; }
+.ankinx-ruby { display: inline-block; text-align: center; text-indent: 0; }
+.ankinx-ruby > rt { display: block; line-height: 1.2; }
+.ankinx-ruby > rb { display: block; }
 )CSS";
 
 std::string escapeHtml(const std::string& text)
@@ -228,7 +233,7 @@ std::string ReviewerActivity::documentFor(const std::string& body) const
     if (nightMode())
         html += std::string("<style>") + NIGHT_CSS + "</style>";
     html += "</head><body class=\"" + card.value("body_class", "card") + "\">";
-    html += inlineSvgToImages(body, anki::dataDir() + "/cache/svg");
+    html += layoutRuby(inlineSvgToImages(body, anki::dataDir() + "/cache/svg"));
     html += "</body></html>";
     return html;
 }

@@ -60,8 +60,9 @@ done
 [[ -n "$WIN" ]] || { echo "window not found"; cat "$OUT/app.log"; exit 1; }
 xdotool windowactivate --sync "$WIN" 2>/dev/null || true
 
-# borealis polls key state once per frame: hold keys briefly.
-press() { xdotool keydown "$1"; sleep 0.2; xdotool keyup "$1"; sleep "${2:-1.5}"; }
+# borealis polls key state once per frame: hold keys briefly, but under its
+# 250 ms auto-repeat (a slow frame can push a 200 ms hold past it).
+press() { xdotool keydown "$1"; sleep 0.1; xdotool keyup "$1"; sleep "${2:-1.5}"; }
 shot() { xwd -silent -id "$WIN" > /tmp/ankinx.xwd && $PY "$ANKISWITCH_SRC/tools/xwd2png.py" /tmp/ankinx.xwd "$OUT/$1.png"; echo "saved $1.png"; }
 # Focus deck row N (0-based) regardless of the current position.
 # Mouse button held across frames (1 = touch tap, 2 = X button on desktop).
@@ -78,7 +79,7 @@ shot 02_question
 press Return            # show answer
 shot 03_answer
 press Escape            # back to the deck list
-press Down 0.5          # Geography (second row)
+goto_deck 2             # Geography (rows: Biology, Fonts, Geography, Japanese, Furigana, Kanji, Vocabulary, Maths, Media, ...)
 press Return 3
 shot 04_question_geo
 press Return
@@ -86,14 +87,14 @@ shot 05_answer_geo
 press Return 2          # Good -> next card
 shot 06_next_card
 press Escape
-press Down 0.5; press Down 0.5; press Down 0.5   # Japanese::Vocabulary
+goto_deck 6             # Japanese::Vocabulary
 press Return 3
 shot 07_question_ja
 press Return
 shot 08_answer_ja
 press Escape 2
 shot 09_decks_after
-goto_deck 5             # Media (alphabetical: Biology, Geography, Japanese, Kanji, Vocabulary, Media)
+goto_deck 8             # Media
 press Return 3
 shot 10_media_question
 press Return
@@ -104,7 +105,7 @@ mclick 1 640 250        # tap the hint link (2 lines down)
 shot 13_hint_revealed
 press Return            # answer side: hints are hidden again, as in Anki
 press Escape 2
-goto_deck 5
+goto_deck 8
 press Return 3          # the hint card again (now in learning), via the controller
 mclick 2 640 400        # X button (middle mouse button on desktop)
 shot 14_hint_controller

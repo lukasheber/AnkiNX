@@ -37,6 +37,8 @@ build, then commit and tag (`git tag v0.2.0`).
   be (they showed as separate letters, or not at all: the Switch's fonts
   have no Arabic, so DejaVu Sans is bundled as a fallback), and words and
   lines read right to left, also with `dir="rtl"`. Hebrew is reordered too.
+- Furigana (`{{furigana:...}}` and `<ruby>` in cards) shows the reading
+  above the text, as in Anki, instead of after it.
 - Inline `<svg>` in cards, and `data:` image URIs (such as SVG icons in CSS
   backgrounds), are drawn.
 - Fix: script-edited cards no longer garble characters whose UTF-8 encoding
