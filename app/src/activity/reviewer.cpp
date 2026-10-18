@@ -424,7 +424,8 @@ void ReviewerActivity::showQuestion()
     cardView->setHtml(documentFor(shownBody));
     setBar(false);
     showCardState();
-    playAudio(card["question_av"]);
+    if (card.value("autoplay", true)) // deck option "Don't play audio automatically"
+        playAudio(card["question_av"]);
 }
 
 // Flag and mark of the shown card, in the header and as the flag bar.
@@ -759,7 +760,8 @@ void ReviewerActivity::showAnswer()
         ((brls::Label*)this->getView("ease" + std::to_string(ease) + "Time"))
             ->setText(buttons[ease - 1].get<std::string>());
     setBar(true);
-    playAudio(card["answer_av"]);
+    if (card.value("autoplay", true))
+        playAudio(card["answer_av"]);
 }
 
 void ReviewerActivity::answer(int ease)

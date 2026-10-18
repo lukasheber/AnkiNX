@@ -1,5 +1,6 @@
 #include "activity/deck_overview.hpp"
 
+#include "activity/deck_options.hpp"
 #include "activity/reviewer.hpp"
 #include "anki/api.hpp"
 #include "app.hpp"
@@ -40,7 +41,20 @@ void DeckOverviewActivity::onContentAvailable()
         study();
         return true;
     }, true);
+    optionsLabel->setText(brls::Hint::getKeyIcon(brls::BUTTON_Y, true) + "  " + "ankinx/overview/options"_i18n);
+    optionsButton->addGestureRecognizer(new brls::TapGestureRecognizer(optionsButton, [this] { openOptions(); }));
+    frame->registerAction("ankinx/overview/options"_i18n, brls::BUTTON_Y, [this](brls::View*) {
+        openOptions();
+        return true;
+    }, true);
     load();
+}
+
+// Filtered decks have no options of their own (Anki shows their search instead).
+void DeckOverviewActivity::openOptions()
+{
+    if (loaded && !filtered)
+        brls::Application::pushActivity(new DeckOptionsActivity(deckId));
 }
 
 // Back from studying: the counts have changed.
@@ -61,6 +75,8 @@ void DeckOverviewActivity::load()
                     return;
                 loaded   = true;
                 deckName = overview.value("name", "");
+                filtered = overview.value("filtered", false);
+                optionsButton->setVisibility(filtered ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
                 frame->setTitle(deckName);
                 newCount->setText(std::to_string(overview.value("new", 0)));
                 learnCount->setText(std::to_string(overview.value("learn", 0)));

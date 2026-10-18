@@ -302,6 +302,8 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "set_collapsed" => state.set_collapsed(&args),
         "select_deck" => state.select_deck(&args),
         "deck_overview" => state.deck_overview(&args),
+        "deck_options" => state.deck_options(&args),
+        "set_deck_options" => state.set_deck_options(&args),
         "next_card" => state.next_card(&args),
         "answer" => state.answer(&args),
         "type_answer" => state.type_answer(&args),
@@ -605,6 +607,60 @@ impl State {
         }))
     }
 
+    /// `deck_options {deck_id}`: the deck's preset, as Anki's deck options
+    /// screen shows it (its commonly changed part): preset name, how many
+    /// decks use it, whether FSRS is on (collection-wide), and the values.
+    fn deck_options(&mut self, args: &Value) -> ApiResult {
+        let did = DeckId(i64_arg(args, "deck_id")?);
+        let tr = self.tr.clone();
+        let info = self.col()?.get_deck_configs_for_update(did).map_err(|e| ApiError::anki(e, &tr))?;
+        let (config, use_count) = current_preset(&info)?;
+        let inner = config.config.clone().unwrap_or_default();
+        Ok(json!({
+            "preset": config.name,
+            "deck_count": use_count,
+            "fsrs": info.fsrs,
+            "values": deck_option_values(&inner),
+        }))
+    }
+
+    /// `set_deck_options {deck_id, values?, fsrs?}`: change some values of the
+    /// deck's preset (the keys `deck_options` returns) and/or turn FSRS on or
+    /// off, through Anki's own update (undoable, FSRS memory states updated).
+    fn set_deck_options(&mut self, args: &Value) -> ApiResult {
+        use anki::deckconfig::UpdateDeckConfigsRequest;
+        use anki_proto::deck_config::UpdateDeckConfigsMode;
+        let did = DeckId(i64_arg(args, "deck_id")?);
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let info = col.get_deck_configs_for_update(did).map_err(err)?;
+        let (config, _) = current_preset(&info)?;
+        let mut config: anki::deckconfig::DeckConfig = config.clone().into();
+        if let Some(values) = args.get("values").and_then(Value::as_object) {
+            for (key, value) in values {
+                set_deck_option(&mut config.inner, key, value)?;
+            }
+        }
+        let fsrs = args.get("fsrs").and_then(Value::as_bool).unwrap_or(info.fsrs);
+        let current = info.current_deck.clone().unwrap_or_default();
+        col.update_deck_configs(UpdateDeckConfigsRequest {
+            target_deck_id: did,
+            configs: vec![config],
+            removed_config_ids: vec![],
+            mode: UpdateDeckConfigsMode::Normal,
+            card_state_customizer: info.card_state_customizer.clone(),
+            limits: current.limits.unwrap_or_default(),
+            new_cards_ignore_review_limit: info.new_cards_ignore_review_limit,
+            apply_all_parent_limits: info.apply_all_parent_limits,
+            fsrs,
+            fsrs_reschedule: false,
+            fsrs_health_check: info.fsrs_health_check,
+        })
+        .map_err(err)?;
+        Ok(json!({}))
+    }
+
     fn select_deck(&mut self, args: &Value) -> ApiResult {
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
@@ -656,7 +712,22 @@ impl State {
         let card_id = card.card.id();
         let note_id = card.card.note_id();
         let ord = card.card.template_idx();
-        let flag = anki_proto::cards::Card::from(card.card.clone()).flags;
+        let proto_card = anki_proto::cards::Card::from(card.card.clone());
+        let flag = proto_card.flags;
+        // The home deck's "Don't play audio automatically" (filtered decks use
+        // the card's original deck, as Anki does).
+        let home_deck = DeckId(if proto_card.original_deck_id != 0 {
+            proto_card.original_deck_id
+        } else {
+            proto_card.deck_id
+        });
+        let autoplay = match col.get_deck(home_deck).map_err(err)?.and_then(|d| d.config_id()) {
+            Some(dcid) => !col
+                .get_deck_config(dcid, true)
+                .map_err(err)?
+                .is_some_and(|config| config.inner.disable_autoplay),
+            None => true,
+        };
         let marked = note_has_tag(col, note_id, "marked").map_err(err)?;
         let render = col.render_existing_card(card_id, false, false).map_err(err)?;
         let (question, q_av) = extract_av_tags(render.question().into_owned(), true, &tr);
@@ -721,6 +792,8 @@ impl State {
             // Flag colour (0 none, 1 red .. 7 purple) and the note's "marked" tag.
             "flag": flag,
             "marked": marked,
+            // Play the side's audio when it is shown (deck option).
+            "autoplay": autoplay,
             // "New", "Learning" or "Review": which count the card belongs to.
             "queue": format!("{:?}", card.kind),
             "counts": counts,
@@ -1197,6 +1270,131 @@ fn without_bidi_isolates(text: &str) -> String {
 
 /// Depth-first list of decks below the (unnamed) root, skipping the children
 /// of collapsed decks.
+// ----- Deck options -----
+
+type DeckConfigInner = anki::deckconfig::DeckConfigInner;
+
+/// The deck's preset and how many decks use it.
+fn current_preset(
+    info: &anki_proto::deck_config::DeckConfigsForUpdate,
+) -> std::result::Result<(&anki_proto::deck_config::DeckConfig, u32), ApiError> {
+    let id = info.current_deck.as_ref().map(|d| d.config_id).unwrap_or_default();
+    info.all_config
+        .iter()
+        .find_map(|c| c.config.as_ref().filter(|c| c.id == id).map(|config| (config, c.use_count)))
+        .ok_or_else(|| ApiError::new("no_deck", "the deck has no options preset"))
+}
+
+fn deck_option_values(c: &DeckConfigInner) -> Value {
+    use anki_proto::deck_config::deck_config::config::LeechAction;
+    json!({
+        "new_per_day": c.new_per_day,
+        "reviews_per_day": c.reviews_per_day,
+        "learn_steps": steps_text(&c.learn_steps),
+        "graduating_interval_good": c.graduating_interval_good,
+        "graduating_interval_easy": c.graduating_interval_easy,
+        "relearn_steps": steps_text(&c.relearn_steps),
+        "minimum_lapse_interval": c.minimum_lapse_interval,
+        "leech_threshold": c.leech_threshold,
+        "leech_action": if c.leech_action == LeechAction::TagOnly as i32 { "tag" } else { "suspend" },
+        "bury_new": c.bury_new,
+        "bury_reviews": c.bury_reviews,
+        "bury_interday_learning": c.bury_interday_learning,
+        "maximum_review_interval": c.maximum_review_interval,
+        "desired_retention": c.desired_retention,
+        "starting_ease": c.initial_ease,
+        "easy_bonus": c.easy_multiplier,
+        "interval_modifier": c.interval_multiplier,
+        "hard_interval": c.hard_multiplier,
+        "new_interval": c.lapse_multiplier,
+        "disable_autoplay": c.disable_autoplay,
+        "skip_question_when_replaying_answer": c.skip_question_when_replaying_answer,
+    })
+}
+
+fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::result::Result<(), ApiError> {
+    use anki_proto::deck_config::deck_config::config::LeechAction;
+    let bad = || ApiError::new("args", format!("invalid value for {key}: {value}"));
+    let count = || value.as_u64().filter(|&n| n <= 9999).map(|n| n as u32).ok_or_else(bad);
+    let days = || value.as_u64().filter(|&n| (1..=36500).contains(&n)).map(|n| n as u32).ok_or_else(bad);
+    let ratio = || value.as_f64().filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as f32).ok_or_else(bad);
+    let flag = || value.as_bool().ok_or_else(bad);
+    let steps = || value.as_str().and_then(parse_steps).ok_or_else(bad);
+    match key {
+        "new_per_day" => c.new_per_day = count()?,
+        "reviews_per_day" => c.reviews_per_day = count()?,
+        "learn_steps" => c.learn_steps = steps()?,
+        "graduating_interval_good" => c.graduating_interval_good = days()?,
+        "graduating_interval_easy" => c.graduating_interval_easy = days()?,
+        "relearn_steps" => c.relearn_steps = steps()?,
+        "minimum_lapse_interval" => c.minimum_lapse_interval = days()?,
+        "leech_threshold" => c.leech_threshold = count()?,
+        "leech_action" => {
+            c.leech_action = match value.as_str() {
+                Some("suspend") => LeechAction::Suspend as i32,
+                Some("tag") => LeechAction::TagOnly as i32,
+                _ => return Err(bad()),
+            }
+        }
+        "bury_new" => c.bury_new = flag()?,
+        "bury_reviews" => c.bury_reviews = flag()?,
+        "bury_interday_learning" => c.bury_interday_learning = flag()?,
+        "maximum_review_interval" => c.maximum_review_interval = days()?,
+        "desired_retention" => {
+            c.desired_retention = Some(ratio()?).filter(|r| (0.7..=0.99).contains(r)).ok_or_else(bad)?
+        }
+        "starting_ease" => c.initial_ease = Some(ratio()?).filter(|r| (1.31..=5.0).contains(r)).ok_or_else(bad)?,
+        "easy_bonus" => c.easy_multiplier = Some(ratio()?).filter(|r| (1.0..=5.0).contains(r)).ok_or_else(bad)?,
+        "interval_modifier" => {
+            c.interval_multiplier = Some(ratio()?).filter(|r| (0.5..=2.0).contains(r)).ok_or_else(bad)?
+        }
+        "hard_interval" => c.hard_multiplier = Some(ratio()?).filter(|r| (0.5..=1.3).contains(r)).ok_or_else(bad)?,
+        "new_interval" => c.lapse_multiplier = Some(ratio()?).filter(|r| *r <= 1.0).ok_or_else(bad)?,
+        "disable_autoplay" => c.disable_autoplay = flag()?,
+        "skip_question_when_replaying_answer" => c.skip_question_when_replaying_answer = flag()?,
+        _ => return Err(ApiError::new("args", format!("unknown deck option {key}"))),
+    }
+    Ok(())
+}
+
+/// Learning steps (minutes) as Anki writes them: "1m 10m 1d".
+fn steps_text(steps: &[f32]) -> String {
+    steps
+        .iter()
+        .map(|&minutes| {
+            if minutes >= 1440.0 && (minutes % 1440.0).abs() < 0.001 {
+                format!("{}d", minutes / 1440.0)
+            } else if minutes >= 60.0 && (minutes % 60.0).abs() < 0.001 {
+                format!("{}h", minutes / 60.0)
+            } else if minutes < 1.0 {
+                format!("{}s", (minutes * 60.0).round())
+            } else {
+                format!("{minutes}m")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// "1m 10m 1d" (s, m, h, d; minutes without a unit) to minutes; None if any
+/// step is not a positive duration.
+fn parse_steps(text: &str) -> Option<Vec<f32>> {
+    text.split_whitespace()
+        .map(|step| {
+            let split = step.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(step.len());
+            let number: f32 = step[..split].parse().ok().filter(|n: &f32| n.is_finite() && *n > 0.0)?;
+            let minutes = match &step[split..] {
+                "" | "m" => 1.0,
+                "s" => 1.0 / 60.0,
+                "h" => 60.0,
+                "d" => 1440.0,
+                _ => return None,
+            };
+            Some(number * minutes)
+        })
+        .collect()
+}
+
 fn find_deck_node(node: &DeckTreeNode, deck_id: i64) -> Option<&DeckTreeNode> {
     if node.deck_id == deck_id {
         return Some(node);

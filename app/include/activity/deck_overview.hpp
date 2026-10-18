@@ -8,7 +8,7 @@
 #include "view/card_view.hpp"
 
 // Deck overview (R on a deck, as AnkiDroid's Study Options screen): today's
-// counts, the deck's description, and Study now (A).
+// counts, the deck's description, Study now (A) and Options (Y).
 class DeckOverviewActivity : public brls::Activity
 {
   public:
@@ -22,10 +22,12 @@ class DeckOverviewActivity : public brls::Activity
   private:
     void load();
     void study();
+    void openOptions();
 
     int64_t deckId;
     std::string deckName;
-    bool loaded = false;
+    bool loaded   = false;
+    bool filtered = false;
     // Cleared in the destructor; background work checks a copy.
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 
@@ -39,4 +41,6 @@ class DeckOverviewActivity : public brls::Activity
     BRLS_BIND(CardView, description, "description");
     BRLS_BIND(brls::Box, studyButton, "studyButton");
     BRLS_BIND(brls::Label, studyLabel, "studyLabel");
+    BRLS_BIND(brls::Box, optionsButton, "optionsButton");
+    BRLS_BIND(brls::Label, optionsLabel, "optionsLabel");
 };
