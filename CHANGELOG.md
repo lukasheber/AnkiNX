@@ -29,6 +29,10 @@ build, then commit and tag (`git tag v0.2.0`).
   what a tap could activate (template buttons and options, links such as
   audio replay, form controls); A taps it, B removes the highlight. With
   nothing highlighted, A and Up/Down work as before.
+- Card fonts from the media folder (`@font-face` in the note type's CSS, as
+  shared decks use for Japanese, Arabic or Persian fonts): TrueType and
+  OpenType, with their bold and italic faces; missing glyphs come from the
+  system font.
 - Inline `<svg>` in cards, and `data:` image URIs (such as SVG icons in CSS
   backgrounds), are drawn.
 - Fix: script-edited cards no longer garble characters whose UTF-8 encoding

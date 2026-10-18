@@ -29,7 +29,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | `{{tts ...}}` | ⬜ | See section 3 |
 | MathJax `\(...\)`, `\[...\]` | ✅ | Native: LaTeX → Typst (MiTeX) → SVG, cached in `/switch/ankinx/cache/math`, sized in `em` and on the text baseline (`switch/anki_switch_core/src/math.rs`). ~25 ms per new formula on PC; adds ~25 MB to the `.nro`. Verified on console |
 | Template JavaScript | ✅ | QuickJS-ng with a small DOM (`app/src/script`): scripts on load, onclick/listeners on tap, timers, globals kept from question to answer, Anki stubs (`anki.imageOcclusion`, `MathJax`), a jQuery subset, `pycmd` (`ans`, `ease1`-`ease4`), checkbox/radio/label activation. Tested with a shared MCQ note type (`app/tests/fixtures`). 500 ms / 32 MB budget per run; off switch in Settings > Study. Not covered: layout measurement, canvas, network. Template buttons, links and form controls: tap, or highlight with the D-pad (Left/Right, then Up/Down) and press A; B removes the highlight. Needs an on-console check |
-| CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables, flexbox, `vh`/`vw`, `:checked`, `::before`/`::after`; inline `<svg>` and `data:` images drawn. Missing: `box-shadow`, `transform`, `transition`, `filter`, `zoom`, card fonts from media (`@font-face`). To audit against popular shared-deck styles |
+| CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables, flexbox, `vh`/`vw`, `:checked`, `::before`/`::after`; inline `<svg>` and `data:` images drawn; card fonts from media via `@font-face` (TTF/OTF, picked by weight and style; WOFF not readable, the next `src` is tried; system fonts fill missing glyphs; files over 24 MB skipped). Missing: `box-shadow`, `transform`, `transition`, `filter`, `zoom`. To audit against popular shared-deck styles |
 | Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
 | RTL scripts, ruby (furigana `{{furigana:...}}`) | 🔶 | Furigana renders through rslib as `<ruby>`; litehtml's ruby layout to check |
 
@@ -68,7 +68,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | TTS tags (`{{tts ...}}`) | ⬜ | No TTS engine on Horizon; options: skip (current) or an offline engine such as eSpeak NG |
 | MathJax (`\(...\)`, `\[...\]`) | ✅ | See the parity table: Typst instead of MicroTeX |
 | Card JavaScript in general | ✅ | See the parity table |
-| Font weights | 🔶 | Synthetic bold/italic; real weights would need bundled fonts (licence + size) |
+| Font weights | 🔶 | Synthetic bold/italic for the system font; a card font's own bold/italic faces (`@font-face`) are used when the deck has them |
 
 ## 4. System integration and safety
 

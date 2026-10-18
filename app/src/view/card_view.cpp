@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <fstream>
 #include <iterator>
 #include <lunasvg.h>
@@ -96,6 +98,143 @@ std::string decodeDataUri(const std::string& uri)
     return out;
 }
 
+std::string lowerAscii(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return s;
+}
+
+std::string trimQuotes(std::string s)
+{
+    auto space = [](char c) { return std::isspace((unsigned char)c); };
+    while (!s.empty() && space(s.front()))
+        s.erase(0, 1);
+    while (!s.empty() && space(s.back()))
+        s.pop_back();
+    if (s.size() >= 2 && (s.front() == '"' || s.front() == '\'') && s.back() == s.front())
+        s = s.substr(1, s.size() - 2);
+    return s;
+}
+
+// A card font from an @font-face rule (litehtml ignores those rules).
+struct FontFace
+{
+    std::string family; // lower case, unquoted
+    int weight  = 400;
+    bool italic = false;
+    std::vector<std::string> srcs; // url(...)s in order of preference
+    int id = -2;                    // NanoVG font; -1 failed, -2 not loaded yet
+};
+
+// The value of property `name` in a declaration block (quotes and url(...)
+// may contain ';').
+std::string declaration(const std::string& block, const std::string& name)
+{
+    std::string lower = lowerAscii(block);
+    for (size_t at = lower.find(name); at != std::string::npos; at = lower.find(name, at + 1))
+    {
+        size_t before = at;
+        while (before > 0 && std::isspace((unsigned char)block[before - 1]))
+            before--;
+        if (before > 0 && block[before - 1] != ';')
+            continue;
+        size_t colon = at + name.size();
+        while (colon < block.size() && std::isspace((unsigned char)block[colon]))
+            colon++;
+        if (colon >= block.size() || block[colon] != ':')
+            continue;
+        size_t i   = colon + 1;
+        int parens = 0;
+        char quote = 0;
+        for (; i < block.size(); i++)
+        {
+            char c = block[i];
+            if (quote)
+                quote = c == quote ? 0 : quote;
+            else if (c == '"' || c == '\'')
+                quote = c;
+            else if (c == '(')
+                parens++;
+            else if (c == ')')
+                parens--;
+            else if (c == ';' && parens <= 0)
+                break;
+        }
+        return trimQuotes(block.substr(colon + 1, i - colon - 1));
+    }
+    return "";
+}
+
+// The url(...)s of a src descriptor; WOFF/WOFF2 dropped (NanoVG reads
+// TrueType/OpenType only).
+std::vector<std::string> fontUrls(const std::string& src)
+{
+    std::vector<std::string> out;
+    std::string lower = lowerAscii(src);
+    for (size_t at = lower.find("url("); at != std::string::npos; at = lower.find("url(", at + 4))
+    {
+        size_t i = at + 4;
+        while (i < src.size() && std::isspace((unsigned char)src[i]))
+            i++;
+        size_t end;
+        std::string url;
+        if (i < src.size() && (src[i] == '"' || src[i] == '\''))
+        {
+            end = src.find(src[i], i + 1);
+            if (end == std::string::npos)
+                break;
+            url = src.substr(i + 1, end - i - 1);
+        }
+        else
+        {
+            end = src.find(')', i);
+            if (end == std::string::npos)
+                break;
+            url = trimQuotes(src.substr(i, end - i));
+        }
+        std::string path = lowerAscii(url.substr(0, url.find_first_of("?#")));
+        bool woff = path.rfind("data:", 0) == 0 ? path.find("woff") != std::string::npos
+                                                 : (path.size() > 5 && path.compare(path.size() - 5, 5, ".woff") == 0) ||
+                                                       (path.size() > 6 && path.compare(path.size() - 6, 6, ".woff2") == 0);
+        if (!url.empty() && !woff)
+            out.push_back(url);
+        at = end;
+    }
+    return out;
+}
+
+std::vector<FontFace> parseFontFaces(const std::string& html)
+{
+    std::vector<FontFace> out;
+    std::string lower = lowerAscii(html);
+    for (size_t at = lower.find("@font-face"); at != std::string::npos; at = lower.find("@font-face", at + 1))
+    {
+        size_t open  = html.find('{', at);
+        size_t close = open == std::string::npos ? open : html.find('}', open);
+        if (close == std::string::npos)
+            break;
+        std::string block = html.substr(open + 1, close - open - 1);
+        FontFace face;
+        face.family        = lowerAscii(trimQuotes(declaration(block, "font-family")));
+        std::string weight = lowerAscii(declaration(block, "font-weight"));
+        face.weight        = weight == "bold" || weight == "bolder" ? 700 : std::max(0, std::atoi(weight.c_str()));
+        if (face.weight == 0)
+            face.weight = 400;
+        std::string style = lowerAscii(declaration(block, "font-style"));
+        face.italic       = style.find("italic") != std::string::npos || style.find("oblique") != std::string::npos;
+        face.srcs         = fontUrls(declaration(block, "src"));
+        if (!face.family.empty() && !face.srcs.empty())
+            out.push_back(std::move(face));
+    }
+    return out;
+}
+
+bool isFontFile(const std::string& data)
+{
+    return data.size() > 12 && (data.compare(0, 4, std::string("\0\1\0\0", 4)) == 0 || data.compare(0, 4, "OTTO") == 0 ||
+                                data.compare(0, 4, "true") == 0 || data.compare(0, 4, "ttcf") == 0);
+}
+
 bool isWebp(const std::string& data)
 {
     return data.size() > 12 && data.compare(0, 4, "RIFF") == 0 && data.compare(8, 4, "WEBP") == 0;
@@ -170,6 +309,7 @@ class NvgContainer : public document_container
 
     NVGcontext* vg = nullptr;
     std::string mediaDir;
+    std::vector<FontFace> fontFaces; // the current document's @font-face rules
 
     void clearImages()
     {
@@ -273,6 +413,86 @@ class NvgContainer : public document_container
         return fileExists(path) ? path : std::string();
     }
 
+    // Load an @font-face font (once per app run: NanoVG keeps fonts by name).
+    // Glyphs it lacks come from the system fonts.
+    int loadFace(FontFace& face)
+    {
+        if (face.id != -2)
+            return face.id;
+        face.id = -1;
+        constexpr long MAX_FONT_BYTES = 24 * 1024 * 1024;
+        for (const std::string& src : face.srcs)
+        {
+            std::string data, name;
+            if (src.rfind("data:", 0) == 0)
+            {
+                data = decodeDataUri(src);
+                name = "card-font:" + std::to_string(std::hash<std::string> {}(data));
+            }
+            else
+            {
+                std::string path = resolve(src);
+                struct stat st;
+                if (path.empty() || stat(path.c_str(), &st) != 0 || st.st_size > MAX_FONT_BYTES)
+                    continue;
+                name = "card-font:" + path;
+                if (int known = nvgFindFont(vg, name.c_str()); known >= 0)
+                    return face.id = known;
+                data = readFile(path);
+            }
+            if (int known = nvgFindFont(vg, name.c_str()); known >= 0)
+                return face.id = known;
+            if (!isFontFile(data))
+                continue;
+            auto* copy = (unsigned char*)std::malloc(data.size());
+            if (!copy)
+                continue;
+            std::memcpy(copy, data.data(), data.size());
+            int id = nvgCreateFontMem(vg, name.c_str(), copy, (int)data.size(), 1); // NanoVG frees `copy`
+            if (id < 0)
+                continue;
+            for (const std::string& fallback :
+                 { brls::FONT_REGULAR, std::string("default"), brls::FONT_CHINESE_SIMPLIFIED,
+                   brls::FONT_CHINESE_SIMPLIFIED_EXT, brls::FONT_CHINESE_TRADITIONAL, brls::FONT_KOREAN_REGULAR,
+                   brls::FONT_EMOJI, brls::FONT_SWITCH_ICONS, brls::FONT_MATERIAL_ICONS })
+                if (int f = brls::Application::getFont(fallback); f >= 0)
+                    nvgAddFallbackFontId(vg, id, f);
+            return face.id = id;
+        }
+        return -1;
+    }
+
+    // The @font-face font for a CSS font-family list, closest in weight and
+    // style; -1 if none applies.
+    int cardFont(const std::string& families, int weight, bool italic, FontFace** chosen)
+    {
+        if (fontFaces.empty() || !vg)
+            return -1;
+        size_t start = 0;
+        while (start <= families.size())
+        {
+            size_t comma     = families.find(',', start);
+            std::string name = lowerAscii(trimQuotes(families.substr(start, comma - start)));
+            start            = comma == std::string::npos ? families.size() + 1 : comma + 1;
+            FontFace* best   = nullptr;
+            int bestScore    = 0;
+            for (FontFace& face : fontFaces)
+            {
+                if (face.family != name || face.id == -1)
+                    continue;
+                int score = std::abs(face.weight - weight) + (face.italic != italic ? 1000 : 0);
+                if (!best || score < bestScore)
+                    best = &face, bestScore = score;
+            }
+            if (best && loadFace(*best) >= 0)
+            {
+                *chosen = best;
+                return best->id;
+            }
+        }
+        return -1;
+    }
+
   public:
     uint_ptr create_font(const font_description& descr, const document*, font_metrics* fm) override
     {
@@ -282,6 +502,16 @@ class NvgContainer : public document_container
         f->weight     = descr.weight;
         f->italic     = descr.style == font_style_italic;
         f->decoration = descr.decoration_line;
+        FontFace* face = nullptr;
+        if (int id = cardFont(descr.family, descr.weight, f->italic, &face); id >= 0)
+        {
+            f->face = id;
+            // A real bold or italic face needs no synthetic one.
+            if (face->weight >= 600)
+                f->weight = 400;
+            if (face->italic)
+                f->italic = false;
+        }
 
         float ascender = 0, descender = 0, lineHeight = 0, bounds[4] = {};
         applyFont(f);
@@ -818,6 +1048,7 @@ void CardView::scrollBy(float dy) { scroll = std::clamp(scroll + dy, 0.0f, maxSc
 void CardView::layout(float width)
 {
     container->clearImages();
+    container->fontFaces = parseFontFaces(html);
     layoutWidth = width / zoom;
     document    = document::createFromString(html, container.get());
     if (document)

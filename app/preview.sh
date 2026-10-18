@@ -25,6 +25,12 @@ img.save('$DATA/collection.media/paris.png')
 img = Image.new('RGB', (240, 120), (250, 200, 60))
 ImageDraw.Draw(img).ellipse([80, 20, 160, 100], fill=(200, 60, 60))
 img.save('$DATA/collection.media/badge.webp', 'WEBP')"
+# Card fonts for the Fonts deck (@font-face), if this system has them.
+for f in "" -Bold; do
+    src=/usr/share/fonts/truetype/dejavu/DejaVuSansMono$f.ttf
+    dst="$DATA/collection.media/_cardmono$(echo "$f" | tr A-Z a-z).ttf"
+    if [[ -f "$src" ]]; then cp "$src" "$dst"; fi
+done
 # Like Anki's LaTeX SVGs (dvisvgm): glyphs defined once in <defs>, drawn via <use>.
 cat > "$DATA/collection.media/formula.svg" <<'SVG'
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="220" height="60" viewBox="0 0 220 60">

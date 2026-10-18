@@ -122,6 +122,20 @@ fn main() {
         &["Which of these is the capital of Australia?", "Sydney", "Canberra", "Melbourne", "Perth", "", "",
             "", "", "B", "Canberra was purpose-built as a compromise between Sydney and Melbourne."],
     );
+    // Card fonts from the media folder via @font-face (app/preview.sh copies
+    // the font files); the Japanese falls back to the system font.
+    add(
+        "Fonts",
+        &basic,
+        &[
+            "<style>@font-face { font-family: 'Card Mono'; src: url('_cardmono.woff2') format('woff2'), \
+             url(\"_cardmono.ttf\"); } @font-face { font-family: 'Card Mono'; font-weight: bold; \
+             src: url(_cardmono-bold.ttf); }</style>\
+             <div style=\"font-family: 'Card Mono', monospace\">A monospaced card font, <b>its bold face</b>, \
+             and 日本語 from the system font.</div>",
+            "Loaded from the media folder",
+        ],
+    );
     // {{type:Back}}: an answer box on the question, a comparison on the answer.
     add("Typing", &typing, &["あ (romaji)", "a"]);
 
