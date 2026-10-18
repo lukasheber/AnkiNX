@@ -95,9 +95,9 @@ template JavaScript, then this list, taken in groups of related features
 | Feature | Priority | Notes |
 | --- | --- | --- |
 | Single Joy-Con (sideways) and custom key bindings | ✅ | Automatic layout detection, SL/Y/A/SR grading, Settings > Controls to rebind (`util/controls.cpp`). Verified on console: both Joy-Cons detached (grip screen) or only one detached. Card menu on holding Y comes with the card actions |
-| Card actions menu: flag (colours), mark, bury card/note, suspend card/note, forget, set due date | P1 | AnkiDroid's reviewer menu; all are scheduler operations in rslib, not editing |
-| Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | P1 | rslib `card_stats` |
-| Leech, daily-limit and "learning card due in N min" messages | P1 | Anki shows these; today the app just says "finished" |
+| Card actions menu: flag (colours), mark, bury card/note, suspend card/note, forget, set due date | ✅ | Hold the replay button (Y; stick press on one Joy-Con) or tap ⋯ in the header: a list of actions (borealis dropdown); flag and ★ shown in the header, flag colour along the card's top. Every action is undoable. Needs an on-console check |
+| Card info: review history, interval, ease or FSRS stability/difficulty, previous card's info | ✅ | From the card menu: rslib `card_stats` as a page of tables (card view); B closes |
+| Leech, daily-limit and "learning card due in N min" messages | ✅ | Leech dialog after answering; the finished screen says when the next learning card is due (and resumes then), and when limits stopped cards or some were buried |
 | Answer timer and auto advance (show answer / answer after N seconds) | P2 | Anki 23.12+ auto advance, from deck options; good for hands-free audio decks |
 | Whiteboard (draw on the card with the touchscreen) | P2 | AnkiDroid feature, very useful for kanji and handwriting; handheld mode only |
 | Tap zones and swipe gestures (handheld) | P2 | AnkiDroid-style: tap left/right/bottom areas for answer buttons |

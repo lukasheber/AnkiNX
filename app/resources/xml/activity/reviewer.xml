@@ -9,17 +9,31 @@
         axis="column"
         grow="1.0">
 
-        <!-- New / learning / due counts; the current card's queue is underlined -->
+        <!-- New / learning / due counts (the current card's queue is underlined),
+             centred; on the right the card's flag and mark, and the card menu -->
         <brls:Box
             width="auto"
             height="40"
             axis="row"
-            justifyContent="center"
             alignItems="center">
+            <brls:Box width="0" height="auto" grow="1.0" />
             <brls:Label id="countNew" width="auto" height="auto" fontSize="22" textColor="#42a5f5" marginRight="28" />
             <brls:Label id="countLearn" width="auto" height="auto" fontSize="22" textColor="#ef5350" marginRight="28" />
             <brls:Label id="countReview" width="auto" height="auto" fontSize="22" textColor="#66bb6a" />
+            <brls:Box width="0" height="auto" grow="1.0" axis="row" justifyContent="flexEnd" alignItems="center"
+                marginRight="14">
+                <brls:Box id="flagIcon" width="18" height="18" cornerRadius="9" marginRight="14" visibility="gone" />
+                <brls:Label id="markIcon" width="auto" height="auto" fontSize="26" textColor="#f5b400"
+                    marginRight="4" visibility="gone" />
+                <!-- A finger-sized target around the ⋯ -->
+                <brls:Box id="menuButton" width="64" height="40" justifyContent="center" alignItems="center">
+                    <brls:Label id="menuIcon" width="auto" height="auto" fontSize="30" />
+                </brls:Box>
+            </brls:Box>
         </brls:Box>
+
+        <!-- A flagged card's colour along its top edge, as in AnkiDroid -->
+        <brls:Box id="flagBar" width="auto" height="4" marginLeft="24" marginRight="24" visibility="invisible" />
 
         <CardView
             id="card"

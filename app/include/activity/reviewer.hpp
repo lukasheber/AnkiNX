@@ -58,6 +58,20 @@ class ReviewerActivity : public brls::Activity
     void applyControls();
     std::string documentFor(const std::string& body) const;
     void playAudio(const anki::json& tags);
+    // Card menu (hold the replay audio button, or tap ⋯), card info, messages.
+    void showCardState();
+    void openCardMenu();
+    void chooseFlag();
+    void setDueDate();
+    // `card_action` on the shown card; `done` is the notification, or empty
+    // when the result has its own (marking). Card-removing actions load the
+    // next card.
+    void cardAction(const std::string& action, anki::json args, const std::string& done);
+    void showCardInfo(int64_t cardId);
+    // The replay button: a short press replays, holding opens the card menu.
+    void pressReplay(brls::ControllerButton button);
+    void doneMessages(std::string& body);
+    bool menuAvailable() const;
     // Run `f` on the UI thread unless the activity was closed meanwhile. Background
     // tasks must take `token` (a copy of `alive`) when they are created, on the
     // UI thread, never read `alive` themselves.
@@ -80,6 +94,13 @@ class ReviewerActivity : public brls::Activity
     // JavaScript of the current card, if it has any; replaced per card.
     std::unique_ptr<CardScript> script;
     int scriptGeneration = 0;
+    // The card answered before this one ("Previous card info").
+    int64_t previousCardId = 0;
+    // A press of the replay button being watched for a hold.
+    int holdGeneration = 0;
+    // Bumped when the done screen's "resume when learning cards are due" timer
+    // must no longer fire.
+    int resumeGeneration = 0;
 
     BRLS_BIND(brls::AppletFrame, frame, "frame");
     BRLS_BIND(CardView, cardView, "card");
@@ -89,4 +110,9 @@ class ReviewerActivity : public brls::Activity
     BRLS_BIND(brls::Label, countNew, "countNew");
     BRLS_BIND(brls::Label, countLearn, "countLearn");
     BRLS_BIND(brls::Label, countReview, "countReview");
+    BRLS_BIND(brls::Box, flagIcon, "flagIcon");
+    BRLS_BIND(brls::Label, markIcon, "markIcon");
+    BRLS_BIND(brls::Label, menuIcon, "menuIcon");
+    BRLS_BIND(brls::Box, menuButton, "menuButton");
+    BRLS_BIND(brls::Box, flagBar, "flagBar");
 };

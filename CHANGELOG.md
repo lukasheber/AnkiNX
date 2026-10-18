@@ -25,6 +25,15 @@ build, then commit and tag (`git tag v0.2.0`).
   jQuery), as do `pycmd("ans")` / `pycmd("ease3")`, checkbox and radio taps,
   `<label>` taps and more selectors (`:nth-of-type`, `:checked`, ...).
   Tested with a shared multiple-choice note type.
+- Card menu: hold the replay audio button (Y; the stick press on one
+  Joy-Con) or tap ⋯ in the header to flag the card, mark the note, bury,
+  suspend, forget, set the due date, or see the card's (or the previous
+  card's) info and review history. The header shows the flag and ★ mark.
+- Messages as in Anki: a leech dialog after answering; on the finished
+  screen, when the next learning card is due (studying resumes then), and
+  whether daily limits held cards back or some were buried.
+- Card text on the Switch: Korean, Chinese-only characters and symbols now
+  show in cards (the system font used there had no fallbacks).
 - Card buttons without touch: the D-pad (Left/Right, then Up/Down) highlights
   what a tap could activate (template buttons and options, links such as
   audio replay, form controls); A taps it, B removes the highlight. With

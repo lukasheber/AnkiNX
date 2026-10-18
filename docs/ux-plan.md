@@ -98,6 +98,9 @@ Side tabs, like the Switch's System Settings:
 
 ### Card menu (hold Y, or tap ⋯)
 
+(Built as borealis' list dropdown, the Switch-style bottom sheet used by
+selectors, rather than a sidebar: same items, less custom UI.)
+
 A sidebar sliding in from the right, over the card:
 
 ```

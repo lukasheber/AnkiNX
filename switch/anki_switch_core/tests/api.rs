@@ -129,11 +129,53 @@ fn study_flow() {
     assert_eq!(card["counts"]["new"], 3);
     assert_eq!(error_kind("answer", json!({ "ease": 7 })), "args");
 
+    // Card menu: flag and mark show on the card; card info.
+    let cid = card["card_id"].as_i64().unwrap();
+    assert_eq!((card["flag"].clone(), card["marked"].clone()), (json!(0), json!(false)));
+    ok("card_action", json!({ "card_id": cid, "action": "flag", "flag": 3 }));
+    let marked = ok("card_action", json!({ "card_id": cid, "action": "toggle_mark" }));
+    assert_eq!(marked["marked"], true);
+    let card = ok("next_card", json!({}));
+    assert_eq!(card["card_id"], cid);
+    assert_eq!((card["flag"].clone(), card["marked"].clone()), (json!(3), json!(true)));
+    let info = ok("card_info", json!({ "card_id": cid }));
+    assert_eq!(info["deck"], "Spanish::Verbs");
+    assert_eq!(info["notetype"], "Basic");
+    assert_eq!(info["reviews"], 0);
+    assert!(info["revlog"].as_array().unwrap().is_empty(), "{info}");
+    assert!(info["added"].as_i64().unwrap() > 0);
+    // Actions that take the card out of today's queue; each one is undoable.
+    for action in ["bury_card", "bury_note", "suspend_card", "suspend_note", "set_due_date"] {
+        ok("card_action", json!({ "card_id": cid, "action": action, "days": "3" }));
+        let next = ok("next_card", json!({}));
+        assert_ne!(next["card_id"], cid, "{action} left the card in the queue");
+        assert_eq!(next["counts"]["new"], 2, "{action}");
+        assert_eq!(ok("undo", json!({}))["undone"], true);
+        assert_eq!(ok("next_card", json!({}))["card_id"], cid, "undo {action}");
+    }
+    ok("card_action", json!({ "card_id": cid, "action": "forget" }));
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+    assert_eq!(error_kind("card_action", json!({ "card_id": cid, "action": "bogus" })), "args");
+    assert_eq!(error_kind("card_action", json!({ "card_id": 1, "action": "flag", "flag": 1 })), "no_card");
+    // Undo the mark, then the flag.
+    ok("undo", json!({}));
+    ok("undo", json!({}));
+    let card = ok("next_card", json!({}));
+    assert_eq!((card["flag"].clone(), card["marked"].clone()), (json!(0), json!(false)));
+    let answered = ok("answer", json!({ "ease": 3 }));
+    assert_eq!((answered["leech"].clone(), answered["suspended"].clone()), (json!(false), json!(false)));
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+
     // Finish the deck: Easy graduates new cards out of today's queue.
     let mut answered = 0;
     loop {
         let card = ok("next_card", json!({}));
         if card["done"] == true {
+            let congrats = &card["congrats"];
+            assert_eq!(congrats["learn_remaining"], 0, "{card}");
+            assert_eq!(congrats["secs_until_next_learn"], Value::Null, "{card}");
+            assert_eq!(congrats["new_limit_reached"], false, "{card}");
+            assert_eq!(congrats["buried"], false, "{card}");
             break;
         }
         ok("answer", json!({ "ease": 4 }));

@@ -185,6 +185,14 @@ fn prepare_type_answer(
 
 /// Answer side of Anki's type-answer filter (typeAnsAnswerFilter): the
 /// comparison of `typed` with the expected answer replaces "[[type:...]]".
+/// Whether the note has `tag` (ignoring case, as Anki compares tags).
+fn note_has_tag(col: &Collection, nid: NoteId, tag: &str) -> Result<bool> {
+    Ok(col
+        .storage
+        .get_note(nid)?
+        .is_some_and(|note| note.tags.iter().any(|t| t.eq_ignore_ascii_case(tag))))
+}
+
 fn compare_type_answer(col: &mut Collection, answer: &str, typing: Option<&Typing>, typed: &str) -> Result<String> {
     use anki::services::CardRenderingService;
     let Some(typing) = typing else {
@@ -297,6 +305,8 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "answer" => state.answer(&args),
         "type_answer" => state.type_answer(&args),
         "undo" => state.undo(),
+        "card_action" => state.card_action(&args),
+        "card_info" => state.card_info(&args),
         "login" => state.login(&args),
         "logout" => state.logout(),
         "sync" => state.sync(),
@@ -590,11 +600,31 @@ impl State {
         });
         let Some(card) = queued.cards.into_iter().next() else {
             self.shown = None;
-            return Ok(json!({ "done": true, "counts": counts }));
+            // What Anki's congratulations screen says.
+            let info = col.congrats_info().map_err(err)?;
+            let next_learn = (info.learn_remaining > 0 && info.secs_until_next_learn < 86_400)
+                .then_some(info.secs_until_next_learn);
+            return Ok(json!({
+                "done": true,
+                "counts": counts,
+                "congrats": {
+                    // Learning cards due later today, and in how many seconds.
+                    "learn_remaining": info.learn_remaining,
+                    "secs_until_next_learn": next_learn,
+                    // More cards are due but today's limits stop them.
+                    "review_limit_reached": info.review_remaining,
+                    "new_limit_reached": info.new_remaining,
+                    "buried": info.have_sched_buried || info.have_user_buried,
+                    "filtered_deck": info.is_filtered_deck,
+                },
+            }));
         };
 
         let card_id = card.card.id();
+        let note_id = card.card.note_id();
         let ord = card.card.template_idx();
+        let flag = anki_proto::cards::Card::from(card.card.clone()).flags;
+        let marked = note_has_tag(col, note_id, "marked").map_err(err)?;
         let render = col.render_existing_card(card_id, false, false).map_err(err)?;
         let (question, q_av) = extract_av_tags(render.question().into_owned(), true, &tr);
         let (answer, a_av) = extract_av_tags(render.answer().into_owned(), false, &tr);
@@ -654,6 +684,10 @@ impl State {
         Ok(json!({
             "done": false,
             "card_id": card_id.0,
+            "note_id": note_id.0,
+            // Flag colour (0 none, 1 red .. 7 purple) and the note's "marked" tag.
+            "flag": flag,
+            "marked": marked,
             // "New", "Learning" or "Review": which count the card belongs to.
             "queue": format!("{:?}", card.kind),
             "counts": counts,
@@ -724,10 +758,140 @@ impl State {
             from_queue: true,
         };
         let tr = self.tr.clone();
-        self.col()?
-            .answer_card(&mut answer)
-            .map_err(|e| ApiError::anki(e, &tr))?;
-        Ok(json!({}))
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        // Anki tags a note "leech" (and may suspend the card) when a lapse
+        // reaches the deck's threshold; the reviewer tells the user.
+        let note_id = col
+            .storage
+            .get_card(shown.card_id)
+            .map_err(err)?
+            .map(|card| card.note_id());
+        let was_leech = match note_id {
+            Some(nid) => note_has_tag(col, nid, "leech").map_err(err)?,
+            None => false,
+        };
+        col.answer_card(&mut answer).map_err(err)?;
+        let leech = match note_id {
+            Some(nid) => !was_leech && note_has_tag(col, nid, "leech").map_err(err)?,
+            None => false,
+        };
+        let suspended = col
+            .storage
+            .get_card(shown.card_id)
+            .map_err(err)?
+            .map(|card| anki_proto::cards::Card::from(card).queue == -1)
+            .unwrap_or(false);
+        Ok(json!({ "leech": leech, "suspended": leech && suspended }))
+    }
+
+    /// `card_action {card_id, action, flag?, days?}`: the reviewer's card menu.
+    /// Actions: flag (with `flag` 0-7), toggle_mark, bury_card, bury_note,
+    /// suspend_card, suspend_note, forget, set_due_date (with `days`, as in
+    /// Anki: "0" today, "3-7" a random day in that range, "5!" also sets the
+    /// interval). All are undoable with `undo`.
+    fn card_action(&mut self, args: &Value) -> ApiResult {
+        use anki::scheduler::new::ScheduleAsNewContext;
+        use anki_proto::scheduler::bury_or_suspend_cards_request::Mode;
+        let cid = CardId(i64_arg(args, "card_id")?);
+        let action = str_arg(args, "action")?.to_string();
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let card = col
+            .storage
+            .get_card(cid)
+            .map_err(err)?
+            .ok_or_else(|| ApiError::new("no_card", "the card no longer exists"))?;
+        let nid = card.note_id();
+        let mut result = json!({});
+        match action.as_str() {
+            "flag" => {
+                let flag = i64_arg(args, "flag")?.clamp(0, 7) as u32;
+                col.set_card_flag(&[cid], flag).map_err(err)?;
+            }
+            "toggle_mark" => {
+                let marked = note_has_tag(col, nid, "marked").map_err(err)?;
+                if marked {
+                    col.remove_tags_from_notes(&[nid], "marked").map_err(err)?;
+                } else {
+                    col.add_tags_to_notes(&[nid], "marked").map_err(err)?;
+                }
+                result = json!({ "marked": !marked });
+            }
+            "bury_card" | "bury_note" | "suspend_card" | "suspend_note" => {
+                let cids = if action.ends_with("_note") {
+                    col.storage.all_card_ids_of_note_in_template_order(nid).map_err(err)?
+                } else {
+                    vec![cid]
+                };
+                let mode = if action.starts_with("bury") { Mode::BuryUser } else { Mode::Suspend };
+                col.bury_or_suspend_cards(&cids, mode).map_err(err)?;
+            }
+            // As Anki's reviewer: back to the end of the new queue (or its
+            // old position), keeping the review and lapse counts.
+            "forget" => {
+                col.reschedule_cards_as_new(&[cid], true, true, false, Some(ScheduleAsNewContext::Reviewer))
+                    .map_err(err)?;
+            }
+            "set_due_date" => {
+                let days = str_arg(args, "days")?.trim().to_string();
+                col.set_due_date(&[cid], &days, None).map_err(err)?;
+            }
+            other => return Err(ApiError::new("args", format!("unknown card action '{other}'"))),
+        }
+        // A card that leaves the queue is no longer the one being shown.
+        if !matches!(action.as_str(), "flag" | "toggle_mark") {
+            self.shown = None;
+        }
+        Ok(result)
+    }
+
+    /// `card_info {card_id}`: Anki's card info (stats::CardStatsResponse) as
+    /// JSON; dates are Unix seconds, intervals in days.
+    fn card_info(&mut self, args: &Value) -> ApiResult {
+        let cid = CardId(i64_arg(args, "card_id")?);
+        let tr = self.tr.clone();
+        let s = self.col()?.card_stats(cid).map_err(|e| ApiError::anki(e, &tr))?;
+        let revlog: Vec<Value> = s
+            .revlog
+            .iter()
+            .map(|r| {
+                json!({
+                    "time": r.time,
+                    // 0 learning, 1 review, 2 relearning, 3 filtered, 4 manual, 5 rescheduled
+                    "kind": r.review_kind,
+                    "rating": r.button_chosen,
+                    "interval_secs": r.interval,
+                    "ease": r.ease,
+                    "taken_secs": r.taken_secs,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "card_id": s.card_id,
+            "note_id": s.note_id,
+            "deck": s.deck,
+            "original_deck": s.original_deck,
+            "preset": s.preset,
+            "notetype": s.notetype,
+            "card_type": s.card_type,
+            "added": s.added,
+            "first_review": s.first_review,
+            "latest_review": s.latest_review,
+            "due_date": s.due_date,
+            "due_position": s.due_position,
+            "interval": s.interval,
+            "ease": s.ease,
+            "reviews": s.reviews,
+            "lapses": s.lapses,
+            "average_secs": s.average_secs,
+            "total_secs": s.total_secs,
+            "stability": s.memory_state.as_ref().map(|m| m.stability),
+            "difficulty": s.memory_state.as_ref().map(|m| m.difficulty),
+            "retrievability": s.fsrs_retrievability,
+            "revlog": revlog,
+        }))
     }
 
     fn undo(&mut self) -> ApiResult {
