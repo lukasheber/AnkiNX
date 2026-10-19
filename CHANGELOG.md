@@ -10,6 +10,11 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## Unreleased
 
+## 0.3.0 (2026-10-18)
+
+Built and tested in the desktop preview; hardware checks pending for most
+items.
+
 - Deck list: the table is only as wide as the deck names need, centred, so
   the counts sit close to the names; the header shows "N cards due" under
   AnkiNX; Y reads Expand or Collapse for the highlighted deck and is greyed
@@ -17,6 +22,11 @@ build, then commit and tag (`git tag v0.2.0`).
 - Deck list header: Sync (X), Settings (−) and Exit (+) on the right, as
   button glyph and icon, tappable; a dot on Sync while changes are not on
   AnkiWeb. The footer keeps what applies to the highlighted deck.
+- Deck list status line, fixed under the list (it doesn't scroll away):
+  "Studied N cards in X minutes today (Ys/card)" for the whole collection,
+  as under Anki's deck list ("No cards studied today yet" before the first
+  review), and the AnkiWeb account on the left (cloud icon and username).
+  The header reads "No cards due" when nothing is due.
 - Deck overview redesigned: today's counts and the totals in a panel with
   Study now (which holds the focus), the other actions as outlined buttons
   below, then the description; the group is centred on the screen. Works
@@ -25,14 +35,6 @@ build, then commit and tag (`git tag v0.2.0`).
 - Finished screen: "Studied N cards in X minutes today (Ys/card)" under the
   congratulations, as in Anki.
 
-## 0.3.0 (2026-10-18)
-
-Built and tested in the desktop preview; hardware checks pending for most
-items.
-
-- Deck overview laid out as AnkiDroid's: the deck's name centred in the
-  header, then New / Learning / To Review / Total new cards / Total cards
-  in a centred table, with Study now right below.
 - Maths in cards (`\(...\)` inline, `\[...\]` display, as Anki's MathJax):
   typeset natively with Typst (LaTeX converted by MiTeX), drawn as SVG on the
   text baseline, cached on the SD card. The `.nro` grows to about 76 MB.

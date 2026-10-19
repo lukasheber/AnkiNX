@@ -8,18 +8,34 @@ Unofficial: not affiliated with Ankitects, AnkiDroid or Nintendo.
 
 | | |
 | --- | --- |
-| ![Deck list](docs/screenshots/decks.png) | ![Cloze card](docs/screenshots/cloze_question.png) |
-| ![Card with an image](docs/screenshots/image_answer.png) | ![Type in the answer](docs/screenshots/type_answer.png) |
+| ![Deck list](docs/screenshots/decks.png) | ![Deck overview, dark theme](docs/screenshots/overview.png) |
+| ![Cloze card](docs/screenshots/cloze_question.png) | ![Card with an image](docs/screenshots/image_answer.png) |
+| ![Maths typeset from LaTeX](docs/screenshots/maths.png) | ![Persian and Arabic, right to left](docs/screenshots/rtl.png) |
 | ![Image Occlusion question](docs/screenshots/occlusion_question.png) | ![Image Occlusion answer](docs/screenshots/occlusion_answer.png) |
 
 ## Scope: reviewing on the go
 
-AnkiNX is for **studying**: deck list, reviews, answer buttons, undo, audio,
-images, type-in-the-answer and Image Occlusion cards. Adding and editing notes
-and cards is **not implemented**. Create and maintain your collection in Anki
-desktop or AnkiDroid, and use AnkiNX to review it.
+AnkiNX is for **studying**. What it does:
 
-**With AnkiWeb (recommended).** Log in under Settings (− button) > Account & sync, and sync with X.
+- **Decks:** the deck list with today's counts and what you studied today; a
+  deck overview with Study now, custom study, deck options (limits, steps,
+  FSRS or SM-2) and statistics; a read-only card browser.
+- **Reviews:** Anki's scheduler and answer buttons, undo and redo, the card
+  menu (flag, mark, bury, suspend, set due date, card info), timer and auto
+  advance, leech handling.
+- **Cards as Anki shows them:** HTML and CSS, images, audio, maths
+  (`\(...\)` and `\[...\]`), JavaScript in templates, furigana, right-to-left
+  text, fonts from the media folder, type-in-the-answer and Image Occlusion.
+- **Controls:** buttons (rebindable, one Joy-Con held sideways works too),
+  touch, swipes, rumble, and a whiteboard in handheld mode.
+- **Languages:** English, Portuguese (Brazil), Spanish and Japanese, following
+  the console. Light and dark themes, following the console too.
+
+Adding and editing notes and cards is **not implemented**. Create and maintain
+your collection in Anki desktop or AnkiDroid, and use AnkiNX to review it.
+
+**With AnkiWeb (recommended).** Log in under Settings (− button) > Account &
+sync, and sync with X. A self-hosted sync server can be set there too.
 Automatic sync is on by default: when the app opens, after studying and before
 exiting with +. Your reviews then reach Anki desktop and AnkiDroid, and new
 cards made there reach the Switch.
