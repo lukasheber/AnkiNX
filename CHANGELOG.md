@@ -10,6 +10,12 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## Unreleased
 
+- Whiteboard easier to recognise: the pen and bin icons (which read as
+  "edit card" and "delete card") are now labelled pills, "Draw" with a brush
+  and "Clear"; Draw fills blue and the card gets a blue outline while
+  drawing, and the first time a hint says that you can draw anywhere on the
+  card (scrolling is paused meanwhile).
+
 ## 0.3.0 (2026-10-18)
 
 Deck overview and options, custom study, statistics, a card browser, maths,

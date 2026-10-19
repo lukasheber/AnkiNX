@@ -26,14 +26,17 @@
             <brls:Label id="countReview" width="auto" height="auto" fontSize="22" textColor="#66bb6a" />
             <brls:Box width="0" height="auto" grow="1.0" axis="row" justifyContent="flexEnd" alignItems="center"
                 marginRight="14">
-                <!-- Whiteboard (touch): toggle, and clear while it is on -->
-                <brls:Box id="clearButton" width="56" height="40" justifyContent="center" alignItems="center"
-                    visibility="gone">
-                    <brls:Label id="clearIcon" width="auto" height="auto" fontSize="26" />
+                <!-- Whiteboard (touch): labelled pills, as a mode toggle (filled
+                     while drawing) and Clear while it is on -->
+                <brls:Box id="clearButton" width="auto" height="34" axis="row" alignItems="center" paddingLeft="12"
+                    paddingRight="14" cornerRadius="17" borderThickness="1.5" marginRight="8" visibility="gone">
+                    <brls:Label id="clearIcon" width="auto" height="auto" fontSize="22" marginRight="6" />
+                    <brls:Label id="clearLabel" width="auto" height="auto" fontSize="18" />
                 </brls:Box>
-                <brls:Box id="penButton" width="56" height="40" justifyContent="center" alignItems="center"
-                    marginRight="8">
-                    <brls:Label id="penIcon" width="auto" height="auto" fontSize="26" />
+                <brls:Box id="penButton" width="auto" height="34" axis="row" alignItems="center" paddingLeft="12"
+                    paddingRight="14" cornerRadius="17" borderThickness="1.5" marginRight="12">
+                    <brls:Label id="penIcon" width="auto" height="auto" fontSize="22" marginRight="6" />
+                    <brls:Label id="penLabel" width="auto" height="auto" fontSize="18" />
                 </brls:Box>
                 <brls:Box id="flagIcon" width="18" height="18" cornerRadius="9" marginRight="14" visibility="gone" />
                 <brls:Label id="markIcon" width="auto" height="auto" fontSize="26" textColor="#f5b400"
@@ -48,13 +51,22 @@
         <!-- A flagged card's colour along its top edge, as in AnkiDroid -->
         <brls:Box id="flagBar" width="auto" height="4" marginLeft="24" marginRight="24" visibility="invisible" />
 
-        <CardView
-            id="card"
-            width="auto"
-            height="auto"
-            grow="1.0"
-            marginLeft="24"
-            marginRight="24" />
+        <brls:Box width="auto" height="auto" grow="1.0" axis="column" marginLeft="24" marginRight="24">
+            <CardView
+                id="card"
+                width="auto"
+                height="auto"
+                grow="1.0" />
+            <!-- Whiteboard hint, a toast over the bottom of the card (away
+                 from the Draw and Clear buttons) -->
+            <brls:Box id="drawHint" positionType="absolute" positionLeft="0" positionRight="0" positionBottom="18"
+                width="auto" height="auto" axis="row" justifyContent="center" visibility="gone">
+                <brls:Box width="auto" height="auto" paddingTop="10" paddingBottom="10" paddingLeft="20"
+                    paddingRight="20" cornerRadius="20" backgroundColor="#2b2b2be6">
+                    <brls:Label id="drawHintLabel" width="auto" height="auto" fontSize="19" textColor="#ffffff" />
+                </brls:Box>
+            </brls:Box>
+        </brls:Box>
 
         <brls:Box
             width="auto"

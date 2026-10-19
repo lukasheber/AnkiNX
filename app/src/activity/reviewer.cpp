@@ -52,8 +52,9 @@ const char* EASE_KEYS[4]   = { "ankinx/review/again", "ankinx/review/hard", "ank
 // coloured dot: Material's flag codepoint is taken by the Switch symbol font.)
 const char* ICON_STAR = "\xEE\xA0\xB8";
 const char* ICON_MORE   = "\xEE\x97\x93";
-const char* ICON_EDIT   = "\xEE\x8F\x89"; // edit: the whiteboard pen
-const char* ICON_DELETE = "\xEE\xA1\xB2"; // delete: clear the whiteboard
+// brush, not gesture (U+E155): the Switch font has its own glyphs there.
+const char* ICON_DRAW   = "\xEE\x8E\xAE"; // brush: drawing (whiteboard)
+const char* ICON_CLEAR  = "\xEE\x94\xBC"; // layers_clear: clear the drawing
 
 // Anki's flag colours, 1 (red) to 7 (purple).
 NVGcolor flagColor(int flag)
@@ -249,8 +250,12 @@ void ReviewerActivity::onContentAvailable()
     showAnswerBox->addGestureRecognizer(new brls::TapGestureRecognizer(showAnswerBox, [this] { showAnswer(); }));
     markIcon->setText(ICON_STAR);
     menuIcon->setText(ICON_MORE);
-    penIcon->setText(ICON_EDIT);
-    clearIcon->setText(ICON_DELETE);
+    penIcon->setText(ICON_DRAW);
+    penLabel->setText("ankinx/review/draw"_i18n);
+    clearIcon->setText(ICON_CLEAR);
+    clearLabel->setText("ankinx/review/clear_drawing"_i18n);
+    clearButton->setBorderColor(nvgRGB(140, 140, 140));
+    setWhiteboard(false);
     // A tap gives focus to what was tapped: hand it back to the card, whose
     // D-pad scrolling and highlight depend on it.
     penButton->addGestureRecognizer(new brls::TapGestureRecognizer(penButton, [this] {
@@ -447,12 +452,34 @@ void ReviewerActivity::showCardState()
 }
 
 // As AnkiDroid's whiteboard: drawing over the card (touch), kept until the
-// next card; the pen shows blue while on.
+// next card. A mode, so it looks like one: Draw is filled while on and the
+// card gets a blue outline (the whole card is the canvas); the first time,
+// a notice says so.
 void ReviewerActivity::setWhiteboard(bool on)
 {
+    static const NVGcolor BLUE = nvgRGB(59, 130, 246);
+    static bool explained      = false;
+    NVGcolor text              = brls::Application::getTheme()["brls/text"];
     cardView->setWhiteboard(on);
-    penIcon->setTextColor(on ? nvgRGB(59, 130, 246) : brls::Application::getTheme()["brls/text"]);
+    penButton->setBackgroundColor(on ? BLUE : nvgRGBA(0, 0, 0, 0));
+    penButton->setBorderColor(on ? BLUE : nvgRGB(140, 140, 140));
+    penIcon->setTextColor(on ? nvgRGB(255, 255, 255) : text);
+    penLabel->setTextColor(on ? nvgRGB(255, 255, 255) : text);
+    cardView->setBorderColor(BLUE);
+    cardView->setBorderThickness(on ? 3 : 0);
     clearButton->setVisibility(on ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    if (on && !explained)
+    {
+        explained = true;
+        drawHintLabel->setText("ankinx/review/draw_hint"_i18n);
+        drawHint->setVisibility(brls::Visibility::VISIBLE);
+        brls::delay(3500, [this, token = alive] {
+            if (*token)
+                drawHint->setVisibility(brls::Visibility::GONE);
+        });
+    }
+    if (!on)
+        drawHint->setVisibility(brls::Visibility::GONE);
 }
 
 void ReviewerActivity::setZoom(float zoom)

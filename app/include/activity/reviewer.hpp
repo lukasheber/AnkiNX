@@ -139,6 +139,10 @@ class ReviewerActivity : public brls::Activity
     BRLS_BIND(brls::Label, timerLabel, "timerLabel");
     BRLS_BIND(brls::Box, penButton, "penButton");
     BRLS_BIND(brls::Label, penIcon, "penIcon");
+    BRLS_BIND(brls::Label, penLabel, "penLabel");
     BRLS_BIND(brls::Box, clearButton, "clearButton");
     BRLS_BIND(brls::Label, clearIcon, "clearIcon");
+    BRLS_BIND(brls::Label, clearLabel, "clearLabel");
+    BRLS_BIND(brls::Box, drawHint, "drawHint");
+    BRLS_BIND(brls::Label, drawHintLabel, "drawHintLabel");
 };
