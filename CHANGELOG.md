@@ -10,6 +10,11 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## Unreleased
 
+- Update dialogs: the download question no longer shows the release notes
+  (they ran off the screen as one line), and "please wait" dialogs (the
+  download's progress, syncing, backing up) take the focus, so the
+  highlighted row underneath no longer draws over them.
+
 ## 0.4.0 (2026-10-19)
 
 Study streak and time estimate, backups you can restore on the console,

@@ -3,6 +3,8 @@
 #include <functional>
 #include <string>
 
+#include <borealis.hpp>
+
 #include "anki/api.hpp"
 
 // AnkiWeb login and sync UI flows (dialogs, keyboard, progress), modelled on
@@ -43,6 +45,11 @@ void logout();
 // the result or the error, on the UI thread, once the dialog has closed.
 void blocking(const std::string& message, std::function<anki::json()> work,
               std::function<void(const anki::json*, const anki::Error*)> done);
+
+// A "please wait" dialog without buttons, styled as borealis' text dialogs.
+// It takes the focus itself, so the row that opened it doesn't keep drawing
+// its highlight over the dialog. `label` (optional) gets its text, to update.
+brls::Dialog* waitDialog(const std::string& text, brls::Label** label = nullptr);
 
 // A dialog with the message and OK.
 void showMessage(const std::string& message);

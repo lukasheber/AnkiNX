@@ -44,16 +44,6 @@ void store(const anki::json& result)
     current.size    = result["size"].is_number() ? result["size"].get<uint64_t>() : 0;
 }
 
-// The first part of the release notes, for the confirmation dialog.
-std::string shortNotes(const std::string& notes)
-{
-    const size_t LIMIT = 420;
-    if (notes.size() <= LIMIT)
-        return notes;
-    size_t cut = notes.rfind('\n', LIMIT);
-    return notes.substr(0, cut == std::string::npos || cut < LIMIT / 2 ? LIMIT : cut) + "\n…";
-}
-
 std::string megabytes(uint64_t bytes) { return std::to_string((bytes + 512 * 1024) / (1024 * 1024)); }
 
 // Poll the download and show its progress; close when it ends.
@@ -102,15 +92,8 @@ void download()
         sync_flow::showMessage("ankinx/update/failed"_i18n + "\n\n" + e.what());
         return;
     }
-    auto* box = new brls::Box(brls::Axis::COLUMN);
-    box->setPadding(40, 40, 40, 40);
-    box->setAlignItems(brls::AlignItems::CENTER);
-    auto* label = new brls::Label();
-    label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    label->setText(brls::getStr("ankinx/update/downloading", current.latest));
-    box->addView(label);
-    auto* dialog = new brls::Dialog(box);
-    dialog->setCancelable(false);
+    brls::Label* label = nullptr;
+    auto* dialog       = sync_flow::waitDialog(brls::getStr("ankinx/update/downloading", current.latest), &label);
     dialog->open();
     watch(dialog, label, std::make_shared<bool>(true));
 }
@@ -180,13 +163,11 @@ void offer()
     if (!current.newer)
         return;
     std::string text = brls::getStr("ankinx/update/confirm", current.latest, megabytes(current.size));
-    if (!current.notes.empty())
-        text += "\n\n" + shortNotes(current.notes);
     if (!canInstall() || current.url.empty())
     {
         // The desktop preview, or a release without the .nro.
         sync_flow::showMessage(brls::getStr("ankinx/update/manual", current.latest) +
-                               "\n\ngithub.com/lukasheber/AnkiNX/releases");
+                               "\n\ngithub.com/lukasheber/AnkiNX");
         return;
     }
     auto* dialog = new brls::Dialog(text);

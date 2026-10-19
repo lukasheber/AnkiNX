@@ -18,8 +18,7 @@ namespace
 void runBlocking(const std::string& message, std::function<anki::json()> work,
                  std::function<void(const anki::json*, const anki::Error*)> done)
 {
-    auto* dialog = new brls::Dialog(message);
-    dialog->setCancelable(false);
+    auto* dialog = waitDialog(message);
     dialog->open();
     brls::async([dialog, work, done] {
         try
@@ -224,6 +223,29 @@ void autoSync(std::function<void()> onFinished, Mode mode, bool always)
         return onFinished();
     }
     start(onFinished, mode);
+}
+
+brls::Dialog* waitDialog(const std::string& text, brls::Label** label)
+{
+    brls::Style style = brls::Application::getStyle();
+    auto* textLabel  = new brls::Label();
+    textLabel->setText(text);
+    textLabel->setFontSize(style["brls/dialog/fontSize"]);
+    textLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    textLabel->setSingleLine(false);
+    auto* box = new brls::Box();
+    box->addView(textLabel);
+    box->setAlignItems(brls::AlignItems::CENTER);
+    box->setJustifyContent(brls::JustifyContent::CENTER);
+    box->setPadding(style["brls/dialog/paddingTopBottom"], style["brls/dialog/paddingLeftRight"],
+                    style["brls/dialog/paddingTopBottom"], style["brls/dialog/paddingLeftRight"]);
+    box->setFocusable(true);
+    box->setHideHighlight(true);
+    auto* dialog = new brls::Dialog(box);
+    dialog->setCancelable(false);
+    if (label)
+        *label = textLabel;
+    return dialog;
 }
 
 void blocking(const std::string& message, std::function<anki::json()> work,
