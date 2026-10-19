@@ -10,9 +10,12 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## Unreleased
 
-- Replay on the answer side plays the question's audio first, then the
-  answer's, as Anki does, unless the deck has "Skip question when replaying
-  answer" (that option was editable but not applied).
+## 0.4.0 (2026-10-19)
+
+Study streak and time estimate, backups you can restore on the console,
+in-app updates, larger card text on a TV, and a clearer whiteboard.
+Verified on hardware; updating from inside the app is first exercised by
+updating to this release from 0.3.0 builds that have the update check.
 
 - Deck list: the header shows about how long today's cards will take
   ("19 cards due · about 12 min", from your pace over the last 30 days),
@@ -22,19 +25,21 @@ build, then commit and tag (`git tag v0.2.0`).
   from backup (a list of the backups by date; the current collection is
   backed up first and the next sync asks which side to keep, as in Anki).
   Backups made in the same second no longer overwrite each other.
-- Updates: the app checks GitHub for a newer release when it opens (Settings
-  > About can turn this off) and says so; Settings > About > Updates
-  downloads the new .nro with progress, and it replaces the old one when
-  AnkiNX exits.
-- On a TV (docked), card text is a size larger by default: Settings > Study
-  > On a TV (same, 125%, 150%), on top of each deck's zoom; it follows
-  docking and undocking while studying.
-
+- Updates: the app checks GitHub for a newer release when it opens (this
+  can be turned off in Settings > About) and says so; Settings > About >
+  Updates downloads the new .nro with progress, and it replaces the old one
+  when AnkiNX exits.
+- On a TV (docked), card text is a size larger by default (Settings >
+  Study > On a TV: same, 125%, 150%), on top of each deck's zoom; it
+  follows docking and undocking while studying.
 - Whiteboard easier to recognise: the pen and bin icons (which read as
   "edit card" and "delete card") are now labelled pills, "Draw" with a brush
   and "Clear"; Draw fills blue and the card gets a blue outline while
   drawing, and the first time a hint says that you can draw anywhere on the
   card (scrolling is paused meanwhile).
+- Replay on the answer side plays the question's audio first, then the
+  answer's, as Anki does, unless the deck has "Skip question when replaying
+  answer" (that option was editable but not applied).
 
 ## 0.3.0 (2026-10-18)
 

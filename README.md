@@ -17,9 +17,10 @@ Unofficial: not affiliated with Ankitects, AnkiDroid or Nintendo.
 
 AnkiNX is for **studying**. What it does:
 
-- **Decks:** the deck list with today's counts and what you studied today; a
-  deck overview with Study now, custom study, deck options (limits, steps,
-  FSRS or SM-2) and statistics; a read-only card browser.
+- **Decks:** the deck list with today's counts, a time estimate, what you
+  studied today and your study streak; a deck overview with Study now,
+  custom study, deck options (limits, steps, FSRS or SM-2) and statistics;
+  a read-only card browser.
 - **Reviews:** Anki's scheduler and answer buttons, undo and redo, the card
   menu (flag, mark, bury, suspend, set due date, card info), timer and auto
   advance, leech handling.
@@ -29,7 +30,10 @@ AnkiNX is for **studying**. What it does:
 - **Controls:** buttons (rebindable, one Joy-Con held sideways works too),
   touch, swipes, rumble, and a whiteboard in handheld mode.
 - **Languages:** English, Portuguese (Brazil), Spanish and Japanese, following
-  the console. Light and dark themes, following the console too.
+  the console. Light and dark themes, following the console too; larger card
+  text on a TV.
+- **Keeping it safe and current:** backups you can restore on the console,
+  Anki's Check Database, and updates from GitHub releases inside the app.
 
 Adding and editing notes and cards is **not implemented**. Create and maintain
 your collection in Anki desktop or AnkiDroid, and use AnkiNX to review it.
