@@ -29,6 +29,16 @@ void setCount(brls::Label* label, int count, NVGcolor color)
 const char* ICON_SYNC     = "\xEE\x98\xA7"; // Material sync
 const char* ICON_SETTINGS = "\xEE\xA2\xB8"; // Material settings
 const char* ICON_EXIT     = "\xEE\xA1\xB9"; // Material exit_to_app
+const char* ICON_CLOUD     = "\xEE\x8A\xBF"; // Material cloud_done
+const char* ICON_CLOUD_OFF = "\xEE\x8B\x81"; // Material cloud_off
+
+// Secondary text, readable on both themes (borealis' disabled grey is too
+// dark on the dark background).
+NVGcolor mutedColor()
+{
+    bool dark = brls::Application::getThemeVariant() == brls::ThemeVariant::DARK;
+    return dark ? nvgRGB(185, 185, 185) : nvgRGB(110, 110, 110);
+}
 
 // A header button: the controller button's glyph and an icon; tappable.
 // dot: a small badge on the icon, hidden until set visible.
@@ -156,14 +166,13 @@ void DeckPickerActivity::onContentAvailable()
             dueLabel = new brls::Label();
             dueLabel->setFontSize(16);
             dueLabel->setMarginTop(2);
-            // Muted, but readable on both themes (the theme's disabled grey
-            // is too dark on the dark background).
-            bool dark = brls::Application::getThemeVariant() == brls::ThemeVariant::DARK;
-            dueLabel->setTextColor(dark ? nvgRGB(185, 185, 185) : nvgRGB(110, 110, 110));
+            dueLabel->setTextColor(mutedColor());
             dueLabel->setVisibility(brls::Visibility::INVISIBLE);
             titleBox->addView(dueLabel);
         }
     }
+    account->setTextColor(mutedColor());
+    studiedToday->setTextColor(mutedColor());
     fitTable();
     // This is the root screen: B must not quit by accident (+ quits).
     frame->registerAction("", brls::BUTTON_B, [](brls::View*) { return true; }, true);
@@ -256,8 +265,10 @@ void DeckPickerActivity::refresh()
             anki::json status    = anki::call("status");
             const auto& needed   = status["sync_needed"];
             bool pending         = status["username"].is_string() && needed.is_string() && needed != "none";
-            brls::sync([this, list, pending] {
+            std::string studied = tree.value("studied_today", "");
+            brls::sync([this, list, pending, studied] {
                 entries = list;
+                studiedToday->setText(studied.empty() ? "ankinx/decks/none_studied"_i18n : studied);
                 updateSyncDot(pending);
                 updateDueLabel();
                 fitTable();
@@ -357,8 +368,10 @@ void DeckPickerActivity::openSettings()
 
 void DeckPickerActivity::updateAccountLabel(const std::string& username)
 {
-    account->setText(username.empty() ? "ankinx/decks/not_logged_in"_i18n
-                                      : "ankinx/decks/logged_in_as"_i18n + " " + username);
+    // Short, so it never runs into the centred study line: an icon and the
+    // username.
+    account->setText(username.empty() ? std::string(ICON_CLOUD_OFF) + "  " + "ankinx/decks/not_logged_in"_i18n
+                                      : std::string(ICON_CLOUD) + "  " + username);
 }
 
 void DeckPickerActivity::updateSyncDot(bool pending)
@@ -376,7 +389,9 @@ void DeckPickerActivity::updateDueLabel()
     for (const auto& deck : entries)
         if (deck.level == 1)
             due += deck.newCount + deck.learnCount + deck.reviewCount;
-    dueLabel->setText(brls::getStr(due == 1 ? "ankinx/decks/due_one" : "ankinx/decks/due_other", std::to_string(due)));
+    dueLabel->setText(due == 0 ? "ankinx/decks/due_none"_i18n
+                               : brls::getStr(due == 1 ? "ankinx/decks/due_one" : "ankinx/decks/due_other",
+                                              std::to_string(due)));
     dueLabel->setVisibility(brls::Visibility::VISIBLE);
 }
 

@@ -11,8 +11,7 @@
         grow="1.0">
 
         <!-- The table is as wide as its longest deck name needs (fitTable()),
-             centred. The account on the left, in line with the title; the
-             column titles above the table's counts. -->
+             centred, with the column titles above its counts. -->
         <brls:Box
             width="auto"
             height="40"
@@ -20,8 +19,6 @@
             alignSelf="stretch"
             justifyContent="center"
             alignItems="center">
-            <brls:Label id="account" positionType="absolute" positionLeft="65" positionTop="10" width="auto"
-                height="auto" fontSize="16" singleLine="true" />
             <brls:Box
                 id="columns"
                 width="auto"
@@ -51,6 +48,23 @@
             width="auto"
             height="auto"
             grow="1.0"
-            paddingBottom="20" />
+            paddingBottom="12"
+            lineColor="@theme/brls/sidebar/separator"
+            lineBottom="1" />
+
+        <!-- Status line, fixed under the list: the AnkiWeb account on the
+             left (in line with the title), today's study in the middle.
+             Colours are set in deck_picker.cpp (theme). -->
+        <brls:Box
+            width="auto"
+            height="44"
+            axis="row"
+            alignSelf="stretch"
+            justifyContent="center"
+            alignItems="center">
+            <brls:Label id="account" positionType="absolute" positionLeft="65" positionTop="12" width="auto"
+                height="auto" fontSize="16" singleLine="true" />
+            <brls:Label id="studiedToday" width="auto" height="auto" fontSize="17" singleLine="true" />
+        </brls:Box>
     </brls:Box>
 </brls:AppletFrame>

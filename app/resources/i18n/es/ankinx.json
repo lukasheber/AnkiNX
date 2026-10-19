@@ -11,6 +11,8 @@
     "collapse": "Contraer",
     "due_one": "{} tarjeta pendiente",
     "due_other": "{} tarjetas pendientes",
+    "due_none": "Ninguna tarjeta pendiente",
+    "none_studied": "Todavía no has estudiado tarjetas hoy",
     "overview": "Resumen",
     "account": "Cuenta de AnkiWeb",
     "empty": "Todavía no hay tarjetas.\n\nPulsa X para iniciar sesión en AnkiWeb y descargar tu colección,\no copia collection.anki2 y collection.media de Anki para escritorio\nen /switch/ankinx/ de la tarjeta SD.",

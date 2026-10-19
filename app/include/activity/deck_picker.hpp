@@ -67,6 +67,7 @@ class DeckPickerActivity : public brls::Activity
     BRLS_BIND(brls::RecyclerFrame, decks, "decks");
     BRLS_BIND(brls::Label, message, "message");
     BRLS_BIND(brls::Label, account, "account");
+    BRLS_BIND(brls::Label, studiedToday, "studiedToday");
     BRLS_BIND(brls::Box, columns, "columns");
     // "N cards due", under the title in the header.
     brls::Label* dueLabel = nullptr;

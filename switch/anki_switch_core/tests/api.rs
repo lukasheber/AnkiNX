@@ -79,6 +79,7 @@ fn study_flow() {
     ok("open", json!({}));
     // Anki creates the implicit parent deck collapsed; expanding shows children.
     let decks = ok("deck_tree", json!({}));
+    assert_eq!(decks["studied_today"], "", "nothing studied yet");
     let spanish = deck_id(&decks, "Spanish");
     if decks["decks"][0]["collapsed"] == true {
         assert_eq!(decks["decks"].as_array().unwrap().len(), 1);
@@ -244,6 +245,8 @@ fn study_flow() {
         assert!(answered < 20, "deck never finished");
     }
     assert_eq!(answered, 3);
+    let studied = ok("deck_tree", json!({}))["studied_today"].as_str().unwrap_or_default().to_string();
+    assert!(studied.starts_with("Studied ") && studied.contains("today"), "{studied}");
 
     // Browser: the deck's cards by sort field, a preview, suspend/unsuspend.
     let found = ok("browse", json!({ "search": "deck:Spanish::Verbs" }));

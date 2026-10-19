@@ -11,6 +11,8 @@
     "collapse": "Collapse",
     "due_one": "{} card due",
     "due_other": "{} cards due",
+    "due_none": "No cards due",
+    "none_studied": "No cards studied today yet",
     "overview": "Overview",
     "account": "AnkiWeb account",
     "empty": "No cards yet.\n\nPress X to log in to AnkiWeb and download your collection,\nor copy collection.anki2 and collection.media from Anki desktop\ninto /switch/ankinx/ on the SD card.",

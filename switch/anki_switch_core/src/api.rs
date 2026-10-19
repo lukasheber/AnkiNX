@@ -568,7 +568,23 @@ impl State {
             .map_err(|e| ApiError::anki(e, &self.tr))?;
         let mut decks = Vec::new();
         flatten_tree(&tree, &mut decks);
-        Ok(json!({ "decks": decks }))
+        // "Studied N cards in X minutes today (Ys/card)" for the whole
+        // collection, as under Anki's deck list; empty before the first
+        // review of the day (Anki would say "Studied 0 cards in 0 seconds").
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let studied = !col
+            .search_cards("rated:1", anki::search::SortMode::NoOrder)
+            .map_err(err)?
+            .is_empty();
+        let studied_today = if studied {
+            // On one line (Anki breaks it in two for its deck browser).
+            without_bidi_isolates(&col.studied_today().map_err(err)?).replace('\n', " ")
+        } else {
+            String::new()
+        };
+        Ok(json!({ "decks": decks, "studied_today": studied_today }))
     }
 
     fn set_collapsed(&mut self, args: &Value) -> ApiResult {

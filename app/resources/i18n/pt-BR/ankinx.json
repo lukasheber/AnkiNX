@@ -11,6 +11,8 @@
     "collapse": "Recolher",
     "due_one": "{} cartão pendente",
     "due_other": "{} cartões pendentes",
+    "due_none": "Nenhum cartão pendente",
+    "none_studied": "Nenhum cartão estudado hoje",
     "overview": "Visão geral",
     "account": "Conta AnkiWeb",
     "empty": "Ainda não há cartões.\n\nPressione X para entrar no AnkiWeb e baixar sua coleção,\nou copie collection.anki2 e collection.media do Anki para computador\npara /switch/ankinx/ no cartão SD.",

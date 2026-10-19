@@ -11,6 +11,8 @@
     "collapse": "折りたたむ",
     "due_one": "期日のカード {} 枚",
     "due_other": "期日のカード {} 枚",
+    "due_none": "期日のカードはありません",
+    "none_studied": "今日はまだ学習していません",
     "overview": "概要",
     "account": "AnkiWebアカウント",
     "empty": "まだカードがありません。\n\nXを押してAnkiWebにログインし、コレクションをダウンロードするか、\nパソコン版Ankiのcollection.anki2とcollection.mediaを\nSDカードの/switch/ankinx/にコピーしてください。",
