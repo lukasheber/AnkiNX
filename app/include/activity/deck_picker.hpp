@@ -64,14 +64,20 @@ class DeckPickerActivity : public brls::Activity
     void fitTable();
     void fitStatusLine();
     void updateDueLabel();
+    void updateStreak(int days, bool capped);
 
     BRLS_BIND(brls::RecyclerFrame, decks, "decks");
     BRLS_BIND(brls::Label, message, "message");
     BRLS_BIND(brls::Label, account, "account");
     BRLS_BIND(brls::Label, studiedToday, "studiedToday");
+    BRLS_BIND(brls::Box, streakBox, "streakBox");
+    BRLS_BIND(brls::Label, streakIcon, "streakIcon");
+    BRLS_BIND(brls::Label, streakLabel, "streakLabel");
     BRLS_BIND(brls::Box, columns, "columns");
     // "N cards due", under the title in the header.
     brls::Label* dueLabel = nullptr;
+    // Average seconds per review (last 30 days), for "~N min"; 0 = unknown.
+    float secsPerCard = 0;
     // Dot on the header's sync button: changes not yet on AnkiWeb.
     brls::Box* syncDot = nullptr;
     void updateSyncDot(bool pending);

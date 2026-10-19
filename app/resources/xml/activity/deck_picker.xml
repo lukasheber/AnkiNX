@@ -65,6 +65,13 @@
             <brls:Label id="account" positionType="absolute" positionLeft="65" positionTop="12" width="auto"
                 height="auto" fontSize="16" singleLine="true" />
             <brls:Label id="studiedToday" width="auto" height="auto" fontSize="17" singleLine="true" />
+            <!-- Study streak on the right; hidden at 0 -->
+            <brls:Box id="streakBox" positionType="absolute" positionRight="65" positionTop="0" width="auto"
+                height="44" axis="row" alignItems="center" visibility="gone">
+                <brls:Label id="streakIcon" width="auto" height="auto" fontSize="20" textColor="#ff9800"
+                    marginRight="6" />
+                <brls:Label id="streakLabel" width="auto" height="auto" fontSize="17" singleLine="true" />
+            </brls:Box>
         </brls:Box>
     </brls:Box>
 </brls:AppletFrame>

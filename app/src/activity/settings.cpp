@@ -7,6 +7,7 @@
 #include "util/keyboard.hpp"
 #include "util/settings.hpp"
 #include "util/sync_flow.hpp"
+#include "util/update.hpp"
 
 using namespace brls::literals;
 
@@ -73,6 +74,7 @@ void SettingsActivity::onContentAvailable()
     tabs->addTab("ankinx/settings/tab_controls"_i18n, [this] { return controlsTab(); });
     tabs->addTab("ankinx/settings/tab_study"_i18n, [this] { return studyTab(); });
     tabs->addTab("ankinx/stats/title"_i18n, [this] { return statsTab(); });
+    tabs->addTab("ankinx/settings/tab_collection"_i18n, [this] { return collectionTab(); });
     tabs->addTab("ankinx/settings/tab_about"_i18n, [this] { return aboutTab(); });
 }
 
@@ -293,6 +295,20 @@ brls::View* SettingsActivity::studyTab()
     rumble->init("ankinx/settings/rumble"_i18n, settings::get("rumble") == true,
                  [](bool on) { settings::set("rumble", on); });
     box->addView(rumble);
+
+    // Docked: card text a size up by default, for reading from the couch.
+    box->addView(header("ankinx/settings/tv"_i18n));
+    static const float SCALES[] = { 1.0f, 1.25f, 1.5f };
+    float scale  = settings::tvCardScale();
+    int selected = scale < 1.1f ? 0 : scale < 1.4f ? 1 : 2;
+    auto* tv     = new brls::SelectorCell();
+    tv->init("ankinx/settings/tv_card_size"_i18n,
+             { "ankinx/settings/tv_same"_i18n, "ankinx/settings/tv_larger"_i18n, "ankinx/settings/tv_largest"_i18n },
+             selected, [](int index) {
+                 if (index >= 0 && index < 3)
+                     settings::set("tv_card_scale", SCALES[index]);
+             });
+    box->addView(tv);
     return scroller;
 }
 
@@ -313,6 +329,114 @@ brls::View* SettingsActivity::statsTab()
     note->setFontSize(16);
     note->setMarginTop(8);
     note->setMarginLeft(16);
+    box->addView(note);
+    return scroller;
+}
+
+// Check Database and backups, as in Anki's Tools menu and AnkiDroid's
+// Advanced settings.
+brls::View* SettingsActivity::collectionTab()
+{
+    brls::ScrollingFrame* scroller;
+    brls::Box* box = column(&scroller);
+    box->addView(header("ankinx/settings/maintenance"_i18n));
+
+    auto* check = detail("ankinx/settings/check_database"_i18n, "");
+    check->registerClickAction([](brls::View*) {
+        sync_flow::blocking(
+            "ankinx/settings/checking"_i18n, [] { return anki::call("check_database"); },
+            [](const anki::json* result, const anki::Error* error) {
+                sync_flow::showMessage(error ? std::string(error->what()) : result->value("message", ""));
+            });
+        return true;
+    });
+    box->addView(check);
+
+    box->addView(header("ankinx/settings/backups"_i18n));
+    auto countText = [] {
+        try
+        {
+            size_t n = anki::call("list_backups")["backups"].size();
+            if (n == 0)
+                return "ankinx/settings/no_backups"_i18n;
+            return brls::getStr(n == 1 ? "ankinx/settings/backup_count_one" : "ankinx/settings/backup_count",
+                                std::to_string(n));
+        }
+        catch (const anki::Error&)
+        {
+            return std::string();
+        }
+    };
+    auto* restore = detail("ankinx/settings/restore"_i18n, countText());
+
+    auto* backupNow = detail("ankinx/settings/backup_now"_i18n, "");
+    backupNow->registerClickAction([restore, countText, token = alive](brls::View*) {
+        sync_flow::blocking(
+            "ankinx/settings/backing_up"_i18n, [] { return anki::call("backup_now"); },
+            [restore, countText, token](const anki::json*, const anki::Error* error) {
+                if (error)
+                    return sync_flow::showMessage(error->what());
+                brls::Application::notify("ankinx/settings/backup_done"_i18n);
+                if (*token)
+                    restore->setDetailText(countText());
+            });
+        return true;
+    });
+    box->addView(backupNow);
+
+    // Pick a backup (newest first), confirm, then replace the collection.
+    restore->registerClickAction([](brls::View*) {
+        anki::json backups;
+        try
+        {
+            backups = anki::call("list_backups")["backups"];
+        }
+        catch (const anki::Error& e)
+        {
+            sync_flow::showMessage(e.what());
+            return true;
+        }
+        if (backups.empty())
+        {
+            brls::Application::notify("ankinx/settings/no_backups"_i18n);
+            return true;
+        }
+        std::vector<std::string> labels;
+        for (const auto& b : backups)
+            labels.push_back(b.value("label", ""));
+        auto* dropdown = new brls::Dropdown("ankinx/settings/restore"_i18n, labels, [backups](int index) {
+            if (index < 0 || index >= (int)backups.size())
+                return;
+            std::string name  = backups[index].value("name", "");
+            std::string label = backups[index].value("label", "");
+            // After the menu has closed.
+            brls::sync([name, label] {
+                auto* dialog = new brls::Dialog(brls::getStr("ankinx/settings/restore_confirm", label));
+                dialog->addButton("hints/cancel"_i18n, [] {});
+                dialog->addButton("ankinx/settings/restore_button"_i18n, [name] {
+                    sync_flow::blocking(
+                        "ankinx/settings/restoring"_i18n,
+                        [name] { return anki::call("restore_backup", { { "name", name } }); },
+                        [](const anki::json*, const anki::Error* error) {
+                            if (error)
+                                sync_flow::showMessage(error->what());
+                            else
+                                sync_flow::showMessage("ankinx/settings/restored"_i18n);
+                        });
+                });
+                dialog->open();
+            });
+        });
+        brls::Application::pushActivity(new brls::Activity(app::withoutStatus(dropdown)));
+        return true;
+    });
+    box->addView(restore);
+
+    auto* note = new brls::Label();
+    note->setFontSize(16);
+    note->setMarginTop(16);
+    note->setTextColor(brls::Application::getTheme()["brls/text"]);
+    note->setText(brls::getStr("ankinx/settings/backups_note", anki::dataDir() + "/backups"));
     box->addView(note);
     return scroller;
 }
@@ -343,6 +467,32 @@ brls::View* SettingsActivity::aboutTab()
     box->addView(language);
 
     box->addView(detail("ankinx/settings/version"_i18n, ANKINX_VERSION));
+
+    // Updates from GitHub releases: what the last check found; A checks now
+    // (or offers the newer version).
+    auto updateText = [] {
+        const update::Info& info = update::info();
+        if (!info.checked)
+            return std::string();
+        return info.newer ? brls::getStr("ankinx/update/available_short", info.latest) : "ankinx/update/latest"_i18n;
+    };
+    auto* updates = detail("ankinx/update/title"_i18n, updateText());
+    updates->registerClickAction([updates, updateText, token = alive](brls::View*) {
+        if (update::info().newer)
+            update::offer();
+        else
+            update::checkNow([updates, updateText, token] {
+                if (*token)
+                    updates->setDetailText(updateText());
+            });
+        return true;
+    });
+    box->addView(updates);
+    auto* autoCheck = new brls::BooleanCell();
+    autoCheck->init("ankinx/update/auto_check"_i18n, settings::get("check_updates") != false,
+                    [](bool on) { settings::set("check_updates", on); });
+    box->addView(autoCheck);
+
     box->addView(detail("ankinx/settings/backend"_i18n, std::string("Anki ") + anki_buildhash()));
     box->addView(detail("ankinx/settings/data_folder"_i18n, anki::dataDir()));
     box->addView(detail("ankinx/settings/licence"_i18n, "AGPL-3.0-or-later"));

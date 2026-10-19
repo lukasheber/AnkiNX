@@ -946,7 +946,7 @@ class NvgContainer : public document_container
     void get_viewport(position& viewport) const override
     {
         float w  = view->layoutWidth > 0 ? view->layoutWidth : 1280;
-        viewport = position(0, 0, w, view->viewHeight / view->zoom);
+        viewport = position(0, 0, w, view->viewHeight / view->scale());
     }
 
     element::ptr create_element(const char*, const string_map&, const std::shared_ptr<document>&) override
@@ -1091,11 +1091,19 @@ void CardView::setZoom(float value)
     needsLayout = true;
 }
 
+void CardView::setScreenScale(float value)
+{
+    if (value == screenScale)
+        return;
+    screenScale = value;
+    needsLayout = true;
+}
+
 float CardView::maxScroll() const
 {
     if (!document)
         return 0;
-    return std::max(0.0f, (float)document->height() * zoom - viewHeight);
+    return std::max(0.0f, (float)document->height() * scale() - viewHeight);
 }
 
 void CardView::scrollBy(float dy) { scroll = std::clamp(scroll + dy, 0.0f, maxScroll()); }
@@ -1104,7 +1112,7 @@ void CardView::layout(float width)
 {
     container->clearImages();
     container->fontFaces = parseFontFaces(html);
-    layoutWidth = width / zoom;
+    layoutWidth = width / scale();
     document    = document::createFromString(html, container.get());
     if (document)
         document->render(layoutWidth);
@@ -1115,7 +1123,7 @@ void CardView::layout(float width)
         scrollToAnswer = false;
         if (auto root = document->root())
             if (auto hr = root->select_one("#answer"))
-                scroll = std::clamp((float)hr->get_placement().y * zoom - 20.0f, 0.0f, maxScroll());
+                scroll = std::clamp((float)hr->get_placement().y * scale() - 20.0f, 0.0f, maxScroll());
     }
 
     // Keep the highlight on the same element (scripts re-render the card).
@@ -1197,7 +1205,7 @@ bool CardView::moveFocus(int delta)
     if (focusIndex < 0)
     {
         // Start at the first element on screen (or the last, going back).
-        float top = scroll / zoom, bottom = (scroll + viewHeight) / zoom;
+        float top = scroll / scale(), bottom = (scroll + viewHeight) / scale();
         next      = delta > 0 ? 0 : (int)focusList.size() - 1;
         for (size_t i = 0; i < focusList.size(); i++)
         {
@@ -1222,8 +1230,8 @@ bool CardView::moveFocus(int delta)
 
     // Scroll it into view, with a margin.
     Box p    = placement(focusList[next]);
-    float top     = p.y * zoom - 24.0f;
-    float bottom  = (p.y + p.height) * zoom + 24.0f;
+    float top     = p.y * scale() - 24.0f;
+    float bottom  = (p.y + p.height) * scale() + 24.0f;
     if (top < scroll || bottom - top > viewHeight)
         scroll = top;
     else if (bottom > scroll + viewHeight)
@@ -1252,11 +1260,11 @@ void CardView::drawFocus(NVGcontext* vg)
     if (focusIndex < 0 || focusIndex >= (int)focusList.size())
         return;
     Box p  = placement(focusList[focusIndex]);
-    float pad   = 4.0f / zoom;
+    float pad   = 4.0f / scale();
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, p.x - pad, p.y - pad, p.width + 2 * pad, p.height + 2 * pad, 6.0f / zoom);
+    nvgRoundedRect(vg, p.x - pad, p.y - pad, p.width + 2 * pad, p.height + 2 * pad, 6.0f / scale());
     nvgStrokeColor(vg, nvgRGB(13, 182, 213)); // borealis' highlight colour
-    nvgStrokeWidth(vg, 3.0f / zoom);
+    nvgStrokeWidth(vg, 3.0f / scale());
     nvgStroke(vg);
 }
 
@@ -1287,7 +1295,7 @@ void CardView::handleTap(brls::Point point)
     if (!document || whiteboard)
         return;
     // Screen point -> document coordinates.
-    tapAt((point.x - this->getX()) / zoom, (point.y - this->getY() + scroll) / zoom);
+    tapAt((point.x - this->getX()) / scale(), (point.y - this->getY() + scroll) / scale());
 }
 
 void CardView::tapAt(float docX, float docY)
@@ -1337,7 +1345,7 @@ void CardView::draw(NVGcontext* vg, float x, float y, float width, float height,
 {
     container->vg = vg;
     viewHeight    = height;
-    if (needsLayout || std::fabs(width / zoom - layoutWidth) > 0.5f)
+    if (needsLayout || std::fabs(width / scale() - layoutWidth) > 0.5f)
         layout(width);
     if (!document)
         return;
@@ -1346,15 +1354,15 @@ void CardView::draw(NVGcontext* vg, float x, float y, float width, float height,
     nvgSave(vg);
     nvgScissor(vg, x, y, width, height);
     nvgTranslate(vg, x, y - scroll);
-    nvgScale(vg, zoom, zoom);
-    position clip(0, scroll / zoom, width / zoom, height / zoom);
+    nvgScale(vg, scale(), scale());
+    position clip(0, scroll / scale(), width / scale(), height / scale());
     document->draw(0, 0, 0, &clip);
     drawFocus(vg);
     nvgRestore(vg);
     drawWhiteboard(vg, x, y);
 
     // Scroll indicator when the card is taller than the screen.
-    float total = (float)document->height() * zoom;
+    float total = (float)document->height() * scale();
     if (total > height + 1)
     {
         float barH = std::max(40.0f, height * height / total);

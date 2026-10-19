@@ -42,6 +42,8 @@ void setAutoSync(bool enabled)
 
 bool cardScripts() { return values().value("card_scripts", true); }
 
+float tvCardScale() { return values().value("tv_card_scale", 1.25f); }
+
 void setCardScripts(bool enabled)
 {
     values()["card_scripts"] = enabled;

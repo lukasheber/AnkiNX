@@ -225,7 +225,16 @@ ReviewerActivity::ReviewerActivity(int64_t deckId, std::string deckName)
 ReviewerActivity::~ReviewerActivity()
 {
     *alive = false;
+    if (screenSubscribed)
+        brls::Application::getWindowSizeChangedEvent()->unsubscribe(screenChange);
     audio::stop();
+}
+
+// Larger card text on a TV (Settings > Study), read from across the room;
+// borealis resizes the window when the console is docked or undocked.
+void ReviewerActivity::applyScreenScale()
+{
+    cardView->setScreenScale(app::isHandheld() ? 1.0f : settings::tvCardScale());
 }
 
 void ReviewerActivity::onUi(std::shared_ptr<bool> token, std::function<void()> f)
@@ -315,6 +324,9 @@ void ReviewerActivity::onContentAvailable()
     anki::json zooms = settings::get("zoom");
     if (zooms.is_object() && zooms[std::to_string(deckId)].is_number())
         cardView->setZoom(zooms[std::to_string(deckId)].get<float>());
+    applyScreenScale();
+    screenChange = brls::Application::getWindowSizeChangedEvent()->subscribe([this] { applyScreenScale(); });
+    screenSubscribed = true;
 
     // Buttons follow the bindings of the controller layout in use
     // (util/controls); see onButton and refreshControls.
@@ -496,13 +508,18 @@ void ReviewerActivity::setZoom(float zoom)
 // tags aren't played).
 bool ReviewerActivity::sideHasAudio() const
 {
-    const char* key = state == State::Answer ? "answer_av" : "question_av";
-    if (!card.contains(key) || !card[key].is_array())
+    auto hasSound = [this](const char* key) {
+        if (!card.contains(key) || !card[key].is_array())
+            return false;
+        for (const anki::json& tag : card[key])
+            if (tag.value("kind", "") == "sound")
+                return true;
         return false;
-    for (const anki::json& tag : card[key])
-        if (tag.value("kind", "") == "sound")
-            return true;
-    return false;
+    };
+    if (state != State::Answer)
+        return hasSound("question_av");
+    // The answer side's replay includes the question's audio (see replay).
+    return hasSound("answer_av") || (!card.value("skip_question_on_replay", false) && hasSound("question_av"));
 }
 
 bool ReviewerActivity::menuAvailable() const
@@ -894,7 +911,17 @@ void ReviewerActivity::replay()
     if (state == State::Question)
         playAudio(card["question_av"]);
     else if (state == State::Answer)
-        playAudio(card["answer_av"]);
+    {
+        // As Anki: the question's audio, then the answer's, unless the deck
+        // says "Skip question when replaying answer".
+        anki::json tags = anki::json::array();
+        if (!card.value("skip_question_on_replay", false))
+            for (const auto& tag : card["question_av"])
+                tags.push_back(tag);
+        for (const auto& tag : card["answer_av"])
+            tags.push_back(tag);
+        playAudio(tags);
+    }
 }
 
 void ReviewerActivity::playAudio(const anki::json& tags)

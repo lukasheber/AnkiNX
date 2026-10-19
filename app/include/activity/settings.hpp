@@ -24,6 +24,7 @@ class SettingsActivity : public brls::Activity
     brls::View* controlsTab();
     brls::View* studyTab();
     brls::View* statsTab();
+    brls::View* collectionTab();
     brls::View* aboutTab();
     // The Controls tab's list of actions for the layout in use.
     void fillBindings();

@@ -6,6 +6,7 @@
 #include "app.hpp"
 #include "activity/settings.hpp"
 #include "util/sync_flow.hpp"
+#include "util/update.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -30,7 +31,8 @@ const char* ICON_SYNC     = "\xEE\x98\xA7"; // Material sync
 const char* ICON_SETTINGS = "\xEE\xA2\xB8"; // Material settings
 const char* ICON_EXIT     = "\xEE\xA1\xB9"; // Material exit_to_app
 const char* ICON_CLOUD     = "\xEE\x8A\xBF"; // Material cloud_done
-const char* ICON_CLOUD_OFF = "\xEE\x8B\x81"; // Material cloud_off
+const char* ICON_STREAK    = "\xEE\xA0\x8E"; // Material whatshot (a flame)
+const char* ICON_CLOUD_OFF ="\xEE\x8B\x81"; // Material cloud_off
 
 // Width of a line of text in the regular font, as a Label measures it.
 float textWidth(const std::string& text, float fontSize)
@@ -188,6 +190,8 @@ void DeckPickerActivity::onContentAvailable()
     }
     account->setTextColor(mutedColor());
     studiedToday->setTextColor(mutedColor());
+    streakLabel->setTextColor(mutedColor());
+    streakIcon->setText(ICON_STREAK);
     fitTable();
     // This is the root screen: B must not quit by accident (+ quits).
     frame->registerAction("", brls::BUTTON_B, [](brls::View*) { return true; }, true);
@@ -254,6 +258,7 @@ void DeckPickerActivity::openCollection()
                 // Bring in what was studied on other devices, as Anki desktop
                 // does on startup.
                 sync_flow::autoSync([this] { afterSync(); }, sync_flow::Mode::Automatic, true);
+                update::checkInBackground();
             });
         }
         catch (const anki::Error& e)
@@ -281,9 +286,14 @@ void DeckPickerActivity::refresh()
             const auto& needed   = status["sync_needed"];
             bool pending         = status["username"].is_string() && needed.is_string() && needed != "none";
             std::string studied = tree.value("studied_today", "");
-            brls::sync([this, list, pending, studied] {
-                entries = list;
+            int streak          = tree.value("streak", 0);
+            bool streakCapped   = tree.value("streak_capped", false);
+            float pace          = tree.value("secs_per_card", 0.0f);
+            brls::sync([this, list, pending, studied, streak, streakCapped, pace] {
+                entries     = list;
+                secsPerCard = pace;
                 studiedToday->setText(studied.empty() ? "ankinx/decks/none_studied"_i18n : studied);
+                updateStreak(streak, streakCapped);
                 fitStatusLine();
                 updateSyncDot(pending);
                 updateDueLabel();
@@ -417,10 +427,27 @@ void DeckPickerActivity::updateDueLabel()
     for (const auto& deck : entries)
         if (deck.level == 1)
             due += deck.newCount + deck.learnCount + deck.reviewCount;
-    dueLabel->setText(due == 0 ? "ankinx/decks/due_none"_i18n
-                               : brls::getStr(due == 1 ? "ankinx/decks/due_one" : "ankinx/decks/due_other",
-                                              std::to_string(due)));
+    std::string text = due == 0 ? "ankinx/decks/due_none"_i18n
+                                : brls::getStr(due == 1 ? "ankinx/decks/due_one" : "ankinx/decks/due_other",
+                                               std::to_string(due));
+    // "~N min" at the recent pace, as AnkiDroid shows (learning cards come
+    // back, so it is a rough guide).
+    if (due > 0 && secsPerCard > 0)
+    {
+        int minutes = (int)(due * secsPerCard / 60 + 0.5f);
+        text += "  ·  " + (minutes < 1 ? "ankinx/decks/estimate_short"_i18n
+                                       : brls::getStr("ankinx/decks/estimate", std::to_string(minutes)));
+    }
+    dueLabel->setText(text);
     dueLabel->setVisibility(brls::Visibility::VISIBLE);
+}
+
+// Days in a row with reviews (today counts once studied); hidden at 0.
+void DeckPickerActivity::updateStreak(int days, bool capped)
+{
+    streakBox->setVisibility(days > 0 ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    std::string number = std::to_string(days) + (capped ? "+" : "");
+    streakLabel->setText(brls::getStr(days == 1 ? "ankinx/decks/streak_one" : "ankinx/decks/streak_other", number));
 }
 
 // The table is only as wide as the longest deck name (with its indent)

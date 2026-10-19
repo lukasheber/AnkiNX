@@ -10,6 +10,7 @@
 #include "util/audio.hpp"
 #include "util/controls.hpp"
 #include "util/settings.hpp"
+#include "util/update.hpp"
 #include "view/card_view.hpp"
 
 using namespace brls::literals;
@@ -38,6 +39,8 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; i++)
         if (std::strcmp(argv[i], "-d") == 0)
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
+    if (argc > 0)
+        update::setSelfPath(argv[0]); // hbmenu passes the .nro's path
 
     // The console's language, unless Settings > About picks one.
     anki::json language = settings::get("language");
@@ -96,5 +99,7 @@ int main(int argc, char* argv[])
     {
         brls::Logger::error("backend shutdown failed: {}", e.what());
     }
+    // A downloaded update replaces the .nro now that nothing uses it.
+    update::applyPending();
     return EXIT_SUCCESS;
 }

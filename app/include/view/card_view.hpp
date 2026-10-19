@@ -98,6 +98,9 @@ class CardView : public brls::View
     void scrollBy(float dy);
     void setZoom(float zoom);
     float getZoom() const { return zoom; }
+    // The screen's own factor, applied on top of the zoom (larger card text
+    // on a TV); not saved with the deck's zoom.
+    void setScreenScale(float value);
 
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
               brls::FrameContext* ctx) override;
@@ -123,6 +126,8 @@ class CardView : public brls::View
     float layoutWidth        = -1;
     float scroll             = 0;
     float zoom               = 1.3f;
+    float screenScale        = 1.0f;
+    float scale() const { return zoom * screenScale; }
     float viewHeight         = 0;
     std::function<void(const std::string&)> onLink;
     std::function<void()> onTap;

@@ -7,6 +7,7 @@
 mod api;
 mod math;
 mod occlusion;
+mod update;
 
 use std::ffi::c_char;
 use std::ffi::CStr;

@@ -80,6 +80,7 @@ fn study_flow() {
     // Anki creates the implicit parent deck collapsed; expanding shows children.
     let decks = ok("deck_tree", json!({}));
     assert_eq!(decks["studied_today"], "", "nothing studied yet");
+    assert_eq!(decks["streak"], 0);
     let spanish = deck_id(&decks, "Spanish");
     if decks["decks"][0]["collapsed"] == true {
         assert_eq!(decks["decks"].as_array().unwrap().len(), 1);
@@ -245,7 +246,10 @@ fn study_flow() {
         assert!(answered < 20, "deck never finished");
     }
     assert_eq!(answered, 3);
-    let studied = ok("deck_tree", json!({}))["studied_today"].as_str().unwrap_or_default().to_string();
+    let tree = ok("deck_tree", json!({}));
+    assert_eq!(tree["streak"], 1, "studied today, never before");
+    assert_eq!(tree["secs_per_card"], 0.0, "too few reviews for an estimate");
+    let studied = tree["studied_today"].as_str().unwrap_or_default().to_string();
     assert!(studied.starts_with("Studied ") && studied.contains("today"), "{studied}");
 
     // Browser: the deck's cards by sort field, a preview, suspend/unsuspend.
@@ -319,6 +323,24 @@ fn study_flow() {
     ok("open", json!({}));
     let decks = ok("deck_tree", json!({}));
     assert_eq!(decks["decks"][0]["collapsed"], true);
+
+    // Maintenance: Check Database, a backup on demand, restoring a backup.
+    let checked = ok("check_database", json!({}));
+    assert!(checked["message"].as_str().is_some_and(|m| !m.is_empty()), "{checked}");
+    ok("backup_now", json!({}));
+    let list = ok("list_backups", json!({}));
+    let names = list["backups"].as_array().unwrap();
+    assert!(!names.is_empty(), "{list}");
+    assert!(names[0]["label"].as_str().unwrap().starts_with("20"), "{list}");
+    let backup = names[0]["name"].as_str().unwrap().to_string();
+    ok("set_collapsed", json!({ "deck_id": spanish, "collapsed": false }));
+    ok("restore_backup", json!({ "name": backup }));
+    let decks = ok("deck_tree", json!({}));
+    assert_eq!(decks["decks"][0]["collapsed"], true, "the backup's state");
+    // The restore marks the schema changed (a full sync next time); this
+    // collection never synced, which rslib reports as "none" regardless.
+    assert_eq!(ok("status", json!({}))["sync_needed"], "none");
+    assert_eq!(error_kind("restore_backup", json!({ "name": "../collection.anki2" })), "args");
 
     // App exit: closes the collection and stops the runtime; init starts over.
     ok("shutdown", json!({}));

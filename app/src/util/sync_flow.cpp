@@ -226,4 +226,12 @@ void autoSync(std::function<void()> onFinished, Mode mode, bool always)
     start(onFinished, mode);
 }
 
+void blocking(const std::string& message, std::function<anki::json()> work,
+              std::function<void(const anki::json*, const anki::Error*)> done)
+{
+    runBlocking(message, std::move(work), std::move(done));
+}
+
+void showMessage(const std::string& message) { showError(message); }
+
 } // namespace sync_flow

@@ -23,6 +23,9 @@ class ReviewerActivity : public brls::Activity
     void onContentAvailable() override;
 
   private:
+    void applyScreenScale();
+    brls::VoidEvent::Subscription screenChange;
+    bool screenSubscribed = false;
     enum class State
     {
         Loading,

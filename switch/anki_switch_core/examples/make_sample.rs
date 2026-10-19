@@ -240,6 +240,40 @@ fn main() {
         .unwrap();
     }
 
+    // ANKINX_SAMPLE_HISTORY=<days>: reviews on each of the past <days> days
+    // (a "History" deck answered Good, 8 s each), for the streak and the
+    // time estimate on the deck list.
+    if let Some(days) = std::env::var("ANKINX_SAMPLE_HISTORY").ok().and_then(|v| v.parse::<i64>().ok()) {
+        use anki::scheduler::answering::{CardAnswer, Rating};
+        let deck = col.get_or_create_normal_deck("History").unwrap();
+        let mut cards = Vec::new();
+        for word in ["one", "two", "three", "four"] {
+            let mut note = basic.new_note();
+            note.set_field(0, word).unwrap();
+            note.set_field(1, word).unwrap();
+            col.add_note(&mut note, deck.id).unwrap();
+            cards.extend(col.search_cards(format!("nid:{}", note.id).as_str(), anki::search::SortMode::NoOrder).unwrap());
+        }
+        use anki::prelude::TimestampMillis;
+        let now = TimestampMillis::now().0;
+        for day in (1..=days).rev() {
+            for (i, &card_id) in cards.iter().enumerate() {
+                let states = col.get_scheduling_states(card_id).unwrap();
+                col.answer_card(&mut CardAnswer {
+                    card_id,
+                    current_state: states.current,
+                    new_state: states.good,
+                    rating: Rating::Good,
+                    answered_at: TimestampMillis(now - day * 86_400_000 + i as i64 * 10_000),
+                    milliseconds_taken: 8_000,
+                    custom_data: None,
+                    from_queue: false,
+                })
+                .unwrap();
+            }
+        }
+    }
+
     // Show the nested decks expanded.
     for name in ["Japanese"].into_iter().filter(|n| wanted(n)) {
         let deck = col.get_or_create_normal_deck(name).unwrap();

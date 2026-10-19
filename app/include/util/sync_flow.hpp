@@ -1,6 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <string>
+
+#include "anki/api.hpp"
 
 // AnkiWeb login and sync UI flows (dialogs, keyboard, progress), modelled on
 // AnkiDroid. Completion callbacks run on the UI thread.
@@ -34,5 +37,14 @@ void autoSync(std::function<void()> onFinished, Mode mode, bool always);
 void login(std::function<void(bool loggedIn)> onDone);
 
 void logout();
+
+// A non-cancelable "please wait" dialog around a backend call run on a worker
+// thread (also used outside syncing: backups, Check Database). `done` gets
+// the result or the error, on the UI thread, once the dialog has closed.
+void blocking(const std::string& message, std::function<anki::json()> work,
+              std::function<void(const anki::json*, const anki::Error*)> done);
+
+// A dialog with the message and OK.
+void showMessage(const std::string& message);
 
 } // namespace sync_flow

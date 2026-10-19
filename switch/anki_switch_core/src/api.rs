@@ -237,11 +237,31 @@ struct State {
     media_error: Option<String>,
     /// Typesets card maths; created when first needed (see math.rs).
     math: Option<crate::math::MathRenderer>,
+    /// Streak and pace for the deck list, computed once per Anki day.
+    daily: Option<DailyStats>,
+    /// A download of a newer .nro (see update.rs), while or after it runs.
+    update: Option<crate::update::Progress>,
     runtime: tokio::runtime::Runtime,
     client: Client,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
+
+/// From the review log, for the deck list: the study streak up to yesterday
+/// and the average answering time. Reading every card and a year of reviews
+/// is too slow for each refresh on the console, so this is kept for the day.
+#[derive(Clone, Copy)]
+struct DailyStats {
+    /// Anki's day number (`days_elapsed`) these were computed for.
+    day: u32,
+    /// Consecutive days with reviews, ending yesterday.
+    streak_before_today: u32,
+    /// Average seconds per review over the last 30 days; 0 with too few.
+    secs_per_card: f32,
+}
+
+/// How far back the streak is counted (shown as "400+" beyond).
+const STREAK_DAYS: u32 = 400;
 
 /// Error returned to the frontend: a user-facing message plus a machine kind.
 pub struct ApiError {
@@ -291,6 +311,20 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
     if cmd == "shutdown" {
         return shutdown(&mut guard);
     }
+    if cmd == "check_update" {
+        // A slow network request: made without holding the state lock, so
+        // the deck list etc. keep working meanwhile.
+        let (client, runtime) = {
+            let state = guard
+                .as_ref()
+                .ok_or_else(|| ApiError::new("not_initialized", "init has not been called"))?;
+            (state.client.clone(), state.runtime.handle().clone())
+        };
+        drop(guard);
+        return runtime
+            .block_on(crate::update::check(&client))
+            .map_err(|e| ApiError::new("network", e));
+    }
     let state = guard
         .as_mut()
         .ok_or_else(|| ApiError::new("not_initialized", "init has not been called"))?;
@@ -298,6 +332,10 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "status" => state.status(),
         "open" => state.open(),
         "close" => state.close(),
+        "list_backups" => state.list_backups(),
+        "backup_now" => state.backup_now(),
+        "restore_backup" => state.restore_backup(&args),
+        "check_database" => state.check_database(),
         "deck_tree" => state.deck_tree(),
         "set_collapsed" => state.set_collapsed(&args),
         "select_deck" => state.select_deck(&args),
@@ -321,6 +359,8 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "sync" => state.sync(),
         "full_sync" => state.full_sync(&args),
         "media_sync_status" => state.media_sync_status(),
+        "download_update" => state.download_update(&args),
+        "update_status" => state.update_status(),
         _ => Err(ApiError::new("unknown_command", format!("unknown command: {cmd}"))),
     }
 }
@@ -375,6 +415,8 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         media_sync: None,
         media_error: None,
         math: None,
+        daily: None,
+        update: None,
         runtime,
         client,
     });
@@ -415,6 +457,39 @@ async fn full_download(col: Collection, col_path: &Path, auth: SyncAuth, client:
         return Err(e);
     }
     std::fs::rename(&temp, col_path).map_err(|e| io("rename", e))
+}
+
+/// Replace the collection at `col_path` with the one in a .colpkg (Anki's
+/// backups: "collection.anki21b", zstd; older packages: "collection.anki21"),
+/// through a checked temporary file renamed into place, as full_download
+/// does for Horizon. Marked as needing a full sync, as Anki's importer does.
+fn restore_colpkg(colpkg: &Path, col_path: &Path) -> Result<()> {
+    let temp = col_path.with_extension("restore");
+    let io = |e: std::io::Error| AnkiError::from(std::io::Error::new(e.kind(), format!("{}: {e}", colpkg.display())));
+    let zip_err = |e: zip::result::ZipError| AnkiError::from(std::io::Error::other(format!("{}: {e}", colpkg.display())));
+    let _ = std::fs::remove_file(&temp);
+    let written = (|| -> Result<()> {
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(colpkg).map_err(io)?).map_err(zip_err)?;
+        let mut out = std::fs::File::create(&temp).map_err(io)?;
+        if zip.file_names().any(|n| n == "collection.anki21b") {
+            let mut entry = zip.by_name("collection.anki21b").map_err(zip_err)?;
+            zstd::stream::copy_decode(&mut entry, &mut out).map_err(io)?;
+        } else {
+            let mut entry = zip.by_name("collection.anki21").map_err(zip_err)?;
+            std::io::copy(&mut entry, &mut out).map_err(io)?;
+        }
+        out.sync_all().map_err(io)?;
+        drop(out);
+        let mut col = CollectionBuilder::new(&temp).set_check_integrity(true).build()?;
+        col.set_schema_modified()?;
+        col.set_modified()?;
+        col.close(None)
+    })();
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e);
+    }
+    std::fs::rename(&temp, col_path).map_err(io)
 }
 
 /// Run `sql` on the database at `path` with a short-lived SQLite connection.
@@ -535,14 +610,21 @@ impl State {
 
     /// Close cleanly, making a backup if one is due. Safe to call when closed.
     fn close(&mut self) -> ApiResult {
+        self.close_with(false, true)
+    }
+
+    /// Close; `force` backs up even when no backup is due, `prune` then
+    /// keeps only the newest [MAX_BACKUPS].
+    fn close_with(&mut self, force: bool, prune: bool) -> ApiResult {
         self.stop_media_sync();
         self.shown = None;
+        self.daily = None;
         let Some(col) = self.col.take() else {
             return Ok(json!({}));
         };
         let backups = self.base.join(BACKUP_FOLDER);
         let modified = col.sync_meta().map(|m| m.modified.0).unwrap_or(i64::MAX);
-        if !backup_due(&backups, modified) {
+        if !force && !backup_due(&backups, modified) {
             col.close(None).map_err(|e| self.err(e))?;
             return Ok(json!({}));
         }
@@ -551,14 +633,93 @@ impl State {
         // either: it writes through a temp file it keeps open (see
         // full_download). The collection is closed first, then packaged.
         col.close(Some(SchemaVersion::V18)).map_err(|e| self.err(e))?;
-        let name = chrono::Local::now()
-            .format("backup-%Y-%m-%d-%H.%M.%S.colpkg")
-            .to_string();
+        // Never over an existing backup (two in the same second: one taken
+        // before restoring another).
+        let stamp = chrono::Local::now().format("backup-%Y-%m-%d-%H.%M.%S").to_string();
+        let name = std::iter::once(format!("{stamp}.colpkg"))
+            .chain((2..).map(|n| format!("{stamp}-{n}.colpkg")))
+            .find(|name| !backups.join(name).exists())
+            .unwrap();
         match write_backup(&self.base.join(COLLECTION_FILE), &backups.join(name)) {
-            Ok(()) => prune_backups(&backups, MAX_BACKUPS),
+            Ok(()) if prune => prune_backups(&backups, MAX_BACKUPS),
+            Ok(()) => {}
+            Err(e) if force => return Err(ApiError::new("io", format!("backup failed: {e}"))),
             Err(e) => eprintln!("backup failed: {e}"),
         }
         Ok(json!({}))
+    }
+
+    /// `list_backups`: the backups in /switch/ankinx/backups, newest first,
+    /// with a readable date.
+    fn list_backups(&mut self) -> ApiResult {
+        let mut names: Vec<String> = std::fs::read_dir(self.base.join(BACKUP_FOLDER))
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("backup-") && n.ends_with(".colpkg"))
+            .collect();
+        names.sort();
+        names.reverse();
+        let backups: Vec<Value> = names
+            .into_iter()
+            .map(|name| {
+                // "backup-2026-10-18-21.58.03[-2].colpkg"
+                let stamp = name.get(..26).unwrap_or_default();
+                let label = chrono::NaiveDateTime::parse_from_str(stamp, "backup-%Y-%m-%d-%H.%M.%S")
+                    .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
+                    .unwrap_or_else(|_| name.clone());
+                json!({ "name": name, "label": label })
+            })
+            .collect();
+        Ok(json!({ "backups": backups }))
+    }
+
+    /// `backup_now`: close, back up whether or not one is due, reopen.
+    fn backup_now(&mut self) -> ApiResult {
+        self.col()?;
+        let closed = self.close_with(true, true);
+        self.open()?;
+        closed
+    }
+
+    /// `restore_backup {name}`: replace the collection with a backup, as
+    /// Anki's "Restore from backup". The current collection is backed up
+    /// first; the restored one needs a full sync (AnkiWeb can't merge an
+    /// older copy), as after Anki's .colpkg import. Media is not touched.
+    fn restore_backup(&mut self, args: &Value) -> ApiResult {
+        let name = str_arg(args, "name")?;
+        if name.contains(['/', '\\']) || !name.ends_with(".colpkg") {
+            return Err(ApiError::new("args", format!("not a backup: {name}")));
+        }
+        let path = self.base.join(BACKUP_FOLDER).join(name);
+        if !path.is_file() {
+            return Err(ApiError::new("no_backup", format!("{} not found", path.display())));
+        }
+        self.col()?;
+        // Not pruned yet: the chosen backup may be the oldest.
+        self.close_with(true, false)?;
+        let restored = restore_colpkg(&path, &self.base.join(COLLECTION_FILE));
+        prune_backups(&self.base.join(BACKUP_FOLDER), MAX_BACKUPS);
+        let reopened = self.open();
+        restored.map_err(|e| self.err(e))?;
+        reopened?;
+        Ok(json!({}))
+    }
+
+    /// `check_database`: Anki's Check Database (fixes problems, rebuilds and
+    /// optimises); its report, or "Database rebuilt and optimized."
+    fn check_database(&mut self) -> ApiResult {
+        use anki::services::CollectionService;
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let out = CollectionService::check_database(self.col()?).map_err(err)?;
+        let message = if out.problems.is_empty() {
+            tr.database_check_rebuilt().to_string()
+        } else {
+            out.problems.join("\n")
+        };
+        Ok(json!({ "message": without_bidi_isolates(&message), "problems": out.problems.len() }))
     }
 
     fn deck_tree(&mut self) -> ApiResult {
@@ -584,7 +745,48 @@ impl State {
         } else {
             String::new()
         };
-        Ok(json!({ "decks": decks, "studied_today": studied_today }))
+        let daily = self.daily_stats()?;
+        Ok(json!({
+            "decks": decks,
+            "studied_today": studied_today,
+            // Days in a row with reviews, today included once studied.
+            "streak": daily.streak_before_today + u32::from(studied),
+            "streak_capped": daily.streak_before_today + 1 >= STREAK_DAYS,
+            // For "~N min" next to the due count.
+            "secs_per_card": daily.secs_per_card,
+        }))
+    }
+
+    /// The day's DailyStats, from the cache or rslib's graph data.
+    fn daily_stats(&mut self) -> std::result::Result<DailyStats, ApiError> {
+        use anki::services::StatsService;
+        use anki_proto::stats::graphs_response::review_counts_and_times::Reviews;
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let day = self.col()?.timing_today().map_err(err)?.days_elapsed;
+        if let Some(daily) = self.daily.filter(|d| d.day == day) {
+            return Ok(daily);
+        }
+        let graphs = self
+            .col()?
+            .graphs(anki_proto::stats::GraphsRequest { search: String::new(), days: STREAK_DAYS })
+            .map_err(err)?;
+        let reviews = graphs.reviews.unwrap_or_default();
+        // Keyed by day relative to today: 0 today, -1 yesterday...
+        let total = |map: &std::collections::HashMap<i32, Reviews>, day: i32| -> u64 {
+            map.get(&day).map_or(0, |r| {
+                [r.learn, r.relearn, r.young, r.mature, r.filtered].iter().map(|&n| n as u64).sum()
+            })
+        };
+        let streak_before_today =
+            (1..STREAK_DAYS as i32).take_while(|&d| total(&reviews.count, -d) > 0).count() as u32;
+        let (count, millis) = (0..30).fold((0, 0), |(c, m), d| {
+            (c + total(&reviews.count, -d), m + total(&reviews.time, -d))
+        });
+        let secs_per_card = if count >= 10 { millis as f32 / 1000.0 / count as f32 } else { 0.0 };
+        let daily = DailyStats { day, streak_before_today, secs_per_card };
+        self.daily = Some(daily);
+        Ok(daily)
     }
 
     fn set_collapsed(&mut self, args: &Value) -> ApiResult {
@@ -992,6 +1194,7 @@ impl State {
             None => None,
         };
         let autoplay = !config.as_ref().is_some_and(|c| c.inner.disable_autoplay);
+        let skip_question = config.as_ref().is_some_and(|c| c.inner.skip_question_when_replaying_answer);
         let timing = config.as_ref().map_or(Value::Null, |c| study_timing(&c.inner));
         let marked = note_has_tag(col, note_id, "marked").map_err(err)?;
         let render = col.render_existing_card(card_id, false, false).map_err(err)?;
@@ -1059,6 +1262,9 @@ impl State {
             "marked": marked,
             // Play the side's audio when it is shown (deck option).
             "autoplay": autoplay,
+            // Replay on the answer side: only the answer's audio (deck option),
+            // else the question's first, as Anki.
+            "skip_question_on_replay": skip_question,
             // Answer timer and auto advance (deck options; see study_timing).
             "timing": timing,
             // "New", "Learning" or "Review": which count the card belongs to.
@@ -1455,6 +1661,35 @@ impl State {
             sync.abort.abort();
             let _ = sync.task.join();
         }
+    }
+
+    /// `download_update {url, path}`: download the .nro to `path` in the
+    /// background; `update_status` reports progress.
+    fn download_update(&mut self, args: &Value) -> ApiResult {
+        let url = str_arg(args, "url")?.to_string();
+        let path = PathBuf::from(str_arg(args, "path")?);
+        if self.update.as_ref().is_some_and(|p| !p.lock().unwrap().done) {
+            return Err(ApiError::new("busy", "an update is already downloading"));
+        }
+        let progress = crate::update::Progress::default();
+        self.runtime
+            .spawn(crate::update::download(self.client.clone(), url, path, progress.clone()));
+        self.update = Some(progress);
+        Ok(json!({}))
+    }
+
+    fn update_status(&mut self) -> ApiResult {
+        let Some(progress) = &self.update else {
+            return Ok(json!({ "active": false }));
+        };
+        let p = progress.lock().unwrap();
+        Ok(json!({
+            "active": !p.done,
+            "received": p.received,
+            "total": p.total,
+            "done": p.done,
+            "error": p.error,
+        }))
     }
 
     fn media_sync_status(&mut self) -> ApiResult {

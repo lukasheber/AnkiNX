@@ -1,5 +1,7 @@
 #include "app.hpp"
 
+#include <cstdlib>
+
 #include "util/sync_flow.hpp"
 
 #ifdef __SWITCH__
@@ -36,7 +38,7 @@ bool isHandheld()
 #ifdef __SWITCH__
     return appletGetOperationMode() == AppletOperationMode_Handheld;
 #else
-    return true;
+    return std::getenv("ANKINX_DOCKED") == nullptr; // the preview can pretend
 #endif
 }
 

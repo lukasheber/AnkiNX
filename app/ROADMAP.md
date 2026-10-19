@@ -102,7 +102,7 @@ template JavaScript, then this list, taken in groups of related features
 | Whiteboard (draw on the card with the touchscreen) | ✅ | Pen in the header (handheld mode): drawing over the card instead of scrolling; bin clears; cleared on the next card. No eraser or colours yet |
 | Tap zones and swipe gestures (handheld) | 🔶 | Swipes (Settings > Study, off by default): ← Again, ↓ Hard, → Good, ↑ Easy; vertical ones only on cards that don't scroll. Tap zones not done |
 | Persistent card zoom / text size per deck | ✅ | Stick-press zoom remembered per deck. No pinch zoom (borealis has no pinch gesture) |
-| Audio options: autoplay on/off, replay question only, playback speed | 🔶 | "Don't play audio automatically" honoured; "Skip question when replaying answer" editable in deck options but not applied yet; no playback speed (SDL_mixer can't change it) |
+| Audio options: autoplay on/off, replay question only, playback speed | 🔶 | "Don't play audio automatically" honoured; "Skip question when replaying answer" applied (replay on the answer side plays the question's audio first unless set); no playback speed (SDL_mixer can't change it) |
 | Redo, multiple undo levels shown | ✅ | Redo in the card menu (Anki's redo stack) |
 | Rumble on answer (HD Rumble) | ✅ | Settings > Study, off by default; a 60 ms pulse on the handheld or player-1 controller. Needs an on-console check |
 
@@ -118,13 +118,18 @@ template JavaScript, then this list, taken in groups of related features
 | Custom sync server (self-hosted Anki sync server) | ✅ | Settings > Account > Sync server; used at login (changing it logs out) |
 | Read-only card browser (search, preview, suspend/flag from the list) | ✅ | L (or Browse) on the deck overview: an Anki search (starts with the deck), up to 200 cards by sort field with deck, flag and suspension; preview of the answer side with X flag and Y suspend/unsuspend. No editing |
 | Deck list actions: collapse all, filter, show only decks with due cards | P3 | |
+| Study streak and time estimate on the deck list | ✅ | Streak (days in a row with reviews) on the status line; "about N min" next to the due count, from the last 30 days' pace. Computed once per Anki day from rslib's graph data |
+| Restore a backup, Check Database, back up now | ✅ | Settings > Collection. Restore unpacks the .colpkg to a checked temp file renamed into place (as full download, for Horizon), backs up the current collection first and requires a full sync, as Anki's colpkg import |
+| Update check and download from GitHub releases | ✅ | On open (can be turned off) and in Settings > About; the .nro is downloaded next to the running one and swapped in at exit (after romfs is unmounted). Needs an on-console check |
+| Import .apkg from the SD card | — | Not planned (2026-10-18): needs a PC and a file browser; AnkiWeb covers it |
+| Audio playback speed | — | Not planned (2026-10-18) |
 
 ### Interface and platform
 
 | Feature | Priority | Notes |
 | --- | --- | --- |
 | Interface translations (Portuguese, Spanish, Japanese, ...) | ✅ | Portuguese (Brazil; also used for Portugal), Spanish (also Latin America), Japanese; follows the console, or Settings > About > Language (after a restart). Anki's own strings come from rslib |
-| Docked/TV layout: larger card text and buttons at 1080p | P2 | |
+| Docked/TV layout: larger card text and buttons at 1080p | ✅ | borealis already renders at 1080p docked; card text is scaled up on a TV (Settings > Study > On a TV: 100/125/150%, default 125%), on top of the deck's zoom, switching live on dock/undock |
 | In-app theme choice (light/dark/follow system) | P3 | Follows the system theme today |
 | Night mode adapted to card CSS | P3 | Moved here: the app already follows the Switch's dark theme |
 | Resume after sleep: keep the current card, sync on wake if automatic sync is on | P3 | |
