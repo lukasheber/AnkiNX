@@ -62,6 +62,7 @@ class DeckPickerActivity : public brls::Activity
     void updateAccountLabel(const std::string& username);
     void showMessage(const std::string& text);
     void fitTable();
+    void fitStatusLine();
     void updateDueLabel();
 
     BRLS_BIND(brls::RecyclerFrame, decks, "decks");

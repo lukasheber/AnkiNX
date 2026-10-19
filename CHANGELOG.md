@@ -25,7 +25,8 @@ items.
 - Deck list status line, fixed under the list (it doesn't scroll away):
   "Studied N cards in X minutes today (Ys/card)" for the whole collection,
   as under Anki's deck list ("No cards studied today yet" before the first
-  review), and the AnkiWeb account on the left (cloud icon and username).
+  review), and the AnkiWeb account on the left (cloud icon and username,
+  cut with "…" before it reaches the study line).
   The header reads "No cards due" when nothing is due.
 - Deck overview redesigned: today's counts and the totals in a panel with
   Study now (which holds the focus), the other actions as outlined buttons

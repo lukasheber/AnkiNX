@@ -32,6 +32,21 @@ const char* ICON_EXIT     = "\xEE\xA1\xB9"; // Material exit_to_app
 const char* ICON_CLOUD     = "\xEE\x8A\xBF"; // Material cloud_done
 const char* ICON_CLOUD_OFF = "\xEE\x8B\x81"; // Material cloud_off
 
+// Width of a line of text in the regular font, as a Label measures it.
+float textWidth(const std::string& text, float fontSize)
+{
+    NVGcontext* vg = brls::Application::getNVGContext();
+    if (!vg)
+        return 0;
+    float bounds[4];
+    nvgSave(vg);
+    nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
+    nvgFontSize(vg, fontSize);
+    nvgTextBounds(vg, 0, 0, text.c_str(), nullptr, bounds);
+    nvgRestore(vg);
+    return bounds[2] - bounds[0];
+}
+
 // Secondary text, readable on both themes (borealis' disabled grey is too
 // dark on the dark background).
 NVGcolor mutedColor()
@@ -269,6 +284,7 @@ void DeckPickerActivity::refresh()
             brls::sync([this, list, pending, studied] {
                 entries = list;
                 studiedToday->setText(studied.empty() ? "ankinx/decks/none_studied"_i18n : studied);
+                fitStatusLine();
                 updateSyncDot(pending);
                 updateDueLabel();
                 fitTable();
@@ -372,6 +388,18 @@ void DeckPickerActivity::updateAccountLabel(const std::string& username)
     // username.
     account->setText(username.empty() ? std::string(ICON_CLOUD_OFF) + "  " + "ankinx/decks/not_logged_in"_i18n
                                       : std::string(ICON_CLOUD) + "  " + username);
+    fitStatusLine();
+}
+
+// The account (left) stops short of the centred study line: a long email
+// ends in "…" instead of running into it.
+void DeckPickerActivity::fitStatusLine()
+{
+    const float LEFT = 65, GAP = 24;
+    float studied    = textWidth(studiedToday->getFullText(), 17);
+    float room       = (brls::Application::contentWidth - studied) / 2 - LEFT - GAP;
+    float needed     = textWidth(account->getFullText(), 16) + 2;
+    account->setWidth(std::max(80.0f, std::min(needed, room)));
 }
 
 void DeckPickerActivity::updateSyncDot(bool pending)
@@ -404,20 +432,8 @@ void DeckPickerActivity::fitTable()
     const float FIXED = 20 + 36 + 3 * 90 + 60 + 10;
     const float GAP   = 48; // between the name and the first count
     float names       = 0;
-    NVGcontext* vg    = brls::Application::getNVGContext();
-    if (vg)
-    {
-        nvgSave(vg);
-        nvgFontFaceId(vg, brls::Application::getFont(brls::FONT_REGULAR));
-        nvgFontSize(vg, 22);
-        for (const auto& deck : entries)
-        {
-            float bounds[4];
-            nvgTextBounds(vg, 0, 0, deck.name.c_str(), nullptr, bounds);
-            names = std::max(names, (float)(deck.level - 1) * 32.0f + bounds[2] - bounds[0]);
-        }
-        nvgRestore(vg);
-    }
+    for (const auto& deck : entries)
+        names = std::max(names, (float)(deck.level - 1) * 32.0f + textWidth(deck.name, 22));
     float width = std::clamp(FIXED + names + GAP, 760.0f, 1200.0f);
     decks->setWidth(width);
     columns->setWidth(width);
