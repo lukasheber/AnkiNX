@@ -12,8 +12,9 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## 0.3.0 (2026-10-18)
 
-Built and tested in the desktop preview; hardware checks pending for most
-items.
+Deck overview and options, custom study, statistics, a card browser, maths,
+card scripts, right-to-left text, translations and a reworked main screen.
+Verified on hardware.
 
 - Deck list: the table is only as wide as the deck names need, centred, so
   the counts sit close to the names; the header shows "N cards due" under
