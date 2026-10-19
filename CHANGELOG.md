@@ -14,6 +14,13 @@ build, then commit and tag (`git tag v0.2.0`).
   the counts sit close to the names; the header shows "N cards due" under
   AnkiNX; Y reads Expand or Collapse for the highlighted deck and is greyed
   out on decks without subdecks; A reads Study.
+- Deck list header: Sync (X), Settings (−) and Exit (+) on the right, as
+  button glyph and icon, tappable; a dot on Sync while changes are not on
+  AnkiWeb. The footer keeps what applies to the highlighted deck.
+- Deck overview redesigned: today's counts and the totals in a panel with
+  Study now (which holds the focus), the other actions as outlined buttons
+  below, then the description; the group is centred on the screen. Works
+  in the dark theme too (the "cards due" line was hard to read there).
 - Slimmer top bar on every screen (72 px instead of 88).
 - Finished screen: "Studied N cards in X minutes today (Ys/card)" under the
   congratulations, as in Anki.

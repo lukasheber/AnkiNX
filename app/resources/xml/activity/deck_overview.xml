@@ -3,71 +3,83 @@
     iconInterpolation="linear"
     footerHidden="false">
 
+    <!-- One centred group, vertically centred: a panel with today's counts
+         and Study now, the other actions as light buttons below it, then
+         the deck's description. Colours that depend on the theme are set in
+         deck_overview.cpp. -->
     <brls:Box
         width="auto"
         height="auto"
         axis="column"
+        alignItems="center"
         grow="1.0">
 
-        <!-- Counts, as AnkiDroid's overview: captions and values in two
-             columns, the block centred -->
-        <brls:Box width="auto" height="auto" axis="row" justifyContent="center" marginTop="28">
-            <brls:Box width="auto" height="auto" axis="column" marginRight="56">
-                <brls:Label id="newCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
-                <brls:Label id="learnCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
-                <brls:Label id="reviewCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
-                <brls:Label id="totalNewCaption" width="auto" height="auto" fontSize="26" marginBottom="6" />
-                <brls:Label id="totalCaption" width="auto" height="auto" fontSize="26" />
-            </brls:Box>
-            <brls:Box width="auto" height="auto" axis="column">
-                <brls:Label id="newCount" width="auto" height="auto" fontSize="26" textColor="#42a5f5"
-                    marginBottom="6" />
-                <brls:Label id="learnCount" width="auto" height="auto" fontSize="26" textColor="#ef5350"
-                    marginBottom="6" />
-                <brls:Label id="reviewCount" width="auto" height="auto" fontSize="26" textColor="#66bb6a"
-                    marginBottom="6" />
-                <brls:Label id="totalNewCount" width="auto" height="auto" fontSize="26" marginBottom="6" />
-                <brls:Label id="totalCount" width="auto" height="auto" fontSize="26" />
-            </brls:Box>
-        </brls:Box>
+        <brls:Box width="auto" height="auto" grow="1.0" />
 
-        <!-- Study now, right below the counts -->
-        <brls:Box width="auto" height="auto" axis="row" justifyContent="center" marginTop="24">
-            <brls:Box id="studyButton" width="320" height="72" axis="column" justifyContent="center"
-                alignItems="center" cornerRadius="10" backgroundColor="#3b82f6">
+        <brls:Box id="panel" width="520" height="auto" axis="column" cornerRadius="16" paddingTop="24"
+            paddingBottom="24" paddingLeft="36" paddingRight="36">
+
+            <brls:Box width="auto" height="auto" axis="row" justifyContent="spaceBetween" marginBottom="8">
+                <brls:Label id="newCaption" width="auto" height="auto" fontSize="24" />
+                <brls:Label id="newCount" width="auto" height="auto" fontSize="24" textColor="#42a5f5" />
+            </brls:Box>
+            <brls:Box width="auto" height="auto" axis="row" justifyContent="spaceBetween" marginBottom="8">
+                <brls:Label id="learnCaption" width="auto" height="auto" fontSize="24" />
+                <brls:Label id="learnCount" width="auto" height="auto" fontSize="24" textColor="#ef5350" />
+            </brls:Box>
+            <brls:Box width="auto" height="auto" axis="row" justifyContent="spaceBetween">
+                <brls:Label id="reviewCaption" width="auto" height="auto" fontSize="24" />
+                <brls:Label id="reviewCount" width="auto" height="auto" fontSize="24" textColor="#66bb6a" />
+            </brls:Box>
+
+            <brls:Box id="divider" width="auto" height="1" marginTop="14" marginBottom="12" />
+
+            <brls:Box width="auto" height="auto" axis="row" justifyContent="spaceBetween" marginBottom="6">
+                <brls:Label id="totalNewCaption" width="auto" height="auto" fontSize="20" />
+                <brls:Label id="totalNewCount" width="auto" height="auto" fontSize="20" />
+            </brls:Box>
+            <brls:Box width="auto" height="auto" axis="row" justifyContent="spaceBetween">
+                <brls:Label id="totalCaption" width="auto" height="auto" fontSize="20" />
+                <brls:Label id="totalCount" width="auto" height="auto" fontSize="20" />
+            </brls:Box>
+
+            <brls:Box id="studyButton" width="auto" height="64" axis="row" justifyContent="center"
+                alignItems="center" cornerRadius="12" backgroundColor="#3b82f6" marginTop="22"
+                focusable="true" highlightCornerRadius="12" hideHighlightBackground="true">
                 <brls:Label id="studyLabel" width="auto" height="auto" fontSize="24" textColor="#ffffff" />
             </brls:Box>
         </brls:Box>
 
-        <!-- The deck's description (HTML), drawn like a card -->
-        <CardView
-            id="description"
-            width="auto"
-            height="auto"
-            grow="1.0"
-            marginTop="12"
-            marginLeft="60"
-            marginRight="60" />
-
-        <brls:Box id="buttons" width="auto" height="100" axis="row" justifyContent="center" alignItems="center">
-            <brls:Box id="customButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
-                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
+        <!-- Other actions: outlined, lighter than Study now -->
+        <brls:Box id="buttons" width="auto" height="auto" axis="row" justifyContent="center" marginTop="20">
+            <brls:Box id="customButton" width="auto" height="50" axis="row" alignItems="center" paddingLeft="22"
+                paddingRight="22" marginLeft="6" marginRight="6" cornerRadius="25" borderThickness="1.5"
                 visibility="gone">
-                <brls:Label id="customLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
+                <brls:Label id="customLabel" width="auto" height="auto" fontSize="20" />
             </brls:Box>
-            <brls:Box id="optionsButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
-                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575"
+            <brls:Box id="optionsButton" width="auto" height="50" axis="row" alignItems="center" paddingLeft="22"
+                paddingRight="22" marginLeft="6" marginRight="6" cornerRadius="25" borderThickness="1.5"
                 visibility="gone">
-                <brls:Label id="optionsLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
+                <brls:Label id="optionsLabel" width="auto" height="auto" fontSize="20" />
             </brls:Box>
-            <brls:Box id="browseButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
-                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575">
-                <brls:Label id="browseLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
+            <brls:Box id="browseButton" width="auto" height="50" axis="row" alignItems="center" paddingLeft="22"
+                paddingRight="22" marginLeft="6" marginRight="6" cornerRadius="25" borderThickness="1.5">
+                <brls:Label id="browseLabel" width="auto" height="auto" fontSize="20" />
             </brls:Box>
-            <brls:Box id="statsButton" width="250" height="64" marginLeft="8" marginRight="8" axis="column"
-                justifyContent="center" alignItems="center" cornerRadius="10" backgroundColor="#757575">
-                <brls:Label id="statsLabel" width="auto" height="auto" fontSize="22" textColor="#ffffff" />
+            <brls:Box id="statsButton" width="auto" height="50" axis="row" alignItems="center" paddingLeft="22"
+                paddingRight="22" marginLeft="6" marginRight="6" cornerRadius="25" borderThickness="1.5">
+                <brls:Label id="statsLabel" width="auto" height="auto" fontSize="20" />
             </brls:Box>
         </brls:Box>
+
+        <!-- The deck's description (HTML); hidden when there is none -->
+        <CardView
+            id="description"
+            width="760"
+            height="96"
+            marginTop="18"
+            visibility="gone" />
+
+        <brls:Box width="auto" height="auto" grow="1.0" />
     </brls:Box>
 </brls:AppletFrame>

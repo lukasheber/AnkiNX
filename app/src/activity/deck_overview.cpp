@@ -18,8 +18,8 @@ namespace
 {
 
 const char* DESCRIPTION_CSS = R"CSS(
-body { margin: 8px 0; font-size: 20px; text-align: center; color: #333333; }
-.nightMode { color: #e6e6e6; }
+body { margin: 4px 0; font-size: 18px; text-align: center; color: #666666; }
+.nightMode { color: #b9b9b9; }
 a { color: #3b82f6; }
 .nightMode a { color: #8ab4f8; }
 img { max-width: 100%; height: auto; }
@@ -39,6 +39,20 @@ DeckOverviewActivity::~DeckOverviewActivity() { *alive = false; }
 void DeckOverviewActivity::onContentAvailable()
 {
     app::hideStatus(frame);
+    // Study now holds the focus (its ring says A studies); the description
+    // only scrolls by touch, so the focus can't get lost in it.
+    description->setFocusable(false);
+    // Theme colours: a panel a step off the background, muted totals, and
+    // outlined secondary buttons.
+    bool night         = nightMode();
+    NVGcolor muted     = night ? nvgRGB(185, 185, 185) : nvgRGB(110, 110, 110);
+    NVGcolor line      = night ? nvgRGB(95, 95, 95) : nvgRGB(200, 200, 200);
+    panel->setBackgroundColor(night ? nvgRGB(58, 58, 58) : nvgRGB(250, 250, 250));
+    divider->setBackgroundColor(line);
+    for (brls::Label* label : std::initializer_list<brls::Label*> { totalNewCaption, totalCaption, totalNewCount, totalCount })
+        label->setTextColor(muted);
+    for (brls::Box* button : std::initializer_list<brls::Box*> { customButton, optionsButton, browseButton, statsButton })
+        button->setBorderColor(night ? nvgRGB(120, 120, 120) : nvgRGB(160, 160, 160));
     newCaption->setText("ankinx/overview/new"_i18n);
     learnCaption->setText("ankinx/overview/learning"_i18n);
     reviewCaption->setText("ankinx/overview/to_review"_i18n);
@@ -271,10 +285,10 @@ void DeckOverviewActivity::load()
                 reviewCount->setText(std::to_string(overview.value("review", 0)));
                 totalNewCount->setText(std::to_string(overview.value("total_new", 0)));
                 totalCount->setText(std::to_string(overview.value("total_cards", 0)));
-                bool night       = nightMode();
+                std::string text = overview.value("description", "");
+                description->setVisibility(text.empty() ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
                 std::string html = std::string("<html><head><style>") + DESCRIPTION_CSS + "</style></head><body" +
-                                   (night ? " class=\"nightMode\"" : "") + ">" +
-                                   overview.value("description", "") + "</body></html>";
+                                   (nightMode() ? " class=\"nightMode\"" : "") + ">" + text + "</body></html>";
                 description->setHtml(html, true);
             });
         }

@@ -156,7 +156,10 @@ void DeckPickerActivity::onContentAvailable()
             dueLabel = new brls::Label();
             dueLabel->setFontSize(16);
             dueLabel->setMarginTop(2);
-            dueLabel->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+            // Muted, but readable on both themes (the theme's disabled grey
+            // is too dark on the dark background).
+            bool dark = brls::Application::getThemeVariant() == brls::ThemeVariant::DARK;
+            dueLabel->setTextColor(dark ? nvgRGB(185, 185, 185) : nvgRGB(110, 110, 110));
             dueLabel->setVisibility(brls::Visibility::INVISIBLE);
             titleBox->addView(dueLabel);
         }

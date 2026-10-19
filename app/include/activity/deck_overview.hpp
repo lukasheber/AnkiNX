@@ -60,4 +60,6 @@ class DeckOverviewActivity : public brls::Activity
     BRLS_BIND(brls::Label, browseLabel, "browseLabel");
     BRLS_BIND(brls::Box, statsButton, "statsButton");
     BRLS_BIND(brls::Label, statsLabel, "statsLabel");
+    BRLS_BIND(brls::Box, panel, "panel");
+    BRLS_BIND(brls::Box, divider, "divider");
 };
