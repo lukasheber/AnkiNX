@@ -21,6 +21,7 @@
 /switch/dist/
 /switch/dist-host/
 target/
+/app/js/node_modules/
 
 # --- Local files -----------------------------------------------------------
 # Crash reports copied from the console

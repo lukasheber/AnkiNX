@@ -297,28 +297,16 @@ void ReviewerActivity::onContentAvailable()
             case CardView::Swipe::Up: answer(4); break;
         }
     });
-    // Taps on card elements go to card scripts first (onclick etc.).
-    cardView->setOnElementTap([this](int serial) {
+    // Taps on card elements go to the card's page first (handlers, then
+    // what the element does: links, checkboxes, labels...).
+    cardView->setOnElementTap([this](int serial, float x, float y) {
         if (!script)
             return false;
-        bool handled = script->click(serial);
+        bool handled = script->tap(serial, x, y);
         afterScript();
         return handled;
     });
-    cardView->setOnLink([this](const std::string& url) {
-        if (url.rfind("anki-hint:", 0) == 0)
-            return revealHint(url.substr(10));
-        if (url == "anki-typeans:")
-            return typeAnswer();
-        // "playsound:q:0" -> the first audio tag of the question side.
-        if (url.rfind("playsound:", 0) != 0)
-            return;
-        std::string side = url.substr(10, 1);
-        int index        = std::atoi(url.c_str() + 12);
-        const anki::json& tags = card[side == "q" ? "question_av" : "answer_av"];
-        if (index >= 0 && index < (int)tags.size())
-            playAudio(anki::json::array({ tags[index] }));
-    });
+    cardView->setOnLink([this](const std::string& url) { followLink(url); });
 
     // The deck's card zoom from the last session (stick presses change it).
     anki::json zooms = settings::get("zoom");
@@ -380,7 +368,27 @@ void ReviewerActivity::loadNext()
 
 std::string ReviewerActivity::documentFor(const std::string& body) const
 {
+    // With scripts, the page's body class (scripts may change it) and the CSS
+    // they added to its <head>.
+    if (script)
+        return card_document::build(body, card.value("css", "") + "\n" + scriptCss, scriptBodyClass);
     return card_document::build(body, card.value("css", ""), card.value("body_class", "card"));
+}
+
+void ReviewerActivity::followLink(const std::string& url)
+{
+    if (url.rfind("anki-hint:", 0) == 0)
+        return revealHint(url.substr(10));
+    if (url == "anki-typeans:")
+        return typeAnswer();
+    // "playsound:q:0" -> the first audio tag of the question side.
+    if (url.rfind("playsound:", 0) != 0)
+        return;
+    std::string side       = url.substr(10, 1);
+    int index              = std::atoi(url.c_str() + 12);
+    const anki::json& tags = card[side == "q" ? "question_av" : "answer_av"];
+    if (index >= 0 && index < (int)tags.size())
+        playAudio(anki::json::array({ tags[index] }));
 }
 
 // Controller path for hint fields: reveal every hint on the current side.
@@ -713,8 +721,8 @@ void ReviewerActivity::pressReplay(brls::ControllerButton button)
     brls::delay(30, [poll] { (*poll)(); });
 }
 
-// A new card: a script context if either side has scripts (and they're on in
-// Settings > Study). One context per card, as Anki keeps the page between
+// A new card: a page for its scripts if either side has some (and they're on
+// in Settings > Study). One page per card, as Anki keeps the page between
 // question and answer.
 void ReviewerActivity::startScripts()
 {
@@ -723,40 +731,80 @@ void ReviewerActivity::startScripts()
     std::string sides = card.value("question", "") + card.value("answer", "");
     if (!settings::cardScripts() || !CardScript::wanted(sides))
         return;
-    static const std::string prelude = [] {
-        std::ifstream in(BRLS_ASSET("script/prelude.js"), std::ios::binary);
-        return std::string(std::istreambuf_iterator<char>(in), {});
-    }();
-    script = std::make_unique<CardScript>(prelude, mediaDir);
+    script = spareScript ? std::move(spareScript) : makeScript();
 }
 
-// Run the side in shownBody through the card's scripts.
+// The next card's page, made while this answer is read: making one takes a
+// moment (tens of milliseconds on the console), better spent here than
+// between cards. Only when this card has scripts (its deck likely does).
+void ReviewerActivity::prepareScript()
+{
+    if (!script || spareScript)
+        return;
+    brls::delay(300, [this, token = alive] {
+        if (*token && !spareScript && settings::cardScripts())
+            spareScript = makeScript();
+    });
+}
+
+std::unique_ptr<CardScript> ReviewerActivity::makeScript()
+{
+    static const std::string runtime = [] {
+        std::ifstream in(BRLS_ASSET("script/runtime.js"), std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    }();
+    CardScript::Host host;
+    // The page's layout questions are answered by laying it out as it is drawn.
+    host.layout = [this](const std::string& body, const std::string& bodyClass, const std::string& css) {
+        return cardView->measure(card_document::build(body, card.value("css", "") + "\n" + css, bodyClass));
+    };
+    host.viewport = [this] {
+        return CardScript::Viewport { cardView->cssWidth(), cardView->cssHeight(), cardView->cssScroll(), cardView->pixelRatio() };
+    };
+    host.scrollTo = [this](float y) { cardView->scrollToCss(y); };
+    auto start = std::chrono::steady_clock::now();
+    auto page  = std::make_unique<CardScript>(runtime, mediaDir, std::move(host));
+    auto ms    = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    CardScript::log(0, "card page ready in " + std::to_string(ms) + " ms");
+    return page;
+}
+
+// Show the side in shownBody on the card's page (its scripts run).
 void ReviewerActivity::runScripts()
 {
     if (!script)
         return;
-    script->show(shownBody, card.value("body_class", "card"));
-    shownBody = script->html();
+    script->show(state == State::Answer, shownBody, card.value("body_class", "card"));
+    shownBody       = script->html();
+    scriptBodyClass = script->bodyClass();
+    scriptCss       = script->extraCss();
     afterScript();
 }
 
-// After scripts ran (a tap, a timer, a hint): show their changes.
+// After the page ran (a tap, a timer, a hint): show its changes, schedule its
+// next timer, and do what it asked.
 void ReviewerActivity::afterScript()
 {
     if (!script)
         return;
-    if (script->dirty())
+    std::string bodyClass = script->bodyClass();
+    std::string css       = script->extraCss();
+    bool styled           = bodyClass != scriptBodyClass || css != scriptCss;
+    scriptBodyClass       = bodyClass;
+    scriptCss             = css;
+    if (script->dirty() || styled)
     {
         shownBody = script->html();
         cardView->setHtml(documentFor(shownBody), true);
     }
     scheduleTimers();
-    // pycmd("ans") etc. Next frame: this can run inside the card view's tap
-    // handling, and showing the answer replaces its document.
+    // Next frame: this can run inside the card view's tap handling, and
+    // showing the answer replaces its document.
     for (const std::string& command : script->takeCommands())
         brls::sync([this, token = alive, generation = scriptGeneration, command] {
             if (!*token || generation != scriptGeneration)
                 return;
+            // Anki's pycmd(): "ans" shows the answer, "ease1".."ease4" answer.
             if (command == "ans" && state == State::Question)
                 showAnswer();
             else if (command.rfind("ease", 0) == 0 && state == State::Answer)
@@ -765,19 +813,31 @@ void ReviewerActivity::afterScript()
                 if (ease >= 1 && ease <= 4)
                     answer(ease);
             }
+            else if (command.rfind("link:", 0) == 0)
+                followLink(command.substr(5));
+            else if (command.rfind("alert:", 0) == 0)
+                brls::Application::notify(command.substr(6));
+            else if (command.rfind("play:", 0) == 0)
+                audio::play({ mediaDir + "/" + command.substr(5) });
+            else if (command == "stop")
+                audio::stop();
         });
 }
 
+// One pending delay for the page's next timer; a later call replaces it.
 void ReviewerActivity::scheduleTimers()
 {
-    for (auto [id, ms] : script->takeTimers())
-        brls::delay(ms, [this, token = alive, generation = scriptGeneration, id = id] {
-            // Ignore timers of a card that has gone.
-            if (!*token || !script || generation != scriptGeneration)
-                return;
-            script->fireTimer(id);
-            afterScript();
-        });
+    int ms         = script->nextTimer();
+    int generation = ++scriptTimerGeneration;
+    if (ms < 0)
+        return;
+    brls::delay(ms, [this, token = alive, scripts = scriptGeneration, generation] {
+        // Ignore timers of a card that has gone, or replaced by a later call.
+        if (!*token || !script || scripts != scriptGeneration || generation != scriptTimerGeneration)
+            return;
+        script->runTimers();
+        afterScript();
+    });
 }
 
 // The question, with the answer box (type-answer cards) showing what was typed.
@@ -826,6 +886,7 @@ void ReviewerActivity::showAnswer()
         }
     }
     runScripts();
+    prepareScript();
     cardView->setOcclusions(occlusionsFor(card, "answer"));
     cardView->setMasksHidden(false);
     cardView->setHtml(documentFor(shownBody));

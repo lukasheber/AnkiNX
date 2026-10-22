@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "script/card_script.hpp"
+
 class NvgContainer;
 
 // One Image Occlusion mask, as Anki's reviewer draws it
@@ -41,7 +43,9 @@ struct Occlusion
 };
 
 // Renders a card's HTML/CSS (litehtml layout, NanoVG drawing).
-// JavaScript in card templates is not executed.
+// Card templates' JavaScript runs in a CardScript page (the reviewer's);
+// this view draws that page's body and lays it out for the page's layout
+// questions (measure()).
 class CardView : public brls::View
 {
   public:
@@ -68,8 +72,18 @@ class CardView : public brls::View
     // Called when the card is tapped outside any link.
     void setOnTap(std::function<void()> callback);
     // Called first for a tap on an element tagged data-ankinx-node (card
-    // scripts); returning true means it was handled (onTap isn't called).
-    void setOnElementTap(std::function<bool(int serial)> callback);
+    // scripts), with the point in CSS pixels on the page; returning true
+    // means the page handled it (links and onTap are left alone).
+    void setOnElementTap(std::function<bool(int serial, float x, float y)> callback);
+    // Lay out a document as draw() would, without showing it: boxes and
+    // computed styles of its elements tagged data-ankinx-node.
+    CardScript::Layout measure(const std::string& html);
+    // The page as card scripts see it, in CSS pixels.
+    float cssWidth();
+    float cssHeight();
+    float cssScroll() const { return scroll / scale(); }
+    float pixelRatio() const { return scale(); }
+    void scrollToCss(float y);
     // Swipes (touch): horizontal ones always, vertical ones on cards that
     // fit without scrolling.
     enum class Swipe
@@ -131,7 +145,7 @@ class CardView : public brls::View
     float viewHeight         = 0;
     std::function<void(const std::string&)> onLink;
     std::function<void()> onTap;
-    std::function<bool(int)> onElementTap;
+    std::function<bool(int, float, float)> onElementTap;
     std::function<void(Swipe)> onSwipe;
     std::vector<Occlusion> occlusions;
     bool masksHidden = false;

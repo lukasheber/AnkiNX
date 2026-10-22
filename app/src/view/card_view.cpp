@@ -10,6 +10,7 @@
 #include <functional>
 #include <fstream>
 #include <iterator>
+#include <litehtml/render_item.h>
 #include <lunasvg.h>
 #include <map>
 #include <strings.h>
@@ -1083,7 +1084,7 @@ void CardView::setOnLink(std::function<void(const std::string&)> callback) { onL
 
 void CardView::setOnTap(std::function<void()> callback) { onTap = std::move(callback); }
 
-void CardView::setOnElementTap(std::function<bool(int)> callback) { onElementTap = std::move(callback); }
+void CardView::setOnElementTap(std::function<bool(int, float, float)> callback) { onElementTap = std::move(callback); }
 
 void CardView::setZoom(float value)
 {
@@ -1107,6 +1108,99 @@ float CardView::maxScroll() const
 }
 
 void CardView::scrollBy(float dy) { scroll = std::clamp(scroll + dy, 0.0f, maxScroll()); }
+
+float CardView::cssWidth()
+{
+    if (layoutWidth > 0)
+        return layoutWidth;
+    return getWidth() > 0 ? getWidth() / scale() : 960.0f;
+}
+
+float CardView::cssHeight() { return (viewHeight > 0 ? viewHeight : getHeight()) / scale(); }
+
+void CardView::scrollToCss(float y) { scroll = std::clamp(y * scale(), 0.0f, maxScroll()); }
+
+namespace
+{
+
+template <class Names>
+std::string cssName(const Names& names, int value)
+{
+    return value >= 0 && value < (int)names.size() ? std::string(names[value]) : std::string();
+}
+
+std::string cssColor(const web_color& c)
+{
+    char text[64];
+    if (c.alpha == 255)
+        std::snprintf(text, sizeof text, "rgb(%d, %d, %d)", c.red, c.green, c.blue);
+    else
+        std::snprintf(text, sizeof text, "rgba(%d, %d, %d, %.3g)", c.red, c.green, c.blue, c.alpha / 255.0);
+    return text;
+}
+
+std::string cssPixels(float value)
+{
+    char text[32];
+    std::snprintf(text, sizeof text, "%gpx", value);
+    return text;
+}
+
+} // namespace
+
+CardScript::Layout CardView::measure(const std::string& page)
+{
+    CardScript::Layout boxes;
+    if (!container->vg)
+        container->vg = brls::Application::getNVGContext(); // not drawn yet
+    if (!container->vg)
+        return boxes;
+    container->fontFaces = parseFontFaces(page);
+    document::ptr doc    = document::createFromString(page, container.get());
+    if (!doc)
+        return boxes;
+    doc->render(cssWidth());
+
+    std::function<void(const element::ptr&)> visit = [&](const element::ptr& el) {
+        if (const char* serial = el->get_attr("data-ankinx-node"))
+        {
+            CardScript::Box box;
+            if (auto ri = el->get_render_item())
+            {
+                // get_placement() is the content box.
+                position p       = el->get_placement();
+                float padX       = ri->padding_left() + ri->padding_right();
+                float padY       = ri->padding_top() + ri->padding_bottom();
+                box.clientLeft   = ri->border_left();
+                box.clientTop    = ri->border_top();
+                box.x            = p.x - ri->padding_left() - ri->border_left();
+                box.y            = p.y - ri->padding_top() - ri->border_top();
+                box.clientWidth  = p.width + padX;
+                box.clientHeight = p.height + padY;
+                box.width        = box.clientWidth + ri->border_left() + ri->border_right();
+                box.height       = box.clientHeight + ri->border_top() + ri->border_bottom();
+            }
+            const css_properties& css = el->css();
+            box.style = {
+                { "display", cssName(style_display_strings, css.get_display()) },
+                { "visibility", cssName(visibility_strings, css.get_visibility()) },
+                { "position", cssName(element_position_strings, css.get_position()) },
+                { "float", cssName(element_float_strings, css.get_float()) },
+                { "text-align", cssName(text_align_strings, css.get_text_align()) },
+                { "overflow", cssName(overflow_strings, css.get_overflow()) },
+                { "font-size", cssPixels(css.get_font_size()) },
+                { "color", cssColor(css.get_color()) },
+                { "background-color", cssColor(css.get_bg().m_color) },
+            };
+            boxes[std::atoi(serial)] = std::move(box);
+        }
+        for (const auto& child : el->children())
+            visit(child);
+    };
+    if (auto root = doc->root())
+        visit(root);
+    return boxes;
+}
 
 void CardView::layout(float width)
 {
@@ -1307,6 +1401,17 @@ void CardView::tapAt(float docX, float docY)
     // litehtml acts on the element found by the last mouse-over; touch has no
     // hover, so move the pointer there first.
     document->on_mouse_over(docX, docY, docX, docY, redraw);
+    // Card scripts first: the page runs its handlers and then the element's
+    // default action (a link's included), as a browser would. The innermost
+    // element with a node serial is the target.
+    if (onElementTap)
+        for (auto el = std::const_pointer_cast<litehtml::element>(document->get_over_element()); el; el = el->parent())
+            if (const char* serial = el->get_attr("data-ankinx-node"))
+            {
+                if (onElementTap(std::atoi(serial), docX, docY))
+                    return;
+                break;
+            }
     document->on_lbutton_down(docX, docY, docX, docY, redraw);
     document->on_lbutton_up(docX, docY, docX, docY, redraw); // may call on_anchor_click
     if (linkActivated)
@@ -1327,16 +1432,6 @@ void CardView::tapAt(float docX, float docY)
             }
             break;
         }
-    // Card scripts: the innermost element with a node serial gets a click.
-    if (onElementTap)
-        for (auto el = std::const_pointer_cast<litehtml::element>(document->get_over_element()); el;
-             el    = el->parent())
-            if (const char* serial = el->get_attr("data-ankinx-node"))
-            {
-                if (onElementTap(std::atoi(serial)))
-                    return;
-                break;
-            }
     if (onTap)
         onTap();
 }

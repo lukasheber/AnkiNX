@@ -7,53 +7,89 @@
 #include <utility>
 #include <vector>
 
-#include "script/dom.hpp"
-
-struct JSRuntime;
-struct JSContext;
-
-// JavaScript in card templates, without a browser: QuickJS runs the card's
-// scripts against a small DOM (script/dom), and the reviewer shows the
-// resulting HTML. One instance per card: like Anki desktop, which keeps the
-// page between the question and the answer, globals set on the question
-// side are still there on the answer side (randomised content stays in
-// step). Scripts get a time and memory budget; errors are logged and never
-// stop studying. See app/ROADMAP.md, "JavaScript evaluation".
+// JavaScript in card templates. QuickJS runs a browser page made for cards
+// (resources/script/runtime.js, built from app/js): linkedom's DOM with
+// events, forms and script loading as browsers have them, the real jQuery,
+// and Anki's reviewer page, into which each side goes as in Anki desktop.
+// The reviewer draws the page's body with litehtml, which also answers the
+// page's layout questions (Host::layout).
+//
+// One instance per card: globals set on the question side are still there
+// on the answer side, as in Anki desktop. Each entry into the page has a
+// time and memory budget; errors are logged and never stop studying. See
+// docs/full-js-plan.md and app/js/README.md.
 class CardScript
 {
   public:
-    // `prelude`: resources/script/prelude.js. `mediaDir`: for <script src>.
-    CardScript(const std::string& prelude, std::string mediaDir);
+    // A laid-out element, in CSS pixels and page coordinates: the border box,
+    // the client (padding) box, and computed values by CSS property name.
+    struct Box
+    {
+        float x = 0, y = 0, width = 0, height = 0;
+        float clientLeft = 0, clientTop = 0, clientWidth = 0, clientHeight = 0;
+        std::vector<std::pair<std::string, std::string>> style;
+    };
+    using Layout = std::unordered_map<int, Box>; // by data-ankinx-node serial
+
+    struct Viewport
+    {
+        float width = 1280, height = 720, scrollY = 0, pixelRatio = 1;
+    };
+
+    // What the reviewer gives the page; each part is optional (host tests
+    // run without them: layout questions then get empty boxes).
+    struct Host
+    {
+        // Lay out the page: its body HTML, body class and CSS added to <head>.
+        std::function<Layout(const std::string& body, const std::string& bodyClass, const std::string& css)> layout;
+        std::function<Viewport()> viewport;
+        std::function<void(float y)> scrollTo;
+    };
+
+    // `runtime`: resources/script/runtime.js. `mediaDir`: the collection's
+    // media folder, which the page sees as its web server.
+    CardScript(const std::string& runtime, std::string mediaDir, Host host = {});
     ~CardScript();
 
     // Worth running? (The side has <script> or on... handler attributes.)
     static bool wanted(const std::string& html);
 
-    // Show a card side: build its DOM, run its scripts and the load hooks.
-    void show(const std::string& html, const std::string& bodyClass);
-    // The current HTML of the side (inside <body>), elements tagged with
-    // data-ankinx-node for tap handling. Clears `dirty`.
+    // Show a side, as Anki's _showQuestion / _showAnswer: its scripts run,
+    // then what they start at once (promises, zero-delay timers, script
+    // files), so the first drawing shows their result.
+    void show(bool answer, const std::string& html, const std::string& bodyClass);
+    // The page's body as HTML for the card view, every element tagged
+    // data-ankinx-node (and data-ankinx-click if it has click handlers).
     std::string html();
-    // The DOM changed since html().
-    bool dirty() const;
+    // The body changed since the last html().
+    bool dirty();
+    // The body's class (scripts may change it) and CSS scripts added to <head>.
+    std::string bodyClass();
+    std::string extraCss();
 
-    // A tap on the element with this data-ankinx-node: dispatch "click".
-    // True if a handler ran.
-    bool click(int serial);
-    // Run code in the card's context (the app's own changes, e.g. hints).
+    // A tap at (x, y), CSS pixels in page coordinates, on the element with
+    // this data-ankinx-node: the events of a touchscreen tap, then a click.
+    // True if the card did something with it (else the tap flips the card).
+    bool tap(int serial, float x, float y);
+    // A key pressed (keydown, keyup) on the focused element.
+    bool key(const std::string& key, const std::string& code, int keyCode);
+    // Run code in the page (the app's own changes, e.g. hints).
     void eval(const std::string& code);
 
-    // Timers scripts started since the last call: (id, delay in ms).
-    std::vector<std::pair<int, int>> takeTimers();
-    void fireTimer(int id);
-    // Commands scripts sent to the reviewer since the last call, as Anki
-    // desktop's pycmd(): "ans" (show the answer), "ease1".."ease4".
+    // Milliseconds until the page's next timer, or -1 if there is none;
+    // call runTimers() then.
+    int nextTimer();
+    void runTimers();
+
+    // Commands the page sent the reviewer since the last call: "ans",
+    // "ease1".."ease4" (Anki's pycmd), "link:<url>", "alert:<text>",
+    // "play:<file>", "stop".
     std::vector<std::string> takeCommands();
 
     // Last error message, for the log and diagnostics.
-    const std::string& lastError() const { return error; }
+    const std::string& lastError() const;
 
-    // Where script messages and errors go (level 0 info, 1 warning, 2 error).
+    // Where page messages and errors go (level 0 info, 1 warning, 2 error).
     // The app points this at its logger; the default prints to stderr.
     static std::function<void(int, const std::string&)> log;
 
@@ -61,9 +97,11 @@ class CardScript
     struct Native;
 
   private:
-    void run(const char* what, const std::string& code);
-    void runJobs();
+    void settle();
+    std::string serialize();
 
     std::unique_ptr<Native> native;
-    std::string error;
+    std::string rendered; // the body as last returned by html()
+    std::string pending;  // serialised by dirty(), for html()
+    bool pendingValid = false;
 };

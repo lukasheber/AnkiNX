@@ -28,7 +28,7 @@ interaction gets in the way of studying, whatever else works. Rules:
 | `[sound:...]`, replay buttons | ✅ | |
 | `{{tts ...}}` | ⬜ | See section 3 |
 | MathJax `\(...\)`, `\[...\]` | ✅ | Native: LaTeX → Typst (MiTeX) → SVG, cached in `/switch/ankinx/cache/math`, sized in `em` and on the text baseline (`switch/anki_switch_core/src/math.rs`). ~25 ms per new formula on PC; adds ~25 MB to the `.nro`. Verified on console |
-| Template JavaScript | ✅ | QuickJS-ng with a small DOM (`app/src/script`): scripts on load, onclick/listeners on tap, timers, globals kept from question to answer, Anki stubs (`anki.imageOcclusion`, `MathJax`), a jQuery subset, `pycmd` (`ans`, `ease1`-`ease4`), checkbox/radio/label activation. Tested with a shared MCQ note type (`app/tests/fixtures`). 500 ms / 32 MB budget per run; off switch in Settings > Study. Not covered: layout measurement, canvas, network. Template buttons, links and form controls: tap, or highlight with the D-pad (Left/Right, then Up/Down) and press A; B removes the highlight. Needs an on-console check |
+| Template JavaScript | ✅ | Experimental branch `experimental/full-js`: a browser page for QuickJS-ng (`app/js`, bundled as `resources/script/runtime.js`): linkedom's DOM with DOM-Standard events (capture/bubble, `on…` attributes), form controls and activation behaviour, `<script>` execution as in browsers (inline, `src` and modules from the media folder, `document.write`), the real jQuery 3.7.1, `fetch`/`XMLHttpRequest` for media files, `getComputedStyle` and element geometry from litehtml's layout, and Anki desktop's reviewer page (`_showQuestion`/`_showAnswer`, `onUpdateHook`/`onShownHook`, `pycmd`). Globals kept from question to answer; the next card's page is prepared while the answer is read. 500 ms / 64 MB budget per run; off switch in Settings > Study. Host-tested (`app/tests/script_test.cpp`, incl. the shared MCQ note type); verified in the desktop preview. Not covered: canvas, CSS animation, typing into template text fields, network. Template buttons, links and form controls: tap, or highlight with the D-pad (Left/Right, then Up/Down) and press A; B removes the highlight. Needs an on-console check (and its "card page ready in N ms" log lines) |
 | CSS: flexbox, grid, gradients, web fonts (`@font-face` from media) | 🔶 | litehtml covers block/inline/tables, flexbox, `vh`/`vw`, `:checked`, `::before`/`::after`; inline `<svg>` and `data:` images drawn; card fonts from media via `@font-face` (TTF/OTF, picked by weight and style; WOFF not readable, the next `src` is tried; system fonts fill missing glyphs; files over 24 MB skipped). Missing: `box-shadow`, `transform`, `transition`, `filter`, `zoom`. To audit against popular shared-deck styles |
 | Night mode as AnkiDroid applies it | 🔶 | `.nightMode` classes set; colour inversion of card CSS not done (backlog, P3) |
 | RTL scripts (Persian, Arabic, Urdu, Hebrew) | ✅ | Arabic-script letters joined via presentation forms (incl. Persian letters, lam-alef, ZWNJ), right-to-left runs reversed per word (`app/src/view/rtl_text.cpp`) and per line (litehtml patch: simplified bidi; `dir="rtl"` makes lines read right to left and right-aligns left-aligned text). Fallback font DejaVu Sans (the Switch fonts have no Arabic). Not covered: CSS `direction`, harakat placement beyond the font's defaults, complex Urdu Nastaliq. Verified in preview |
@@ -135,6 +135,10 @@ template JavaScript, then this list, taken in groups of related features
 | Resume after sleep: keep the current card, sync on wake if automatic sync is on | P3 | |
 
 ## JavaScript evaluation (QuickJS / Duktape + litehtml)
+
+On `experimental/full-js` the hand-written DOM below is replaced by a full
+browser page in JavaScript (linkedom, jQuery, Anki's reviewer): see
+`docs/full-js-plan.md` and `app/js/README.md`. The findings stay for context.
 
 **Embedding an engine is easy; the DOM is the real work.** Findings:
 

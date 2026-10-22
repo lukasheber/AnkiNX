@@ -1,0 +1,14 @@
+{
+  "name": "ankinx-card-runtime",
+  "private": true,
+  "description": "JavaScript for card templates in AnkiNX: linkedom, a browser layer and Anki's reviewer page, bundled for QuickJS",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "dependencies": {
+    "jquery": "3.7.1",
+    "linkedom": "0.18.13"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

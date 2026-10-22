@@ -4,7 +4,7 @@
 #include <utility>
 #include <vector>
 
-#include "script/dom.hpp"
+#include "util/html_tree.hpp"
 
 namespace
 {
@@ -18,14 +18,14 @@ bool hasRuby(const std::string& html)
     return false;
 }
 
-using Nodes = std::vector<dom::NodePtr>;
+using Nodes = std::vector<html::NodePtr>;
 
-void rewrite(dom::Document& doc, const dom::NodePtr& ruby)
+void rewrite(html::Document& doc, const html::NodePtr& ruby)
 {
     // Base/reading pairs, in order; <rb> is unwrapped, <rp> dropped.
     std::vector<std::pair<Nodes, Nodes>> pairs;
     Nodes base;
-    for (const dom::NodePtr& child : Nodes(ruby->children))
+    for (const html::NodePtr& child : Nodes(ruby->children))
     {
         const std::string& tag = child->isElement() ? child->tag : std::string();
         if (tag == "rt" || tag == "rtc")
@@ -41,32 +41,32 @@ void rewrite(dom::Document& doc, const dom::NodePtr& ruby)
     if (!base.empty())
         pairs.emplace_back(std::move(base), Nodes());
 
-    dom::NodePtr parent = ruby->parentNode();
+    html::NodePtr parent = ruby->parentNode();
     if (!parent)
         return;
     for (auto& [baseNodes, reading] : pairs)
     {
-        dom::NodePtr box = doc.createElement("ruby");
+        html::NodePtr box = doc.createElement("ruby");
         box->attrs       = ruby->attrs; // keeps the deck's classes and styles
         std::string cls  = box->attr("class") ? *box->attr("class") + " ankinx-ruby" : "ankinx-ruby";
         box->setAttr("class", cls);
-        dom::NodePtr rt = doc.createElement("rt");
-        dom::NodePtr rb = doc.createElement("rb");
-        for (const dom::NodePtr& n : reading)
+        html::NodePtr rt = doc.createElement("rt");
+        html::NodePtr rb = doc.createElement("rb");
+        for (const html::NodePtr& n : reading)
         {
-            dom::removeFromParent(n);
-            dom::appendChild(rt, n);
+            html::removeFromParent(n);
+            html::appendChild(rt, n);
         }
-        for (const dom::NodePtr& n : baseNodes)
+        for (const html::NodePtr& n : baseNodes)
         {
-            dom::removeFromParent(n);
-            dom::appendChild(rb, n);
+            html::removeFromParent(n);
+            html::appendChild(rb, n);
         }
-        dom::appendChild(box, rt);
-        dom::appendChild(box, rb);
-        dom::insertBefore(parent, box, ruby);
+        html::appendChild(box, rt);
+        html::appendChild(box, rb);
+        html::insertBefore(parent, box, ruby);
     }
-    dom::removeFromParent(ruby);
+    html::removeFromParent(ruby);
 }
 
 } // namespace
@@ -75,10 +75,10 @@ std::string layoutRuby(const std::string& html)
 {
     if (!hasRuby(html))
         return html;
-    dom::Document doc(html);
-    std::vector<dom::NodePtr> rubies;
-    std::function<void(const dom::NodePtr&)> find = [&](const dom::NodePtr& node) {
-        for (const dom::NodePtr& child : node->children)
+    html::Document doc(html);
+    std::vector<html::NodePtr> rubies;
+    std::function<void(const html::NodePtr&)> find = [&](const html::NodePtr& node) {
+        for (const html::NodePtr& child : node->children)
         {
             if (child->isElement() && child->tag == "ruby")
                 rubies.push_back(child);
@@ -87,7 +87,7 @@ std::string layoutRuby(const std::string& html)
         }
     };
     find(doc.root());
-    for (const dom::NodePtr& ruby : rubies)
+    for (const html::NodePtr& ruby : rubies)
         rewrite(doc, ruby);
-    return dom::innerHtml(doc.root());
+    return html::innerHtml(doc.root());
 }

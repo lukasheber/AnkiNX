@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -14,25 +15,63 @@ using Clock = std::chrono::steady_clock;
 namespace
 {
 
-// Budget for one entry into scripts (a side shown, a tap, a timer).
+// Budget for one entry into the page (a side shown, a tap, timers), including
+// what it starts at once.
 constexpr auto TIME_BUDGET = std::chrono::milliseconds(500);
-constexpr size_t MEMORY_LIMIT = 32u << 20;
+// The runtime (linkedom, jQuery once used) takes a few MB of this.
+constexpr size_t MEMORY_LIMIT = 64u << 20;
 // Within the calling thread's stack (borealis' main thread).
 constexpr size_t STACK_LIMIT = 256u << 10;
+// Rounds of "run what is due now" after an entry (zero-delay timers chained).
+constexpr int SETTLE_ROUNDS = 64;
 
-JSClassID nodeClass = 0;
-
-// localStorage / sessionStorage: kept for the app session.
+// localStorage, sessionStorage, cookies: kept for the app session.
 std::map<std::string, std::string>& storage(const std::string& kind)
 {
     static std::map<std::string, std::map<std::string, std::string>> all;
     return all[kind];
 }
 
-std::string readFile(const std::string& path)
+// The runtime compiled once per app session (parsing ~600 KB of JavaScript
+// per card would cost more than running it).
+struct Compiled
+{
+    std::string source;
+    std::vector<uint8_t> bytecode;
+};
+Compiled& compiled()
+{
+    static Compiled c;
+    return c;
+}
+
+// A media file's path inside the media folder, or "" if `name` leaves it.
+std::string mediaFile(const std::string& dir, std::string name)
+{
+    while (name.rfind("./", 0) == 0)
+        name.erase(0, 2);
+    if (name.empty() || name[0] == '/' || name.find('\\') != std::string::npos || name.find('\0') != std::string::npos)
+        return "";
+    for (size_t start = 0; start <= name.size();)
+    {
+        size_t end = name.find('/', start);
+        if (end == std::string::npos)
+            end = name.size();
+        std::string part = name.substr(start, end - start);
+        if (part.empty() || part == "." || part == "..")
+            return "";
+        start = end + 1;
+    }
+    return dir + "/" + name;
+}
+
+bool readFile(const std::string& path, std::string& out)
 {
     std::ifstream in(path, std::ios::binary);
-    return std::string(std::istreambuf_iterator<char>(in), {});
+    if (!in)
+        return false;
+    out.assign(std::istreambuf_iterator<char>(in), {});
+    return true;
 }
 
 } // namespace
@@ -45,46 +84,12 @@ struct CardScript::Native
 {
     JSRuntime* rt = nullptr;
     JSContext* ctx = nullptr;
-    std::unique_ptr<dom::Document> doc;
+    JSValue entry = JS_UNDEFINED; // globalThis.__ankinx
     std::string mediaDir;
-    // One JS object per node, so === works; the nodes stay alive with them.
-    std::unordered_map<dom::Node*, JSValue> objects;
-    std::vector<dom::NodePtr> keep;
-    JSValue n     = JS_UNDEFINED;
-    JSValue proto = JS_UNDEFINED;
-    std::vector<std::pair<int, int>> timers;
+    Host host;
     std::vector<std::string> commands;
     Clock::time_point deadline;
-
-    JSValue wrap(const dom::NodePtr& node)
-    {
-        if (!node)
-            return JS_NULL;
-        auto it = objects.find(node.get());
-        if (it != objects.end())
-            return JS_DupValue(ctx, it->second);
-        JSValue obj = JS_NewObjectProtoClass(ctx, proto, nodeClass);
-        JS_SetOpaque(obj, node.get());
-        objects[node.get()] = JS_DupValue(ctx, obj);
-        keep.push_back(node);
-        return obj;
-    }
-
-    dom::NodePtr unwrap(JSValueConst value)
-    {
-        auto* raw = (dom::Node*)JS_GetOpaque(value, nodeClass);
-        return raw ? raw->shared_from_this() : nullptr;
-    }
-
-    JSValue array(const std::vector<dom::NodePtr>& nodes)
-    {
-        JSValue list = JS_NewArray(ctx);
-        for (size_t i = 0; i < nodes.size(); i++)
-            JS_SetPropertyUint32(ctx, list, (uint32_t)i, wrap(nodes[i]));
-        return list;
-    }
-
-    void changed() { doc->dirty = true; }
+    std::string error;
 };
 
 namespace
@@ -106,231 +111,91 @@ std::string argStr(JSContext* ctx, int argc, JSValueConst* argv, int i)
     return i < argc ? str(ctx, argv[i]) : std::string();
 }
 
-dom::NodePtr argNode(JSContext* ctx, int argc, JSValueConst* argv, int i)
+std::string exceptionText(JSContext* ctx)
 {
-    return i < argc ? self(ctx).unwrap(argv[i]) : nullptr;
+    JSValue exc      = JS_GetException(ctx);
+    std::string text = str(ctx, exc);
+    JSValue stack    = JS_GetPropertyStr(ctx, exc, "stack");
+    if (JS_IsString(stack))
+        text += "\n" + str(ctx, stack);
+    JS_FreeValue(ctx, stack);
+    JS_FreeValue(ctx, exc);
+    return text;
 }
 
 #define NATIVE(name) JSValue name(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
-#define NODE(var, i)                                    \
-    dom::NodePtr var = argNode(ctx, argc, argv, i);     \
-    if (!var)                                           \
-        return JS_ThrowTypeError(ctx, "not a DOM node")
-
-NATIVE(nNodeType)
-{
-    NODE(node, 0);
-    switch (node->type)
-    {
-        case dom::Node::Type::Element: return JS_NewInt32(ctx, 1);
-        case dom::Node::Type::Text: return JS_NewInt32(ctx, 3);
-        case dom::Node::Type::Comment: return JS_NewInt32(ctx, 8);
-        default: return JS_NewInt32(ctx, 11);
-    }
-}
-
-NATIVE(nTagName)
-{
-    NODE(node, 0);
-    return JS_NewString(ctx, node->tag.c_str());
-}
-
-NATIVE(nParent)
-{
-    NODE(node, 0);
-    return self(ctx).wrap(node->parentNode());
-}
-
-NATIVE(nChildren)
-{
-    NODE(node, 0);
-    return self(ctx).array(node->children);
-}
-
-NATIVE(nText)
-{
-    NODE(node, 0);
-    return JS_NewString(ctx, dom::textContent(node).c_str());
-}
-
-NATIVE(nSetText)
-{
-    NODE(node, 0);
-    dom::setTextContent(*self(ctx).doc, node, argStr(ctx, argc, argv, 1));
-    self(ctx).changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nHtml)
-{
-    NODE(node, 0);
-    return JS_NewString(ctx, dom::innerHtml(node).c_str());
-}
-
-NATIVE(nSetHtml)
-{
-    NODE(node, 0);
-    auto& s                          = self(ctx);
-    std::vector<dom::NodePtr> old    = node->children;
-    for (const dom::NodePtr& child : old)
-        dom::removeFromParent(child);
-    for (const dom::NodePtr& child : s.doc->parseFragment(argStr(ctx, argc, argv, 1)))
-        dom::appendChild(node, child);
-    s.changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nOuter)
-{
-    NODE(node, 0);
-    return JS_NewString(ctx, dom::outerHtml(node).c_str());
-}
-
-NATIVE(nGetAttr)
-{
-    NODE(node, 0);
-    const std::string* value = node->attr(argStr(ctx, argc, argv, 1));
-    return value ? JS_NewString(ctx, value->c_str()) : JS_NULL;
-}
-
-NATIVE(nSetAttr)
-{
-    NODE(node, 0);
-    node->setAttr(argStr(ctx, argc, argv, 1), argStr(ctx, argc, argv, 2));
-    self(ctx).changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nRemoveAttr)
-{
-    NODE(node, 0);
-    node->removeAttr(argStr(ctx, argc, argv, 1));
-    self(ctx).changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nMarkClickable)
-{
-    NODE(node, 0);
-    if (!node->clickable)
-    {
-        node->clickable = true;
-        self(ctx).changed();
-    }
-    return JS_UNDEFINED;
-}
-
-NATIVE(nAttrNames)
-{
-    NODE(node, 0);
-    JSValue list = JS_NewArray(ctx);
-    for (size_t i = 0; i < node->attrs.size(); i++)
-        JS_SetPropertyUint32(ctx, list, (uint32_t)i, JS_NewString(ctx, node->attrs[i].first.c_str()));
-    return list;
-}
-
-NATIVE(nAppend)
-{
-    NODE(parent, 0);
-    NODE(child, 1);
-    dom::appendChild(parent, child);
-    self(ctx).changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nInsertBefore)
-{
-    NODE(parent, 0);
-    NODE(child, 1);
-    dom::insertBefore(parent, child, argNode(ctx, argc, argv, 2));
-    self(ctx).changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nRemove)
-{
-    NODE(parent, 0);
-    NODE(child, 1);
-    dom::removeChild(parent, child);
-    self(ctx).changed();
-    return JS_UNDEFINED;
-}
-
-NATIVE(nClone)
-{
-    NODE(node, 0);
-    dom::NodePtr copy = dom::cloneNode(node, argc > 1 && JS_ToBool(ctx, argv[1]));
-    self(ctx).doc->adopt(copy);
-    return self(ctx).wrap(copy);
-}
-
-NATIVE(nQuery)
-{
-    NODE(scope, 0);
-    return self(ctx).wrap(dom::querySelector(scope, argStr(ctx, argc, argv, 1)));
-}
-
-NATIVE(nQueryAll)
-{
-    NODE(scope, 0);
-    return self(ctx).array(dom::querySelectorAll(scope, argStr(ctx, argc, argv, 1)));
-}
-
-NATIVE(nMatches)
-{
-    NODE(node, 0);
-    return JS_NewBool(ctx, dom::matches(node, argStr(ctx, argc, argv, 1)));
-}
-
-NATIVE(nBody) { return self(ctx).wrap(self(ctx).doc->root()); }
-
-NATIVE(nById) { return self(ctx).wrap(self(ctx).doc->byId(argStr(ctx, argc, argv, 0))); }
-
-NATIVE(nCreateElement) { return self(ctx).wrap(self(ctx).doc->createElement(argStr(ctx, argc, argv, 0))); }
-
-NATIVE(nCreateText) { return self(ctx).wrap(self(ctx).doc->createText(argStr(ctx, argc, argv, 0))); }
-
-NATIVE(nCreateFragment)
-{
-    auto fragment  = std::make_shared<dom::Node>();
-    fragment->type = dom::Node::Type::Document;
-    self(ctx).doc->adopt(fragment);
-    return self(ctx).wrap(fragment);
-}
-
-NATIVE(nParse) { return self(ctx).array(self(ctx).doc->parseFragment(argStr(ctx, argc, argv, 0))); }
 
 NATIVE(nLog)
 {
-    int level       = 0;
+    int level = 0;
     if (argc > 0)
         JS_ToInt32(ctx, &level, argv[0]);
-    std::string msg = argStr(ctx, argc, argv, 1);
-    CardScript::log(level, msg);
+    CardScript::log(level, argStr(ctx, argc, argv, 1));
     return JS_UNDEFINED;
 }
 
-NATIVE(nTimer)
+// A classic script in the global scope (its top-level let/const/class are
+// shared with the page's other scripts, as in browsers). Errors are thrown to
+// the caller, which reports them.
+NATIVE(nEvalScript)
 {
-    int id = 0, ms = 0;
-    if (argc > 1)
+    std::string code = argStr(ctx, argc, argv, 0);
+    std::string name = argStr(ctx, argc, argv, 1);
+    return JS_Eval(ctx, code.c_str(), code.size(), name.c_str(), JS_EVAL_TYPE_GLOBAL);
+}
+
+// A module script; returns its evaluation promise.
+NATIVE(nEvalModule)
+{
+    std::string code = argStr(ctx, argc, argv, 0);
+    std::string name = argStr(ctx, argc, argv, 1);
+    return JS_Eval(ctx, code.c_str(), code.size(), name.c_str(), JS_EVAL_TYPE_MODULE);
+}
+
+JSModuleDef* loadModule(JSContext* ctx, const char* name, void*)
+{
+    std::string path = mediaFile(self(ctx).mediaDir, name);
+    std::string code;
+    if (path.empty() || !readFile(path, code))
     {
-        JS_ToInt32(ctx, &id, argv[0]);
-        JS_ToInt32(ctx, &ms, argv[1]);
+        JS_ThrowReferenceError(ctx, "could not load module '%s' (modules come from the media folder)", name);
+        return nullptr;
     }
-    self(ctx).timers.emplace_back(id, ms);
-    return JS_UNDEFINED;
+    JSValue fn = JS_Eval(ctx, code.c_str(), code.size(), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(fn))
+        return nullptr;
+    auto* module = (JSModuleDef*)JS_VALUE_GET_PTR(fn);
+    JS_FreeValue(ctx, fn);
+    return module;
+}
+
+NATIVE(nReadMedia)
+{
+    std::string path = mediaFile(self(ctx).mediaDir, argStr(ctx, argc, argv, 0));
+    std::string data;
+    if (path.empty() || !readFile(path, data))
+        return JS_NULL;
+    return JS_NewStringLen(ctx, data.data(), data.size());
+}
+
+NATIVE(nReadMediaBytes)
+{
+    std::string path = mediaFile(self(ctx).mediaDir, argStr(ctx, argc, argv, 0));
+    std::string data;
+    if (path.empty() || !readFile(path, data))
+        return JS_NULL;
+    return JS_NewArrayBufferCopy(ctx, (const uint8_t*)data.data(), data.size());
 }
 
 NATIVE(nStorage)
 {
-    auto& map      = storage(argStr(ctx, argc, argv, 0));
-    std::string op = argStr(ctx, argc, argv, 1);
+    auto& map       = storage(argStr(ctx, argc, argv, 0));
+    std::string op  = argStr(ctx, argc, argv, 1);
     std::string key = argStr(ctx, argc, argv, 2);
     if (op == "get")
     {
         auto it = map.find(key);
-        return it == map.end() ? JS_NULL : JS_NewString(ctx, it->second.c_str());
+        return it == map.end() ? JS_NULL : JS_NewStringLen(ctx, it->second.data(), it->second.size());
     }
     if (op == "set")
         map[key] = argStr(ctx, argc, argv, 3);
@@ -356,86 +221,173 @@ NATIVE(nCommand)
     return JS_UNDEFINED;
 }
 
+// The body's layout: {serial: [x, y, w, h, clientLeft, clientTop,
+// clientWidth, clientHeight, {property: value}]}, or null without a renderer.
+NATIVE(nMeasure)
+{
+    auto& s = self(ctx);
+    if (!s.host.layout)
+        return JS_NULL;
+    CardScript::Layout layout =
+        s.host.layout(argStr(ctx, argc, argv, 0), argStr(ctx, argc, argv, 1), argStr(ctx, argc, argv, 2));
+    JSValue out = JS_NewObject(ctx);
+    for (const auto& [serial, box] : layout)
+    {
+        JSValue entry = JS_NewArray(ctx);
+        const float numbers[] = { box.x, box.y, box.width, box.height, box.clientLeft, box.clientTop, box.clientWidth, box.clientHeight };
+        for (uint32_t i = 0; i < 8; i++)
+            JS_SetPropertyUint32(ctx, entry, i, JS_NewFloat64(ctx, numbers[i]));
+        JSValue style = JS_NewObject(ctx);
+        for (const auto& [name, value] : box.style)
+            JS_SetPropertyStr(ctx, style, name.c_str(), JS_NewStringLen(ctx, value.data(), value.size()));
+        JS_SetPropertyUint32(ctx, entry, 8, style);
+        JS_SetPropertyUint32(ctx, out, (uint32_t)serial, entry);
+    }
+    return out;
+}
+
+NATIVE(nViewport)
+{
+    auto& s                     = self(ctx);
+    CardScript::Viewport view = s.host.viewport ? s.host.viewport() : CardScript::Viewport {};
+    JSValue out                 = JS_NewArray(ctx);
+    const float values[]        = { view.width, view.height, view.scrollY, view.pixelRatio };
+    for (uint32_t i = 0; i < 4; i++)
+        JS_SetPropertyUint32(ctx, out, i, JS_NewFloat64(ctx, values[i]));
+    return out;
+}
+
+NATIVE(nScrollTo)
+{
+    auto& s  = self(ctx);
+    double y = 0;
+    if (argc > 0)
+        JS_ToFloat64(ctx, &y, argv[0]);
+    if (s.host.scrollTo)
+        s.host.scrollTo((float)y);
+    return JS_UNDEFINED;
+}
+
 int interrupt(JSRuntime*, void* opaque)
 {
     return Clock::now() > ((CardScript::Native*)opaque)->deadline ? 1 : 0;
 }
 
-std::string exceptionText(JSContext* ctx)
+// Start an entry into the page: a fresh time budget.
+void begin(CardScript::Native& s)
 {
-    JSValue exc  = JS_GetException(ctx);
-    std::string text = str(ctx, exc);
-    JSValue stack = JS_GetPropertyStr(ctx, exc, "stack");
-    if (JS_IsString(stack))
-        text += "\n" + str(ctx, stack);
-    JS_FreeValue(ctx, stack);
-    JS_FreeValue(ctx, exc);
-    return text;
+    s.deadline = Clock::now() + TIME_BUDGET;
+    JS_UpdateStackTop(s.rt);
+}
+
+// Call __ankinx[name](args) (args are freed). The result is freed unless
+// `result` takes it; false after an exception.
+bool callEntry(CardScript::Native& s, const char* name, std::vector<JSValue> args = {}, JSValue* result = nullptr)
+{
+    JSValue fn = JS_GetPropertyStr(s.ctx, s.entry, name);
+    JSValue r  = JS_Call(s.ctx, fn, s.entry, (int)args.size(), args.data());
+    for (JSValue& a : args)
+        JS_FreeValue(s.ctx, a);
+    JS_FreeValue(s.ctx, fn);
+    if (JS_IsException(r))
+    {
+        s.error = exceptionText(s.ctx);
+        CardScript::log(2, std::string(name) + ": " + s.error);
+        return false;
+    }
+    if (result)
+        *result = r;
+    else
+        JS_FreeValue(s.ctx, r);
+    return true;
+}
+
+void runJobs(CardScript::Native& s)
+{
+    JSContext* jobCtx;
+    for (int i = 0; i < 10000; i++)
+    {
+        int r = JS_ExecutePendingJob(s.rt, &jobCtx);
+        if (r == 0)
+            break;
+        if (r < 0)
+        {
+            s.error = exceptionText(jobCtx);
+            CardScript::log(2, s.error);
+        }
+    }
 }
 
 } // namespace
 
-CardScript::CardScript(const std::string& prelude, std::string mediaDir)
+CardScript::CardScript(const std::string& runtime, std::string mediaDir, Host host)
     : native(std::make_unique<Native>())
 {
     Native& s  = *native;
     s.mediaDir = std::move(mediaDir);
+    s.host     = std::move(host);
     s.rt       = JS_NewRuntime();
     JS_SetMemoryLimit(s.rt, MEMORY_LIMIT);
     JS_SetMaxStackSize(s.rt, STACK_LIMIT);
     JS_SetInterruptHandler(s.rt, interrupt, &s);
-    JS_NewClassID(s.rt, &nodeClass);
-    JSClassDef def = {};
-    def.class_name = "Node";
-    JS_NewClass(s.rt, nodeClass, &def);
+    JS_SetModuleLoaderFunc(s.rt, nullptr, loadModule, &s);
     s.ctx = JS_NewContext(s.rt);
     JS_SetContextOpaque(s.ctx, &s);
-    s.doc = std::make_unique<dom::Document>("");
+    begin(s);
 
-    s.proto = JS_NewObject(s.ctx);
-    JS_SetClassProto(s.ctx, nodeClass, JS_DupValue(s.ctx, s.proto));
-    s.n = JS_NewObject(s.ctx);
-    JS_SetPropertyStr(s.ctx, s.n, "proto", JS_DupValue(s.ctx, s.proto));
+    JSValue bridge = JS_NewObject(s.ctx);
     struct
     {
         const char* name;
         JSCFunction* fn;
         int length;
     } functions[] = {
-        { "nodeType", nNodeType, 1 },       { "tagName", nTagName, 1 },
-        { "parent", nParent, 1 },           { "children", nChildren, 1 },
-        { "text", nText, 1 },               { "setText", nSetText, 2 },
-        { "html", nHtml, 1 },               { "setHtml", nSetHtml, 2 },
-        { "outer", nOuter, 1 },             { "getAttr", nGetAttr, 2 },
-        { "setAttr", nSetAttr, 3 },         { "removeAttr", nRemoveAttr, 2 },
-        { "attrNames", nAttrNames, 1 },     { "markClickable", nMarkClickable, 1 },
-        { "append", nAppend, 2 },
-        { "insertBefore", nInsertBefore, 3 }, { "remove", nRemove, 2 },
-        { "clone", nClone, 2 },             { "query", nQuery, 2 },
-        { "queryAll", nQueryAll, 2 },       { "matches", nMatches, 2 },
-        { "body", nBody, 0 },               { "byId", nById, 1 },
-        { "createElement", nCreateElement, 1 }, { "createText", nCreateText, 1 },
-        { "createFragment", nCreateFragment, 0 }, { "parse", nParse, 1 },
-        { "log", nLog, 2 },                 { "timer", nTimer, 2 },
-        { "storage", nStorage, 4 },         { "command", nCommand, 1 },
+        { "log", nLog, 2 },           { "evalScript", nEvalScript, 2 },
+        { "evalModule", nEvalModule, 2 }, { "readMedia", nReadMedia, 1 },
+        { "readMediaBytes", nReadMediaBytes, 1 }, { "storage", nStorage, 4 },
+        { "command", nCommand, 1 },   { "measure", nMeasure, 3 },
+        { "viewport", nViewport, 0 }, { "scrollTo", nScrollTo, 1 },
     };
     for (const auto& f : functions)
-        JS_SetPropertyStr(s.ctx, s.n, f.name, JS_NewCFunction(s.ctx, f.fn, f.name, f.length));
+        JS_SetPropertyStr(s.ctx, bridge, f.name, JS_NewCFunction(s.ctx, f.fn, f.name, f.length));
     JSValue global = JS_GetGlobalObject(s.ctx);
-    JS_SetPropertyStr(s.ctx, global, "__n", JS_DupValue(s.ctx, s.n));
-    JS_FreeValue(s.ctx, global);
+    JS_SetPropertyStr(s.ctx, global, "__native", bridge);
 
-    run("prelude.js", prelude);
+    Compiled& c = compiled();
+    JSValue fn;
+    if (!c.bytecode.empty() && c.source == runtime)
+        fn = JS_ReadObject(s.ctx, c.bytecode.data(), c.bytecode.size(), JS_READ_OBJ_BYTECODE);
+    else
+    {
+        fn = JS_Eval(s.ctx, runtime.c_str(), runtime.size(), "runtime.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        if (!JS_IsException(fn))
+        {
+            size_t size   = 0;
+            uint8_t* data = JS_WriteObject(s.ctx, &size, fn, JS_WRITE_OBJ_BYTECODE);
+            if (data)
+            {
+                c.source = runtime;
+                c.bytecode.assign(data, data + size);
+                js_free(s.ctx, data);
+            }
+        }
+    }
+    JSValue r = JS_IsException(fn) ? JS_EXCEPTION : JS_EvalFunction(s.ctx, fn);
+    if (JS_IsException(r))
+    {
+        s.error = exceptionText(s.ctx);
+        log(2, "runtime.js: " + s.error);
+    }
+    JS_FreeValue(s.ctx, r);
+    s.entry = JS_GetPropertyStr(s.ctx, global, "__ankinx");
+    JS_FreeValue(s.ctx, global);
+    runJobs(s);
 }
 
 CardScript::~CardScript()
 {
     Native& s = *native;
-    for (auto& [_, value] : s.objects)
-        JS_FreeValue(s.ctx, value);
-    s.objects.clear();
-    JS_FreeValue(s.ctx, s.n);
-    JS_FreeValue(s.ctx, s.proto);
+    JS_FreeValue(s.ctx, s.entry);
     JS_FreeContext(s.ctx);
     JS_FreeRuntime(s.rt);
 }
@@ -456,88 +408,159 @@ bool CardScript::wanted(const std::string& html)
     return false;
 }
 
-void CardScript::show(const std::string& html, const std::string& bodyClass)
+const std::string& CardScript::lastError() const { return native->error; }
+
+// Run what the last entry started and is due now: promise callbacks,
+// zero-delay timers, script files, until nothing is due (within the entry's
+// budget). Later timers are the reviewer's to schedule (nextTimer()).
+void CardScript::settle()
 {
     Native& s = *native;
-    // As in Anki's reviewer: the side inside <div id="qa"> in the body.
-    s.doc = std::make_unique<dom::Document>("<div id=\"qa\">" + html + "</div>");
-    dom::NodePtr body = s.doc->root();
-    body->type        = dom::Node::Type::Element;
-    body->tag         = "body";
-    body->setAttr("class", bodyClass);
-
-    for (const dom::NodePtr& script : dom::querySelectorAll(body, "script"))
+    pendingValid = false;
+    for (int round = 0; round < SETTLE_ROUNDS && Clock::now() < s.deadline; round++)
     {
-        const std::string* type = script->attr("type");
-        if (type && !type->empty() && *type != "text/javascript" && *type != "application/javascript" &&
-            *type != "module")
-            continue;
-        std::string code;
-        if (const std::string* src = script->attr("src"))
-        {
-            // Media files only (e.g. "_myscript.js"), as Anki serves them.
-            if (src->find('/') != std::string::npos || src->find(':') != std::string::npos)
-                continue;
-            code = readFile(s.mediaDir + "/" + *src);
-        }
-        else
-            code = dom::textContent(script);
-        if (!code.empty())
-            run("card", code);
+        runJobs(s);
+        JSValue next = JS_UNDEFINED;
+        int ms       = -1;
+        if (callEntry(s, "nextTimer", {}, &next))
+            JS_ToInt32(s.ctx, &ms, next);
+        JS_FreeValue(s.ctx, next);
+        if (ms != 0)
+            break;
+        callEntry(s, "runTimers");
     }
-    JSValue fn = JS_GetPropertyStr(s.ctx, s.n, "shown");
-    s.deadline = Clock::now() + TIME_BUDGET;
-    JSValue r  = JS_Call(s.ctx, fn, JS_UNDEFINED, 0, nullptr);
-    if (JS_IsException(r))
-        error = exceptionText(s.ctx);
+    runJobs(s);
+}
+
+void CardScript::show(bool answer, const std::string& html, const std::string& bodyClass)
+{
+    Native& s = *native;
+    begin(s);
+    callEntry(s, "show",
+              { JS_NewBool(s.ctx, answer), JS_NewStringLen(s.ctx, html.data(), html.size()), JS_NewString(s.ctx, ""),
+                JS_NewStringLen(s.ctx, bodyClass.data(), bodyClass.size()) });
+    settle();
+}
+
+std::string CardScript::serialize()
+{
+    Native& s = *native;
+    begin(s);
+    JSValue r = JS_UNDEFINED;
+    std::string out;
+    if (callEntry(s, "html", {}, &r))
+        out = str(s.ctx, r);
     JS_FreeValue(s.ctx, r);
-    JS_FreeValue(s.ctx, fn);
-    runJobs();
-    s.doc->dirty = true;
+    return out;
 }
 
 std::string CardScript::html()
 {
-    native->doc->dirty = false;
-    return dom::innerHtml(native->doc->root(), true);
+    if (!pendingValid)
+        pending = serialize();
+    pendingValid = false;
+    rendered     = pending;
+    return rendered;
 }
 
-bool CardScript::dirty() const { return native->doc->dirty; }
+bool CardScript::dirty()
+{
+    pending      = serialize();
+    pendingValid = true;
+    return pending != rendered;
+}
 
-bool CardScript::click(int serial)
+std::string CardScript::bodyClass()
 {
     Native& s = *native;
-    dom::NodePtr node = s.doc->bySerial(serial);
-    if (!node)
-        return false;
-    JSValue fn     = JS_GetPropertyStr(s.ctx, s.n, "dispatch");
-    JSValue args[] = { s.wrap(node), JS_NewString(s.ctx, "click") };
-    s.deadline     = Clock::now() + TIME_BUDGET;
-    JSValue r      = JS_Call(s.ctx, fn, JS_UNDEFINED, 2, args);
-    bool handled   = false;
-    if (JS_IsException(r))
-    {
-        error = exceptionText(s.ctx);
-        CardScript::log(2, error);
-        handled = true; // a handler was there, even if it failed
-    }
-    else
-        handled = JS_ToBool(s.ctx, r);
+    begin(s);
+    JSValue r = JS_UNDEFINED;
+    std::string out;
+    if (callEntry(s, "bodyClass", {}, &r))
+        out = str(s.ctx, r);
     JS_FreeValue(s.ctx, r);
-    JS_FreeValue(s.ctx, args[0]);
-    JS_FreeValue(s.ctx, args[1]);
-    JS_FreeValue(s.ctx, fn);
-    runJobs();
+    return out;
+}
+
+std::string CardScript::extraCss()
+{
+    Native& s = *native;
+    begin(s);
+    JSValue r = JS_UNDEFINED;
+    std::string out;
+    if (callEntry(s, "extraCss", {}, &r))
+        out = str(s.ctx, r);
+    JS_FreeValue(s.ctx, r);
+    return out;
+}
+
+bool CardScript::tap(int serial, float x, float y)
+{
+    Native& s = *native;
+    begin(s);
+    JSValue r    = JS_UNDEFINED;
+    bool handled = false;
+    if (callEntry(s, "tap", { JS_NewInt32(s.ctx, serial), JS_NewFloat64(s.ctx, x), JS_NewFloat64(s.ctx, y) }, &r))
+        handled = JS_ToBool(s.ctx, r);
+    else
+        handled = true; // card code ran, even if it failed
+    JS_FreeValue(s.ctx, r);
+    settle();
     return handled;
 }
 
-void CardScript::eval(const std::string& code) { run("app", code); }
-
-std::vector<std::pair<int, int>> CardScript::takeTimers()
+bool CardScript::key(const std::string& key, const std::string& code, int keyCode)
 {
-    std::vector<std::pair<int, int>> out;
-    out.swap(native->timers);
-    return out;
+    Native& s     = *native;
+    begin(s);
+    bool handled  = true;
+    for (const char* type : { "keydown", "keyup" })
+    {
+        JSValue r = JS_UNDEFINED;
+        if (callEntry(s, "key",
+                      { JS_NewString(s.ctx, type), JS_NewString(s.ctx, key.c_str()), JS_NewString(s.ctx, code.c_str()),
+                        JS_NewInt32(s.ctx, keyCode) },
+                      &r) &&
+            std::strcmp(type, "keydown") == 0)
+            handled = !JS_ToBool(s.ctx, r); // cancelled: the page took it
+        JS_FreeValue(s.ctx, r);
+    }
+    settle();
+    return handled;
+}
+
+void CardScript::eval(const std::string& code)
+{
+    Native& s = *native;
+    begin(s);
+    JSValue r = JS_Eval(s.ctx, code.c_str(), code.size(), "app", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(r))
+    {
+        s.error = exceptionText(s.ctx);
+        log(2, "app: " + s.error);
+    }
+    JS_FreeValue(s.ctx, r);
+    settle();
+}
+
+int CardScript::nextTimer()
+{
+    Native& s = *native;
+    begin(s);
+    JSValue r = JS_UNDEFINED;
+    int ms    = -1;
+    if (callEntry(s, "nextTimer", {}, &r))
+        JS_ToInt32(s.ctx, &ms, r);
+    JS_FreeValue(s.ctx, r);
+    return ms;
+}
+
+void CardScript::runTimers()
+{
+    Native& s = *native;
+    begin(s);
+    callEntry(s, "runTimers");
+    settle();
 }
 
 std::vector<std::string> CardScript::takeCommands()
@@ -545,44 +568,4 @@ std::vector<std::string> CardScript::takeCommands()
     std::vector<std::string> out;
     out.swap(native->commands);
     return out;
-}
-
-void CardScript::fireTimer(int id)
-{
-    Native& s     = *native;
-    JSValue fn    = JS_GetPropertyStr(s.ctx, s.n, "fireTimer");
-    JSValue arg   = JS_NewInt32(s.ctx, id);
-    s.deadline    = Clock::now() + TIME_BUDGET;
-    JSValue r     = JS_Call(s.ctx, fn, JS_UNDEFINED, 1, &arg);
-    if (JS_IsException(r))
-    {
-        error = exceptionText(s.ctx);
-        CardScript::log(2, error);
-    }
-    JS_FreeValue(s.ctx, r);
-    JS_FreeValue(s.ctx, fn);
-    runJobs();
-}
-
-void CardScript::run(const char* what, const std::string& code)
-{
-    Native& s  = *native;
-    s.deadline = Clock::now() + TIME_BUDGET;
-    JS_UpdateStackTop(s.rt);
-    JSValue r = JS_Eval(s.ctx, code.c_str(), code.size(), what, JS_EVAL_TYPE_GLOBAL);
-    if (JS_IsException(r))
-    {
-        error = exceptionText(s.ctx);
-        CardScript::log(2, std::string(what) + ": " + error);
-    }
-    JS_FreeValue(s.ctx, r);
-    runJobs();
-}
-
-// Promise callbacks (async functions, .then) queued by the last run.
-void CardScript::runJobs()
-{
-    JSContext* jobCtx;
-    for (int i = 0; i < 1000 && JS_ExecutePendingJob(native->rt, &jobCtx) > 0; i++)
-        ;
 }

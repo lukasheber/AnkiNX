@@ -52,10 +52,15 @@ class ReviewerActivity : public brls::Activity
     void updateCounts(const anki::json& counts, const std::string& queue);
     void setBar(bool answerSide);
     // Card scripts (script/card_script).
+    std::unique_ptr<CardScript> makeScript();
+    void prepareScript();
     void startScripts();
     void runScripts();
     void afterScript();
     void scheduleTimers();
+    // What a tap on a link does (playsound:, anki-hint:, anki-typeans:), from
+    // the card view or the card's page.
+    void followLink(const std::string& url);
     // Controls (util/controls): bindings depend on the controller layout.
     controls::Action actionFor(brls::ControllerButton button) const;
     bool onButton(brls::ControllerButton button);
@@ -110,7 +115,13 @@ class ReviewerActivity : public brls::Activity
     bool refreshPending = false;
     // JavaScript of the current card, if it has any; replaced per card.
     std::unique_ptr<CardScript> script;
+    // A page made ahead for the next card (prepareScript).
+    std::unique_ptr<CardScript> spareScript;
     int scriptGeneration = 0;
+    // The page's body class and the CSS its scripts added, for documentFor().
+    std::string scriptBodyClass, scriptCss;
+    // Bumped when the page's next timer is scheduled anew.
+    int scriptTimerGeneration = 0;
     // The card answered before this one ("Previous card info").
     int64_t previousCardId = 0;
     // A press of the replay button being watched for a hold.
