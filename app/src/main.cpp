@@ -1,8 +1,11 @@
 // AnkiNX: Anki for the Nintendo Switch (borealis frontend over Anki's Rust backend).
 
 #include <borealis.hpp>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <sys/stat.h>
 
 #include "activity/deck_picker.hpp"
 #include "anki/api.hpp"
@@ -39,6 +42,18 @@ int main(int argc, char* argv[])
     for (int i = 1; i < argc; i++)
         if (std::strcmp(argv[i], "-d") == 0)
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
+#ifdef __SWITCH__
+    // On the console the log goes to /switch/ankinx/ankinx.log (stdout only
+    // reaches a PC through nxlink). The previous run's is kept as
+    // ankinx.old.log: after a crash, the app is usually opened again first.
+    {
+        std::string dir = anki::dataDir();
+        mkdir(dir.c_str(), 0777);
+        std::rename((dir + "/ankinx.log").c_str(), (dir + "/ankinx.old.log").c_str());
+        if (std::FILE* log = std::fopen((dir + "/ankinx.log").c_str(), "w"))
+            brls::Logger::setLogOutput(log);
+    }
+#endif
     if (argc > 0)
         update::setSelfPath(argv[0]); // hbmenu passes the .nro's path
 

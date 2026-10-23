@@ -58,6 +58,11 @@ To bring your Switch reviews back to the computer, copy `collection.anki2`
 back the same way, with Anki closed. This replaces the computer's copy, so
 don't study on both sides between copies.
 
+**When something goes wrong.** The app writes a log to
+`/switch/ankinx/ankinx.log` on the SD card; the previous run's is
+`ankinx.old.log` (after a crash, that is the one to look at). Crash reports
+from Atmosphère are in `/atmosphere/crash_reports/`.
+
 ## Layout
 
 | Path | What |
