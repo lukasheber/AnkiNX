@@ -71,6 +71,7 @@ from Atmosphère are in `/atmosphere/crash_reports/`.
 | `switch/` | Anki's Rust backend cross-compiled for Horizon: the `anki_switch_core` crate (JSON API, SQLite VFS, POSIX shim), Rust std/libc patches, target spec. See [switch/README.md](switch/README.md) |
 | `tools/` | Environment setup, source sync into WSL, dependency fetchers, icon tool |
 | `VERSION`, `CHANGELOG.md` | Project version and release notes |
+| `test-deck/` | A test deck with Anki's card types and template features, each card saying what to check |
 
 ## Building
 

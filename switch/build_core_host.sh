@@ -15,5 +15,5 @@ cargo +"$RUST_NIGHTLY" build --release -j "${JOBS:-2}" --lib --examples
 DIST="$ANKISWITCH_SRC/switch/dist-host"
 mkdir -p "$DIST"
 cp "$CARGO_TARGET_DIR/release/libanki_switch_core.a" "$CRATE/include/anki_switch_core.h" "$DIST/"
-cp "$CARGO_TARGET_DIR/release/examples/make_sample" "$DIST/"
+cp "$CARGO_TARGET_DIR/release/examples/make_sample" "$CARGO_TARGET_DIR/release/examples/make_test_deck" "$DIST/"
 ls -l "$DIST"
