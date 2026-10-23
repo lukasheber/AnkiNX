@@ -22,7 +22,7 @@ pinned() { [[ -f "$PINS" ]] && awk -v n="$1" '$1 == n {print $2}' "$PINS"; }
 # Our fixes to a library: app/patches/<name>/*.patch, applied in order with
 # `patch -p1` after extraction. The stamp changes when they do.
 PATCHES="$ANKISWITCH_SRC/app/patches"
-patch_stamp() { cat "$PATCHES/$1"/*.patch 2>/dev/null | sha1sum | cut -c1-12; }
+patch_stamp() { { cat "$PATCHES/$1"/*.patch 2>/dev/null || true; } | sha1sum | cut -c1-12; }
 
 for dep in "${DEPS[@]}"; do
     read -r name url ref <<< "$dep"

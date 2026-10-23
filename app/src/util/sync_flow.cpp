@@ -239,11 +239,7 @@ brls::Dialog* waitDialog(const std::string& text, brls::Label** label)
     box->setJustifyContent(brls::JustifyContent::CENTER);
     box->setPadding(style["brls/dialog/paddingTopBottom"], style["brls/dialog/paddingLeftRight"],
                     style["brls/dialog/paddingTopBottom"], style["brls/dialog/paddingLeftRight"]);
-    // Only when something has the focus: borealis gives it back on close
-    // only if it had saved it, and nothing is focused while the deck list
-    // loads at start-up (automatic sync on open). The box would keep the
-    // focus after the dialog is deleted, and the next focus change crashed.
-    box->setFocusable(brls::Application::getCurrentFocus() != nullptr);
+    box->setFocusable(true);
     box->setHideHighlight(true);
     auto* dialog = new brls::Dialog(box);
     dialog->setCancelable(false);

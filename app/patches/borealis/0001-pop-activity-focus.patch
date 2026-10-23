@@ -1,0 +1,28 @@
+popActivity: never leave the focus in the popped activity
+
+The activity is deleted after its hide animation. With nothing saved on the
+focus stack when it opened, or a saved view hidden meanwhile, the focus
+stayed on one of its views, and the next giveFocus() called onFocusLost()
+on deleted memory (AnkiNX crashed on opening with automatic sync on).
+
+--- a/library/lib/core/application.cpp	2026-10-22 23:10:52.014652200 -0300
++++ b/library/lib/core/application.cpp	2026-10-22 23:10:52.530751800 -0300
+@@ -944,6 +944,18 @@
+         Application::focusStack.pop_back();
+     }
+ 
++    // Never leave the focus in the activity being popped: it is deleted after
++    // its animation, and the next focus change would use the deleted view.
++    // That happens when no focus was saved as it opened, or when the saved
++    // view can't take the focus any more (hidden meanwhile).
++    if (Application::currentFocus && Application::currentFocus->getParentActivity() == last)
++    {
++        if (toShow)
++            Application::giveFocus(toShow->getContentView());
++        if (Application::currentFocus && Application::currentFocus->getParentActivity() == last)
++            Application::currentFocus = nullptr;
++    }
++
+     // Hide animation (and show previous activity, if any)
+     last->hide([last, cb, free]()
+         {

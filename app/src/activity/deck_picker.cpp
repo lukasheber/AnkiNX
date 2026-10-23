@@ -471,16 +471,4 @@ void DeckPickerActivity::showMessage(const std::string& text)
     message->setText(text);
     message->setVisibility(brls::Visibility::VISIBLE);
     decks->setVisibility(brls::Visibility::GONE);
-    // The message holds the focus while the list is hidden. A dialog opened
-    // meanwhile (automatic sync on open, an update offer) then has a view to
-    // give the focus back to when it closes; with none, borealis left the
-    // focus on the closed dialog's deleted button and the next focus change
-    // crashed.
-    // (At start-up this runs before the activity is on the stack; pushing it
-    // then focuses its first focusable view, the message.)
-    message->setFocusable(true);
-    message->setHideHighlight(true);
-    const auto& stack = brls::Application::getActivitiesStack();
-    if (!stack.empty() && stack.back() == this)
-        brls::Application::giveFocus(message);
 }
