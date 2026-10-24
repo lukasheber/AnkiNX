@@ -291,6 +291,17 @@ brls::View* SettingsActivity::studyTab()
     swipes->init("ankinx/settings/swipe_answers"_i18n, settings::get("swipe_answers") == true,
                  [](bool on) { settings::set("swipe_answers", on); });
     box->addView(swipes);
+    static const char* ZONES[] = { "off", "sides", "four" };
+    anki::json zones = settings::get("tap_zones");
+    auto* tapZones   = new brls::SelectorCell();
+    tapZones->init("ankinx/settings/tap_zones"_i18n,
+                   { "ankinx/settings/tap_zones_off"_i18n, "ankinx/settings/tap_zones_sides"_i18n,
+                     "ankinx/settings/tap_zones_four"_i18n },
+                   zones == "sides" ? 1 : zones == "four" ? 2 : 0, [](int index) {
+                       if (index >= 0 && index < 3)
+                           settings::set("tap_zones", ZONES[index]);
+                   });
+    box->addView(tapZones);
     auto* rumble = new brls::BooleanCell();
     rumble->init("ankinx/settings/rumble"_i18n, settings::get("rumble") == true,
                  [](bool on) { settings::set("rumble", on); });
@@ -465,6 +476,19 @@ brls::View* SettingsActivity::aboutTab()
         brls::Application::notify("ankinx/settings/language_restart"_i18n);
     });
     box->addView(language);
+
+    // Light or dark: the console's, or always one of them.
+    static const char* THEMES[] = { "system", "light", "dark" };
+    std::string theme = settings::theme();
+    auto* themeCell   = new brls::SelectorCell();
+    themeCell->init("ankinx/settings/theme"_i18n,
+                    { "ankinx/settings/theme_system"_i18n, "ankinx/settings/theme_light"_i18n,
+                      "ankinx/settings/theme_dark"_i18n },
+                    theme == "light" ? 1 : theme == "dark" ? 2 : 0, [](int index) {
+                        if (index >= 0 && index < 3)
+                            settings::setTheme(THEMES[index]);
+                    });
+    box->addView(themeCell);
 
     box->addView(detail("ankinx/settings/version"_i18n, ANKINX_VERSION));
 

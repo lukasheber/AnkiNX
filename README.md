@@ -162,8 +162,9 @@ on both between copies.
 | **B** | Back to the decks |
 
 Touch works everywhere: tap the card to show the answer, tap the answer
-buttons, and tap links, buttons and fields inside your cards. Buttons can be
-changed in **Settings › Controls**.
+buttons, and tap links, buttons and fields inside your cards. To answer with
+a tap or a swipe, turn on **Tap the answer** or **Swipe to answer** in
+**Settings › Study**. Buttons can be changed in **Settings › Controls**.
 
 ## Troubleshooting
 

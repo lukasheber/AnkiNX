@@ -50,6 +50,29 @@ void setCardScripts(bool enabled)
     save();
 }
 
+std::string theme()
+{
+    std::string value = values().value("theme", "system");
+    return value == "light" || value == "dark" ? value : "system";
+}
+
+void setTheme(const std::string& value)
+{
+    values()["theme"] = value;
+    save();
+    applyTheme();
+}
+
+void applyTheme()
+{
+    static brls::ThemeVariant console = brls::Application::getPlatform()->getThemeVariant();
+    std::string value                 = theme();
+    brls::ThemeVariant variant        = value == "light" ? brls::ThemeVariant::LIGHT
+                                        : value == "dark" ? brls::ThemeVariant::DARK
+                                                          : console;
+    brls::Application::getPlatform()->setThemeVariant(variant);
+}
+
 anki::json get(const std::string& key) { return values().contains(key) ? values()[key] : anki::json(); }
 
 void set(const std::string& key, anki::json value)

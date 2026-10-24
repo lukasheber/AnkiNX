@@ -101,7 +101,7 @@ template JavaScript, then this list, taken in groups of related features
 | Leech, daily-limit and "learning card due in N min" messages | ✅ | Leech dialog after answering; the finished screen says when the next learning card is due (and resumes then), and when limits stopped cards or some were buried |
 | Answer timer and auto advance (show answer / answer after N seconds) | ✅ | Timer in the header (deck option; red at the cap, frozen on the answer with "Stop timer on answer"). Auto advance started per session from the card menu, as in Anki: seconds per side, waits for audio, question and answer actions. Both set in deck options |
 | Whiteboard (draw on the card with the touchscreen) | ✅ | Pen in the header (handheld mode): drawing over the card instead of scrolling; bin clears; cleared on the next card. No eraser or colours yet |
-| Tap zones and swipe gestures (handheld) | 🔶 | Swipes (Settings > Study, off by default): ← Again, ↓ Hard, → Good, ↑ Easy; vertical ones only on cards that don't scroll. Tap zones not done |
+| Tap zones and swipe gestures (handheld) | ✅ | Swipes (Settings > Study, off by default): ← Again, ↓ Hard, → Good, ↑ Easy; vertical ones only on cards that don't scroll. Tap the answer (Settings > Study, off by default): left third Again and right third Good, or four columns Again to Easy; a tap on the question shows the answer |
 | Persistent card zoom / text size per deck | ✅ | Stick-press zoom remembered per deck. No pinch zoom (borealis has no pinch gesture) |
 | Audio options: autoplay on/off, replay question only, playback speed | 🔶 | "Don't play audio automatically" honoured; "Skip question when replaying answer" applied (replay on the answer side plays the question's audio first unless set); no playback speed (SDL_mixer can't change it) |
 | Redo, multiple undo levels shown | ✅ | Redo in the card menu (Anki's redo stack) |
@@ -131,8 +131,8 @@ template JavaScript, then this list, taken in groups of related features
 | --- | --- | --- |
 | Interface translations (Portuguese, Spanish, Japanese, ...) | ✅ | Portuguese (Brazil; also used for Portugal), Spanish (also Latin America), Japanese; follows the console, or Settings > About > Language (after a restart). Anki's own strings come from rslib |
 | Docked/TV layout: larger card text and buttons at 1080p | ✅ | borealis already renders at 1080p docked; card text is scaled up on a TV (Settings > Study > On a TV: 100/125/150%, default 125%), on top of the deck's zoom, switching live on dock/undock |
-| In-app theme choice (light/dark/follow system) | P3 | Follows the system theme today |
-| Resume after sleep: keep the current card, sync on wake if automatic sync is on | P3 | |
+| In-app theme choice (light/dark/follow system) | ✅ | Settings > About > Theme: same as the console, light or dark; applies at once |
+| Resume after sleep: keep the current card, sync on wake if automatic sync is on | ✅ | The study screen stays on its card; 5 s after waking (Wi-Fi back) the deck list refreshes and syncs, or when you return to it. Needs an on-console check |
 
 ## JavaScript evaluation (QuickJS / Duktape + litehtml)
 

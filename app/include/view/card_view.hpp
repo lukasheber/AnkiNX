@@ -69,8 +69,9 @@ class CardView : public brls::View
     void setMediaDir(const std::string& dir);
     // Called for activated links, e.g. "playsound:q:0".
     void setOnLink(std::function<void(const std::string&)> callback);
-    // Called when the card is tapped outside any link.
-    void setOnTap(std::function<void()> callback);
+    // Called when the card is tapped outside any link; `across` is where,
+    // from 0 at the card's left edge to 1 at its right.
+    void setOnTap(std::function<void(float across)> callback);
     // Called first for a tap on an element tagged data-ankinx-node (card
     // scripts), with the point in CSS pixels on the page; returning true
     // means the page handled it (links and onTap are left alone).
@@ -145,7 +146,7 @@ class CardView : public brls::View
     float scale() const { return zoom * screenScale; }
     float viewHeight         = 0;
     std::function<void(const std::string&)> onLink;
-    std::function<void()> onTap;
+    std::function<void(float across)> onTap;
     std::function<bool(int, float, float)> onElementTap;
     std::function<void(Swipe)> onSwipe;
     std::vector<Occlusion> occlusions;

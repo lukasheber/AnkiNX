@@ -21,6 +21,13 @@ bool cardScripts();
 float tvCardScale();
 void setCardScripts(bool enabled);
 
+// Light or dark (Settings > About): "system" follows the console, else
+// "light" or "dark". applyTheme() sets it for borealis; the first call, at
+// start, remembers the console's own theme.
+std::string theme();
+void setTheme(const std::string& value);
+void applyTheme();
+
 // Any other setting (null when unset), e.g. "controls" (util/controls.cpp).
 anki::json get(const std::string& key);
 void set(const std::string& key, anki::json value);

@@ -280,9 +280,25 @@ void ReviewerActivity::onContentAvailable()
             openCardMenu();
     }));
 
-    cardView->setOnTap([this] {
+    // A tap on the question shows the answer. On the answer, Settings > Study
+    // "Tap the answer" (off by default) answers by where the tap lands: left
+    // third Again and right third Good, or four columns Again to Easy.
+    cardView->setOnTap([this](float across) {
         if (state == State::Question)
+        {
             showAnswer();
+            return;
+        }
+        anki::json zones = settings::get("tap_zones");
+        if (zones == "sides")
+        {
+            if (across < 1.0f / 3)
+                answer(1);
+            else if (across > 2.0f / 3)
+                answer(3);
+        }
+        else if (zones == "four")
+            answer(1 + std::clamp(static_cast<int>(across * 4), 0, 3));
     });
     // Settings > Study, "Swipe to answer" (off by default, as in AnkiDroid):
     // ← Again, ↓ Hard, → Good, ↑ Easy on the answer side.

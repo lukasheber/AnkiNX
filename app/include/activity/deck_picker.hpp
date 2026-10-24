@@ -88,4 +88,7 @@ class DeckPickerActivity : public brls::Activity
     // Back from the study screen: sync the reviews (closing from HOME can't).
     bool returningFromStudy = false;
     bool returningFromSettings = false;
+    // Woken from sleep: refresh and sync once this screen is showing.
+    bool syncAfterWake = false;
+    void wakeSync();
 };

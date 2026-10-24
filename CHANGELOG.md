@@ -21,6 +21,13 @@ build, then commit and tag (`git tag v0.2.0`).
 - Hindi and Thai as in print: letters join into conjuncts (स्त), vowel
   signs go where they belong (the ि of हिंदी before ह) and Thai marks stack
   over their letters, shaped with HarfBuzz.
+- Tap the answer (Settings › Study, off by default): in handheld mode, a tap
+  on the left third of the answer is Again and on the right third Good, or
+  the card is four columns from Again to Easy.
+- Theme (Settings › About): the console's, or always light or dark.
+- Waking the console with AnkiNX open: the card you were studying stays,
+  and the deck list refreshes its counts and syncs (automatic sync on) once
+  Wi-Fi is back, or as soon as you return to it.
 - A new README, with current screenshots.
 
 ## 0.5.0 (2026-10-24)

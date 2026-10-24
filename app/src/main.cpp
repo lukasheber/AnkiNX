@@ -67,6 +67,7 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
     brls::Application::createWindow("ankinx/title"_i18n);
+    settings::applyTheme(); // light or dark from Settings, else the console's
     // A slimmer top bar than borealis' 88 px: more room for cards and lists.
     brls::getStyle().addMetric("brls/applet_frame/header_height", 72.0f);
     // "+" quits from every screen through app::quit (sync first), registered

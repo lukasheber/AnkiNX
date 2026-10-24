@@ -1447,7 +1447,7 @@ void CardView::setMediaDir(const std::string& dir) { container->mediaDir = dir; 
 
 void CardView::setOnLink(std::function<void(const std::string&)> callback) { onLink = std::move(callback); }
 
-void CardView::setOnTap(std::function<void()> callback) { onTap = std::move(callback); }
+void CardView::setOnTap(std::function<void(float)> callback) { onTap = std::move(callback); }
 
 void CardView::setOnElementTap(std::function<bool(int, float, float)> callback) { onElementTap = std::move(callback); }
 
@@ -1893,7 +1893,10 @@ void CardView::tapAt(float docX, float docY)
             break;
         }
     if (onTap)
-        onTap();
+    {
+        float width = cssWidth();
+        onTap(width > 0 ? std::clamp(docX / width, 0.0f, 1.0f) : 0.5f);
+    }
 }
 
 void CardView::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style, brls::FrameContext*)

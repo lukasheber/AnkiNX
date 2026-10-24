@@ -7,6 +7,7 @@
 #include "activity/settings.hpp"
 #include "util/sync_flow.hpp"
 #include "util/update.hpp"
+#include "util/wake.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -216,7 +217,29 @@ void DeckPickerActivity::onContentAvailable()
         hintBox->addView(headerButton(brls::BUTTON_START, ICON_EXIT, [] { app::quit(); }));
     }
 
+    // Woken from sleep: the day may have turned and other devices may have
+    // synced. Refresh and pull their changes (if automatic sync is on) once
+    // Wi-Fi is back, or, while studying, back on this screen; the card being
+    // studied stays as it is. (This screen lives as long as the app.)
+    wake::event()->subscribe([this] {
+        syncAfterWake = true;
+        brls::delay(5000, [this] {
+            auto stack = brls::Application::getActivitiesStack();
+            if (!stack.empty() && stack.back() == this)
+                wakeSync();
+        });
+    });
+
     openCollection();
+}
+
+void DeckPickerActivity::wakeSync()
+{
+    if (!syncAfterWake || !ready)
+        return;
+    syncAfterWake = false;
+    refresh();
+    sync_flow::autoSync([this] { afterSync(); }, sync_flow::Mode::Automatic, true);
 }
 
 void DeckPickerActivity::onResume()
@@ -232,7 +255,13 @@ void DeckPickerActivity::onResume()
     }
     else
         refresh();
-    if (returningFromStudy)
+    if (syncAfterWake)
+    {
+        // Woken while elsewhere: this sync also uploads any reviews.
+        returningFromStudy = false;
+        wakeSync();
+    }
+    else if (returningFromStudy)
     {
         // Due counts have changed; upload the reviews if automatic sync is on.
         returningFromStudy = false;
