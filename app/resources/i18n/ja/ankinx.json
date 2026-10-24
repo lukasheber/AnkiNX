@@ -330,6 +330,8 @@
     "theme_system": "本体の設定と同じ",
     "theme_light": "ライト",
     "theme_dark": "ダーク",
+    "forest": "デッキの背景に森（プレビュー）",
+    "forest_off": "オフ",
     "version": "バージョン",
     "backend": "Ankiのバックエンド",
     "data_folder": "データフォルダー",

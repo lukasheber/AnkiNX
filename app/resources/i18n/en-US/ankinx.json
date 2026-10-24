@@ -330,6 +330,8 @@
     "theme_system": "Same as the console",
     "theme_light": "Light",
     "theme_dark": "Dark",
+    "forest": "Forest behind the decks (preview)",
+    "forest_off": "Off",
     "version": "Version",
     "backend": "Anki backend",
     "data_folder": "Data folder",

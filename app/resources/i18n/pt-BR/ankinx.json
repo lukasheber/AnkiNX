@@ -330,6 +330,8 @@
     "theme_system": "Igual ao do console",
     "theme_light": "Claro",
     "theme_dark": "Escuro",
+    "forest": "Floresta atrás dos baralhos (prévia)",
+    "forest_off": "Não",
     "version": "Versão",
     "backend": "Núcleo do Anki",
     "data_folder": "Pasta de dados",

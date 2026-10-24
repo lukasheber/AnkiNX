@@ -330,6 +330,8 @@
     "theme_system": "Igual que la consola",
     "theme_light": "Claro",
     "theme_dark": "Oscuro",
+    "forest": "Bosque detrás de los mazos (prueba)",
+    "forest_off": "No",
     "version": "Versión",
     "backend": "Núcleo de Anki",
     "data_folder": "Carpeta de datos",

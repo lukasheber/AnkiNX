@@ -490,6 +490,31 @@ brls::View* SettingsActivity::aboutTab()
                     });
     box->addView(themeCell);
 
+    // Memory Forest behind the deck list: off, or one of its sceneries
+    // (a sample forest for now; the names are Memory Forest's own).
+    static const char* SCENERIES[][2] = {
+        { "golden_lake", "Golden hour by the lake" }, { "misty_valley", "Misty mountain valley" },
+        { "starry_night", "Starry night" },           { "aurora", "Aurora night" },
+        { "lanterns", "Lanterns at night" },          { "frozen_market", "Frozen river market" },
+        { "pumpkin_patch", "Witch across the moon" }, { "bamboo", "Rainy bamboo grove" },
+        { "synthwave", "Synthwave" },
+    };
+    constexpr int SCENERY_COUNT = sizeof(SCENERIES) / sizeof(SCENERIES[0]);
+    std::vector<std::string> sceneries = { "ankinx/settings/forest_off"_i18n };
+    int forestIndex                    = 0;
+    for (int i = 0; i < SCENERY_COUNT; i++)
+    {
+        sceneries.push_back(SCENERIES[i][1]);
+        if (settings::forest() == SCENERIES[i][0])
+            forestIndex = i + 1;
+    }
+    auto* forestCell = new brls::SelectorCell();
+    forestCell->init("ankinx/settings/forest"_i18n, sceneries, forestIndex, [](int index) {
+        if (index >= 0 && index <= SCENERY_COUNT)
+            settings::setForest(index ? SCENERIES[index - 1][0] : "");
+    });
+    box->addView(forestCell);
+
     box->addView(detail("ankinx/settings/version"_i18n, ANKINX_VERSION));
 
     // Updates from GitHub releases: what the last check found; A checks now

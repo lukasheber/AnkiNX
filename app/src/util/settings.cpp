@@ -73,6 +73,18 @@ void applyTheme()
     brls::Application::getPlatform()->setThemeVariant(variant);
 }
 
+std::string forest()
+{
+    anki::json value = values().value("forest", anki::json());
+    return value.is_string() ? value.get<std::string>() : "";
+}
+
+void setForest(const std::string& scenery)
+{
+    values()["forest"] = scenery;
+    save();
+}
+
 anki::json get(const std::string& key) { return values().contains(key) ? values()[key] : anki::json(); }
 
 void set(const std::string& key, anki::json value)

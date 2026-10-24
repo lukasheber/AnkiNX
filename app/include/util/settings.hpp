@@ -28,6 +28,11 @@ std::string theme();
 void setTheme(const std::string& value);
 void applyTheme();
 
+// Memory Forest behind the deck list (Settings > About): a sample scenery's
+// key (resources/forest/samples), or "" for none, the default.
+std::string forest();
+void setForest(const std::string& scenery);
+
 // Any other setting (null when unset), e.g. "controls" (util/controls.cpp).
 anki::json get(const std::string& key);
 void set(const std::string& key, anki::json value);

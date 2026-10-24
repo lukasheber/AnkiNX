@@ -5,9 +5,11 @@
 #include "anki/api.hpp"
 #include "app.hpp"
 #include "activity/settings.hpp"
+#include "util/settings.hpp"
 #include "util/sync_flow.hpp"
 #include "util/update.hpp"
 #include "util/wake.hpp"
+#include "view/forest_view.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -193,6 +195,11 @@ void DeckPickerActivity::onContentAvailable()
     studiedToday->setTextColor(mutedColor());
     streakLabel->setTextColor(mutedColor());
     streakIcon->setText(ICON_STREAK);
+    // The forest behind it all, if one is chosen (Settings > About): first,
+    // so the header, the list and the footer draw over it.
+    forest = new ForestView();
+    frame->addView(forest, 0);
+    forest->show(settings::forest());
     fitTable();
     // This is the root screen: B must not quit by accident (+ quits).
     frame->registerAction("", brls::BUTTON_B, [](brls::View*) { return true; }, true);
@@ -251,6 +258,7 @@ void DeckPickerActivity::onResume()
     {
         // The account may have changed there.
         returningFromSettings = false;
+        forest->show(settings::forest());
         afterSync();
     }
     else

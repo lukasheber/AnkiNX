@@ -18,6 +18,8 @@ DEPS=(
     "quickjs https://github.com/quickjs-ng/quickjs.git v0.17.0"
     # Text shaping for scripts NanoVG can't draw letter by letter (app/src/view/shaping.cpp)
     "harfbuzz https://github.com/harfbuzz/harfbuzz.git 12.3.2"
+    # The forest behind the deck list (app/forest): Memory Forest's scene scripts
+    "memory-forest https://github.com/baraklevy20/memory-forest.git main"
 )
 
 pinned() { [[ -f "$PINS" ]] && awk -v n="$1" '$1 == n {print $2}' "$PINS"; }

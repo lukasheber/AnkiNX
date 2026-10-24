@@ -13,7 +13,7 @@ cp "$ANKISWITCH_SRC/VERSION" "$ANKISWITCH_WORK/VERSION"
 # be older than the objects of a build that synced earlier and was still
 # compiling, and the edit was silently skipped. Everything else (third-party
 # trees, assets) is compared by size and time, which is much faster.
-APP_OWN=(src include js/src tests patches)
+APP_OWN=(src include js/src forest tests patches)
 SWITCH_OWN=(anki_switch_core/src anki_switch_core/examples anki_switch_core/tests)
 own() { # root, folders...
     local root=$1 dir

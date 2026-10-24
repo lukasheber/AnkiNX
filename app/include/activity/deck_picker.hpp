@@ -80,6 +80,8 @@ class DeckPickerActivity : public brls::Activity
     float secsPerCard = 0;
     // Dot on the header's sync button: changes not yet on AnkiWeb.
     brls::Box* syncDot = nullptr;
+    // Memory Forest behind the screen (view/forest_view.hpp).
+    class ForestView* forest = nullptr;
     void updateSyncDot(bool pending);
 
     std::vector<DeckEntry> entries;
