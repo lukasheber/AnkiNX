@@ -183,7 +183,21 @@ diff -ruN a/src/sys/unix/selector/poll.rs b/src/sys/unix/selector/poll.rs
      pub fn wake(&self, token: Token) -> io::Result<()> {
          self.state.wake(token)
      }
-@@ -457,16 +457,16 @@
+@@ -216,6 +216,13 @@
+                 timeout = Some(Duration::from_secs(0))
+             }
+ 
++            // The Switch's socket waker replaces its socket after the console
++            // slept (waker/socket.rs): poll its current descriptor.
++            #[cfg(libnx)]
++            if let Some(fd) = self.notify_waker.fd() {
++                fds.poll_fds[0].0.fd = fd;
++            }
++
+             // Perform the poll.
+             trace!("Polling on {:?}", &fds);
+             let num_events = poll(&mut fds.poll_fds, timeout)?;
+@@ -457,16 +464,16 @@
          })
      }
  
@@ -203,7 +217,7 @@ diff -ruN a/src/sys/unix/selector/poll.rs b/src/sys/unix/selector/poll.rs
  type PollFlagInt = libc::c_int;
  
  #[cfg(target_os = "linux")]
-@@ -647,14 +647,14 @@
+@@ -647,14 +654,14 @@
      }
  }
  
@@ -243,10 +257,11 @@ diff -ruN a/src/sys/unix/tcp.rs b/src/sys/unix/tcp.rs
 diff -ruN a/src/sys/unix/waker/socket.rs b/src/sys/unix/waker/socket.rs
 --- a/src/sys/unix/waker/socket.rs
 +++ b/src/sys/unix/waker/socket.rs
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,114 @@
 +use std::io;
 +use std::net::{Ipv4Addr, UdpSocket};
 +use std::os::fd::{AsRawFd, RawFd};
++use std::sync::{Mutex, MutexGuard};
 +
 +use crate::sys::Selector;
 +use crate::{Interest, Token};
@@ -257,33 +272,56 @@ diff -ruN a/src/sys/unix/waker/socket.rs b/src/sys/unix/waker/socket.rs
 +/// `eventfd(2)`, but whose BSD socket service supports `poll(2)` on sockets.
 +/// Writing a datagram makes the socket readable, which interrupts a `poll`
 +/// blocked on another thread, just like the pipe-based waker.
++///
++/// Horizon closes sockets while the console sleeps: afterwards sending fails
++/// (EPIPE), and tokio treats a failed wake-up as fatal. A dead socket is
++/// replaced by a new one, whose descriptor the `poll(2)` selector picks up
++/// before each poll (see `fd`).
 +#[derive(Debug)]
 +pub(crate) struct Waker {
-+    socket: UdpSocket,
++    socket: Mutex<UdpSocket>,
++}
++
++fn loopback() -> io::Result<UdpSocket> {
++    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))?;
++    socket.connect(socket.local_addr()?)?;
++    socket.set_nonblocking(true)?;
++    Ok(socket)
 +}
 +
 +impl Waker {
 +    #[allow(dead_code)] // Not used by the `poll(2)` implementation.
 +    pub(crate) fn new(selector: &Selector, token: Token) -> io::Result<Waker> {
 +        let waker = Waker::new_unregistered()?;
-+        selector.register(waker.socket.as_raw_fd(), token, Interest::READABLE)?;
++        selector.register(waker.as_raw_fd(), token, Interest::READABLE)?;
 +        Ok(waker)
 +    }
 +
 +    pub(crate) fn new_unregistered() -> io::Result<Waker> {
-+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))?;
-+        socket.connect(socket.local_addr()?)?;
-+        socket.set_nonblocking(true)?;
-+        Ok(Waker { socket })
++        Ok(Waker { socket: Mutex::new(loopback()?) })
++    }
++
++    fn socket(&self) -> MutexGuard<'_, UdpSocket> {
++        self.socket.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 +    }
 +
 +    pub(crate) fn wake(&self) -> io::Result<()> {
-+        match self.socket.send(&[1]) {
-+            Ok(_) => Ok(()),
-+            // Receive buffer full: plenty of wake-ups are already pending.
-+            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => Ok(()),
-+            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => self.wake(),
-+            Err(err) => Err(err),
++        let mut socket = self.socket();
++        loop {
++            match socket.send(&[1]) {
++                Ok(_) => return Ok(()),
++                // Receive buffer full: plenty of wake-ups are already pending.
++                Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => return Ok(()),
++                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
++                // The socket died (console sleep): replace it, then wake.
++                Err(_) => {
++                    *socket = loopback()?;
++                    return match socket.send(&[1]) {
++                        Err(err) if err.kind() != io::ErrorKind::WouldBlock => Err(err),
++                        _ => Ok(()),
++                    };
++                }
++            }
 +        }
 +    }
 +
@@ -292,9 +330,11 @@ diff -ruN a/src/sys/unix/waker/socket.rs b/src/sys/unix/waker/socket.rs
 +        self.empty();
 +    }
 +
++    /// The current socket's descriptor (it changes when a dead socket is
++    /// replaced).
 +    #[allow(dead_code)] // Only used by the `poll(2)` implementation.
 +    pub(crate) fn fd(&self) -> Option<RawFd> {
-+        Some(self.socket.as_raw_fd())
++        Some(self.socket().as_raw_fd())
 +    }
 +
 +    /// Only ever `true` for the `single_threaded.rs` implementation.
@@ -303,12 +343,25 @@ diff -ruN a/src/sys/unix/waker/socket.rs b/src/sys/unix/waker/socket.rs
 +        false
 +    }
 +
-+    /// Drain all pending wake-up datagrams. Ignores errors.
++    /// Drain all pending wake-up datagrams. A socket that errors (dead after
++    /// the console slept, so `poll` keeps reporting it) is replaced, with a
++    /// wake-up pending so the poll loop comes round to the new descriptor.
 +    fn empty(&self) {
++        let mut socket = self.socket();
 +        let mut buf = [0; 64];
-+        while let Ok(n) = self.socket.recv(&mut buf) {
-+            if n == 0 {
-+                break;
++        loop {
++            match socket.recv(&mut buf) {
++                Ok(0) => return,
++                Ok(_) => continue,
++                Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => return,
++                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
++                Err(_) => {
++                    if let Ok(fresh) = loopback() {
++                        let _ = fresh.send(&[1]);
++                        *socket = fresh;
++                    }
++                    return;
++                }
 +            }
 +        }
 +    }
@@ -316,6 +369,6 @@ diff -ruN a/src/sys/unix/waker/socket.rs b/src/sys/unix/waker/socket.rs
 +
 +impl AsRawFd for Waker {
 +    fn as_raw_fd(&self) -> RawFd {
-+        self.socket.as_raw_fd()
++        self.socket().as_raw_fd()
 +    }
 +}
