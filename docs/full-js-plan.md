@@ -1,4 +1,7 @@
-# Full JavaScript in cards (experimental branch `experimental/full-js`)
+# Full JavaScript in cards
+
+Developed on the `experimental/full-js` branch; merged into `main` after
+testing on the console (October 2026).
 
 ## Why
 
@@ -9,7 +12,7 @@ uses something else needs another hand-written piece. That is not parity with
 Anki desktop or AnkiDroid, which give templates a real browser and the real
 jQuery, and it grows into a maintenance burden.
 
-This branch replaces the hand-written DOM with maintained, standards-based
+The work replaced the hand-written DOM with maintained, standards-based
 JavaScript running in the same engine, and keeps the port-specific code
 to the parts a browser does but a DOM library doesn't: event dispatch per the
 DOM spec, form controls, script execution, layout queries and the reviewer

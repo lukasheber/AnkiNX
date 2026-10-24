@@ -29,6 +29,9 @@ code#typeans { white-space: pre-wrap; }
 button { display: inline-block; border: 1px solid #999999; border-radius: 6px; padding: 4px 12px;
          margin: 4px; background-color: #e9e9e9; color: #222222; }
 rt { font-size: 0.5em; }
+mark { background-color: #ffff00; color: #000000; }
+small { font-size: smaller; }
+big { font-size: larger; }
 input[type=checkbox], input[type=radio] { display: inline-block; width: 18px; height: 18px; margin: 0 6px 0 2px;
                                           vertical-align: middle; background-color: #c4c4c4; border-radius: 3px; }
 input[type=radio] { border-radius: 9px; }

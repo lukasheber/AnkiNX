@@ -14,6 +14,7 @@
 #include <litehtml/render_item.h>
 #include <lunasvg.h>
 #include <map>
+#include <set>
 #include <strings.h>
 #include <sys/stat.h>
 #include <webp/decode.h>
@@ -517,17 +518,69 @@ class NvgContainer : public document_container
             int id = nvgCreateFontMem(vg, name.c_str(), copy, (int)data.size(), 1); // NanoVG frees `copy`
             if (id < 0)
                 continue;
-            for (const std::string& fallback :
-                 { brls::FONT_REGULAR, std::string("default"), brls::FONT_CHINESE_SIMPLIFIED,
-                   brls::FONT_CHINESE_SIMPLIFIED_EXT, brls::FONT_CHINESE_TRADITIONAL, brls::FONT_KOREAN_REGULAR,
-                   brls::FONT_EMOJI, brls::FONT_SWITCH_ICONS, brls::FONT_MATERIAL_ICONS })
-                if (int f = brls::Application::getFont(fallback); f >= 0)
-                    nvgAddFallbackFontId(vg, id, f);
-            for (int f : bundledFallbacks())
-                nvgAddFallbackFontId(vg, id, f);
+            addFallbacks(id);
             return face.id = id;
         }
         return -1;
+    }
+
+    // Glyphs a card font lacks come from the system fonts, then the bundled ones.
+    void addFallbacks(int id)
+    {
+        for (const std::string& fallback :
+             { brls::FONT_REGULAR, std::string("default"), brls::FONT_CHINESE_SIMPLIFIED,
+               brls::FONT_CHINESE_SIMPLIFIED_EXT, brls::FONT_CHINESE_TRADITIONAL, brls::FONT_KOREAN_REGULAR,
+               brls::FONT_EMOJI, brls::FONT_SWITCH_ICONS, brls::FONT_MATERIAL_ICONS })
+            if (int f = brls::Application::getFont(fallback); f >= 0)
+                nvgAddFallbackFontId(vg, id, f);
+        for (int f : bundledFallbacks())
+            nvgAddFallbackFontId(vg, id, f);
+    }
+
+    // The bundled font for a font-family list's first generic family, or a
+    // common font name standing for one: DejaVu Sans Mono for monospace,
+    // DejaVu Serif for serif; -1 for sans-serif (the system font).
+    int genericFont(const std::string& families)
+    {
+        static const std::set<std::string> MONO = { "monospace", "courier", "courier new", "consolas", "menlo",
+                                                    "monaco", "lucida console", "dejavu sans mono", "source code pro" };
+        static const std::set<std::string> SERIF = { "serif", "times", "times new roman", "georgia", "garamond",
+                                                     "cambria", "palatino", "book antiqua", "dejavu serif" };
+        static const std::set<std::string> SANS = { "sans-serif", "system-ui", "arial", "helvetica", "verdana",
+                                                    "tahoma", "segoe ui", "roboto", "dejavu sans" };
+        size_t start = 0;
+        while (start <= families.size())
+        {
+            size_t comma     = families.find(',', start);
+            std::string name = lowerAscii(trimQuotes(families.substr(start, comma - start)));
+            start            = comma == std::string::npos ? families.size() + 1 : comma + 1;
+            if (MONO.count(name))
+                return bundledFont("DejaVuSansMono.ttf");
+            if (SERIF.count(name))
+                return bundledFont("DejaVuSerif.ttf");
+            if (SANS.count(name))
+                return -1;
+        }
+        return -1;
+    }
+
+    int bundledFont(const char* file)
+    {
+        std::string name = std::string("ankinx-") + file;
+        if (int id = nvgFindFont(vg, name.c_str()); id >= 0)
+            return id;
+        std::string data = readFile(std::string(BRLS_ASSET("card_fonts/")) + file);
+        auto* copy       = isFontFile(data) ? (unsigned char*)std::malloc(data.size()) : nullptr;
+        if (!copy)
+        {
+            brls::Logger::error("card fonts: missing font {}", file);
+            return -1;
+        }
+        std::memcpy(copy, data.data(), data.size());
+        int id = nvgCreateFontMem(vg, name.c_str(), copy, (int)data.size(), 1); // NanoVG frees `copy`
+        if (id >= 0)
+            addFallbacks(id);
+        return id;
     }
 
     // The @font-face font for a CSS font-family list, closest in weight and
@@ -617,6 +670,10 @@ class NvgContainer : public document_container
             if (face->italic)
                 f->italic = false;
         }
+        else if (int generic = genericFont(descr.family); generic >= 0)
+        {
+            f->face = generic;
+        }
 
         float ascender = 0, descender = 0, lineHeight = 0, bounds[4] = {};
         applyFont(f);
@@ -631,6 +688,9 @@ class NvgContainer : public document_container
         f->metrics.height    = lineHeight;
         f->metrics.x_height  = xHeight > 0 ? xHeight : f->size * 0.5f;
         f->metrics.ch_width  = zeroWidth;
+        // vertical-align: super/sub (<sup>, <sub>), as browsers place them.
+        f->metrics.super_shift = f->size / 3;
+        f->metrics.sub_shift   = f->size / 5;
         if (fm)
             *fm = f->metrics;
         return (uint_ptr)f;
@@ -696,7 +756,9 @@ class NvgContainer : public document_container
     }
 
     pixel_t pt_to_px(float pt) const override { return pt * 96.0f / 72.0f; }
-    pixel_t get_default_font_size() const override { return 20; }
+    // Browsers' "medium": note types set their own size (Anki's are 20px), and
+    // small/large and friends are relative to this, as in Anki.
+    pixel_t get_default_font_size() const override { return 16; }
     const char* get_default_font_name() const override { return "sans-serif"; }
 
     void draw_list_marker(uint_ptr hdc, const list_marker& marker) override
@@ -1249,6 +1311,32 @@ std::string cssPixels(float value)
     return text;
 }
 
+// Night mode makes the card's text light. Where the card paints a light
+// background of its own (a highlight, a code block), that text would be light
+// on light (as it is in Anki and AnkiDroid): text there still in night mode's
+// colour is made dark. Colours the card sets itself are kept.
+void darkenTextOnLightBackgrounds(const document::ptr& doc)
+{
+    element::ptr root  = doc ? doc->root() : nullptr;
+    element::ptr night = root ? root->select_one(".nightMode") : nullptr;
+    if (!night)
+        return;
+    auto luminance = [](web_color c) { return (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255.0; };
+    web_color nightText = night->css().get_color();
+    if (luminance(nightText) < 0.5)
+        return;
+    std::function<void(const element::ptr&, bool)> visit = [&](const element::ptr& el, bool onLight) {
+        web_color bg = el->css().get_bg().m_color;
+        if (bg.alpha >= 128)
+            onLight = luminance(bg) > 0.6;
+        if (onLight && el->css().get_color() == nightText)
+            el->css_w().set_color(web_color(32, 32, 32));
+        for (const auto& child : el->children())
+            visit(child, onLight);
+    };
+    visit(night, false);
+}
+
 } // namespace
 
 CardScript::Layout CardView::measure(const std::string& page)
@@ -1262,6 +1350,7 @@ CardScript::Layout CardView::measure(const std::string& page)
     document::ptr doc    = document::createFromString(page, container.get());
     if (!doc)
         return boxes;
+    darkenTextOnLightBackgrounds(doc);
     doc->render(cssWidth());
 
     std::function<void(const element::ptr&)> visit = [&](const element::ptr& el) {
@@ -1314,6 +1403,7 @@ void CardView::layout(float width)
     container->fontFaces = parseFontFaces(html);
     layoutWidth = width / scale();
     document    = document::createFromString(html, container.get());
+    darkenTextOnLightBackgrounds(document);
     if (document)
         document->render(layoutWidth);
     needsLayout = false;

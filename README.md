@@ -110,7 +110,7 @@ Third-party code and assets, under their own licences:
 | … htmlparser2, dom-serializer, cssom, html-escaper, jQuery | MIT |
 | … css-select, css-what, domhandler, domutils, domelementtype, entities, nth-check | BSD-2-Clause |
 | lunasvg (SVG) | MIT |
-| DejaVu Sans font (`app/resources/card_fonts`; right-to-left text) | Bitstream Vera licence; DejaVu changes public domain |
+| DejaVu Sans, Sans Mono and Serif fonts (`app/resources/card_fonts`; right-to-left text, monospace and serif card text) | Bitstream Vera licence; DejaVu changes public domain |
 | Noto Sans Thai and Noto Sans Devanagari fonts (`app/resources/card_fonts`; licence in `LICENSE-Noto.txt`) | SIL Open Font License 1.1 |
 | Material Icons font (`app/resources/material`) | Apache-2.0 |
 | Patched crates (`switch/patches/`): libc, getrandom | MIT OR Apache-2.0 |
