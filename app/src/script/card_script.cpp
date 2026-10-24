@@ -509,6 +509,16 @@ bool CardScript::tap(int serial, float x, float y)
     return handled;
 }
 
+void CardScript::typed(int serial, const std::string& text)
+{
+    Native& s = *native;
+    begin(s);
+    JSValue r = JS_UNDEFINED;
+    callEntry(s, "typed", { JS_NewInt32(s.ctx, serial), JS_NewStringLen(s.ctx, text.data(), text.size()) }, &r);
+    JS_FreeValue(s.ctx, r);
+    settle();
+}
+
 bool CardScript::key(const std::string& key, const std::string& code, int keyCode)
 {
     Native& s     = *native;

@@ -28,7 +28,8 @@ bash app/test_scripts.sh  # host tests: app/tests/script_test.cpp
 | `forms.js` | Control state (checked, values, selected), `:checked`, activation behaviour (checkbox, radio, label, submit, `<summary>`, links), focus |
 | `scripts.js` | `<script>` runs when inserted (inline at once, `src` from the media folder), never from `innerHTML`; `document.currentScript`, `document.write()` |
 | `net.js` | `fetch`, `XMLHttpRequest`, `Blob`, `FileReader`, `FormData`: media files only, no network |
-| `serialize.js` | The body as HTML for litehtml, with node serials and control state |
+| `canvas.js` | `<canvas>` with a 2D context that records its drawing as SVG (paths, gradients, text, images, transforms, `clearRect`); images' `naturalWidth`/`naturalHeight` from their files |
+| `serialize.js` | The body as HTML for litehtml, with node serials and control state; a canvas becomes an `<img>` of its SVG |
 | `layout.js` | `getComputedStyle`, `offset*`, `client*`, `getBoundingClientRect` from litehtml's layout (`CardView::measure`) |
 | `jquery.js` | jQuery 3.7.1 (Anki's version) as `$`/`jQuery`, set up on first use |
 | `reviewer.js` | Anki's `ts/reviewer/index.ts`: `_showQuestion`, `_showAnswer`, hooks, `pycmd`; the app's entry points (`__ankinx`) |
@@ -55,6 +56,9 @@ tables (`forms.js`). Both resolve to the same modules linkedom itself uses.
 
 ## Not covered
 
-`<canvas>`, CSS transitions and animations (litehtml draws the final state),
-typing into template text fields, network requests, MathJax in JavaScript
-(maths is typeset by the app). See `docs/full-js-plan.md`.
+Reading canvas pixels back (`getImageData` gives a blank image), canvas
+patterns, shadows, compositing and `clip()`; CSS transitions and animations
+(litehtml draws the final state); network requests; MathJax in JavaScript
+(maths is typeset by the app). Typing into template text fields goes through
+the app: a tap that focuses one sends a `keyboard:` command, and the app
+calls `typed()` with the text. See `docs/full-js-plan.md`.

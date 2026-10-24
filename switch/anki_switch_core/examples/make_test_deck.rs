@@ -629,7 +629,28 @@ fn css(d: &mut Deck) {
              content, so Card 2's is a short one beside its heading. Card 1: the mono card font (0 and O \
              differ), three flex boxes in a row, a 3 × 2 grid, the gradient, a soft shadow under the box, a \
              word tilted up to the right, purple bold text, a red badge \"3\" at the top right of \"Badge\", \
-             and the day or night line matching the theme. Known gap: the grid shows as one column.",
+             and the day or night line matching the theme.",
+        ),
+    ]);
+    let basic = d.stock("Basic");
+    let cell = "background:#c8e6c9;color:#000;padding:6px";
+    d.add(DECK, &basic, &[
+        &format!(
+            "Grid layouts\
+             <div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:8px 0\">\
+             <div style=\"{cell}\">猫 cat</div><div style=\"{cell}\">犬 dog</div><div style=\"{cell}\">鳥 bird</div>\
+             <div style=\"{cell}\">魚 fish</div><div style=\"{cell}\">馬 horse</div></div>\
+             <div style=\"display:grid;grid-template-columns:120px 1fr 2fr;grid-gap:6px 10px;margin:8px 0\">\
+             <div style=\"{cell}\">120px</div><div style=\"{cell}\">1fr</div><div style=\"{cell}\">2fr</div>\
+             <div style=\"{cell};grid-column:span 2\">spans two columns</div><div style=\"{cell}\">last</div>\
+             <div style=\"{cell};grid-column:1 / -1\">the whole row (1 / -1)</div></div>\
+             <div style=\"display:grid;grid-template-columns:1fr 1fr;place-items:center;height:auto;margin:8px 0\">\
+             <div style=\"{cell}\">centred</div><div style=\"{cell};padding:20px\">tall, centred</div></div>"
+        ),
+        &check(
+            "first grid: as many 160px+ columns as fit, filling the width (five animals, wrapping); second: \
+             columns 120px, then 1 : 2 of the rest, a cell spanning two columns, then one spanning the whole row; \
+             third: two small boxes centred in their halves, the short one centred against the tall one.",
         ),
     ]);
 }
@@ -677,6 +698,17 @@ fn javascript(d: &mut Deck) {
         &check("tapping the box or its label toggles it and the word next to it."),
     ]);
     d.add(DECK, &basic, &[
+        "Template text field: <input id=\"guess\" placeholder=\"Capital of France?\"> \
+         <button onclick=\"check()\">Check</button> <b id=\"res\"></b><script>function check() { \
+         var v = document.getElementById('guess').value.trim().toLowerCase(); \
+         document.getElementById('res').textContent = v === 'paris' ? '✓ right' : '✗ try again'; } \
+         document.getElementById('guess').addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); \
+         });</script>",
+        &check("tapping the box (or D-pad to it, then A) opens the keyboard, showing \"Capital of France?\"; after \
+                OK the box shows what you typed and \"✓ right\" or \"✗ try again\" appears (Enter checks it); the \
+                Check button checks it again."),
+    ]);
+    d.add(DECK, &basic, &[
         "Seen this session: <b id=\"seen\"></b><script>var k = 'ankinx-test-seen'; \
          var n = Number(localStorage.getItem(k) || 0) + 1; localStorage.setItem(k, n); \
          document.getElementById('seen').textContent = n + ' time(s)';</script>",
@@ -690,11 +722,16 @@ fn javascript(d: &mut Deck) {
         &check("the size of the yellow box in pixels, not 0 × 0 (scripts can measure the card)."),
     ]);
     d.add(DECK, &basic, &[
-        "Canvas: <canvas id=\"cv\" width=\"120\" height=\"60\"></canvas> <span id=\"cvs\"></span><script>var c = \
+        "Canvas: <canvas id=\"cv\" width=\"240\" height=\"100\"></canvas> <span id=\"cvs\"></span><script>var c = \
          document.getElementById('cv'); var g = c.getContext && c.getContext('2d'); if (g) { g.fillStyle = \
-         '#43a047'; g.fillRect(0, 0, 120, 60); document.getElementById('cvs').textContent = '(drawn)'; } else \
+         '#43a047'; g.fillRect(0, 20, 120, 60); g.fillStyle = '#fff'; g.font = 'bold 18px sans-serif'; \
+         g.textAlign = 'center'; g.fillText('AnkiNX', 60, 56); var r = g.createRadialGradient(170, 40, 5, 180, 50, 40); \
+         r.addColorStop(0, '#ffeb3b'); r.addColorStop(1, '#ff9800'); g.beginPath(); g.arc(180, 50, 38, 0, Math.PI * 2); \
+         g.fillStyle = r; g.fill(); g.lineWidth = 4; g.strokeStyle = '#d32f2f'; g.stroke(); \
+         document.getElementById('cvs').textContent = '(drawn)'; } else \
          { document.getElementById('cvs').textContent = '(no canvas here)'; }</script>",
-        &check("a green rectangle in Anki; on the console \"(no canvas here)\" (canvas is a known gap)."),
+        &check("a green rectangle with \"AnkiNX\" in white bold, and a circle shaded from yellow to orange with a red \
+                outline; then \"(drawn)\"."),
     ]);
     d.add(DECK, &basic, &[
         "Show the answer from a script: <button onclick=\"pycmd('ans')\">Reveal</button>",

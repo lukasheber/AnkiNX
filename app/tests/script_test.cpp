@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -560,6 +561,117 @@ void timing()
 
 } // namespace
 
+// The SVG a serialised <canvas> (an <img>) shows, decoded.
+std::string canvasSvg(const std::string& html, const std::string& id)
+{
+    size_t at = html.find("<img id=\"" + id + "\"");
+    size_t src = at == std::string::npos ? at : html.find("src=\"data:image/svg+xml,", at);
+    if (src == std::string::npos)
+        return "";
+    src += std::strlen("src=\"data:image/svg+xml,");
+    std::string encoded = html.substr(src, html.find('"', src) - src), svg;
+    for (size_t i = 0; i < encoded.size(); i++)
+    {
+        if (encoded[i] == '%' && i + 2 < encoded.size())
+        {
+            svg += (char)std::stoi(encoded.substr(i + 1, 2), nullptr, 16);
+            i += 2;
+        }
+        else
+            svg += encoded[i];
+    }
+    return svg;
+}
+
+void typing()
+{
+    CardScript s(runtime, media);
+    std::string html = show(s, "<form id=\"f\" onsubmit=\"event.preventDefault(); log.push('submit')\">"
+        "<input id=\"a\" placeholder=\"Capital?\" maxlength=\"20\"><button>Check</button></form>"
+        "<textarea id=\"t\"></textarea><input id=\"c\" type=\"checkbox\"><div id=\"out\"></div><script>"
+        "var log = []; var a = document.getElementById('a');"
+        "['input', 'change', 'keydown', 'keyup'].forEach(function (t) { a.addEventListener(t, function (e) { log.push(t + (e.key ? ':' + e.key : '')); }); });"
+        "document.getElementById('t').addEventListener('change', function () { log.push('t:' + this.value); });"
+        "</script>");
+    s.takeCommands();
+    bool handled = s.tap(serialOf(html, "id=\"a\""), 1, 1);
+    std::string commands;
+    for (const auto& c : s.takeCommands())
+        commands += c + ";";
+    check(handled && has(commands, "keyboard:{\"serial\":" + std::to_string(serialOf(html, "id=\"a\""))) &&
+              has(commands, "\"value\":\"\",\"multiline\":false,\"prompt\":\"Capital?\",\"maxLength\":20}"),
+          "a tap on a template's text field asks for the keyboard", commands);
+    s.typed(serialOf(html, "id=\"a\""), "Paris");
+    html = s.html();
+    s.eval("document.getElementById('out').textContent = log.join(' ')");
+    check(has(s.html(), "id=\"a\" placeholder=\"Capital?\" maxlength=\"20\" value=\"Paris\"") &&
+              innerOf(s.html(), "id=\"out\"") == "input change keydown:Enter keyup:Enter submit",
+          "typed text fills the field: input, change, Enter, form submitted", s.html());
+    s.tap(serialOf(html, "id=\"t\""), 1, 1);
+    commands.clear();
+    for (const auto& c : s.takeCommands())
+        commands += c + ";";
+    s.typed(serialOf(html, "id=\"t\""), "two\nlines");
+    s.eval("document.getElementById('out').textContent = log.join(' ')");
+    check(has(commands, "\"multiline\":true") && has(innerOf(s.html(), "id=\"out\""), "t:two\nlines") &&
+              has(s.html(), ">two\nlines</textarea>"),
+          "textareas take several lines, without Enter", s.html());
+    s.tap(serialOf(html, "id=\"c\""), 1, 1);
+    commands.clear();
+    for (const auto& c : s.takeCommands())
+        commands += c + ";";
+    check(!has(commands, "keyboard:"), "checkboxes don't ask for the keyboard", commands);
+}
+
+void canvas()
+{
+    CardScript s(runtime, media);
+    std::string html = show(s, "<canvas id=\"cv\" width=\"120\" height=\"60\"></canvas><div id=\"out\"></div><script>"
+        "var c = document.getElementById('cv'), g = c.getContext('2d');"
+        "g.fillStyle = 'rgba(67, 160, 71, 0.5)'; g.fillRect(0, 0, 120, 60);"
+        "g.beginPath(); g.arc(60, 30, 20, 0, Math.PI * 2); g.strokeStyle = '#d32f2f'; g.lineWidth = 3; g.stroke();"
+        "g.font = 'bold 16px Arial'; g.textAlign = 'center'; g.fillText('Hi <3', 60, 35);"
+        "document.getElementById('out').textContent = c.width + 'x' + c.height + ' ' + (c.getContext('webgl') === null) +"
+        " ' ' + (c.getContext('2d') === g);</script>");
+    std::string svg = canvasSvg(html, "cv");
+    check(has(html, "width=\"120\" height=\"60\" src=\"data:image/svg+xml,") && innerOf(html, "id=\"out\"") == "120x60 true true",
+          "a canvas is serialised as an image of its drawing, its size from the attributes", html);
+    check(has(svg, "<path d=\"M0 0L120 0L120 60L0 60Z\" fill=\"rgb(67,160,71)\" fill-opacity=\"0.5\"/>"),
+          "fillRect with an rgba() colour", svg);
+    check(has(svg, "fill=\"none\" stroke=\"#d32f2f\" stroke-width=\"3\"") && has(svg, "M80 30C"), "arc and stroke", svg);
+    check(has(svg, "font-family=\"sans-serif\" font-size=\"16\" font-weight=\"bold\" text-anchor=\"middle\"") &&
+              has(svg, ">Hi &lt;3</text>"),
+          "fillText with font and alignment", svg);
+
+    s.eval("g.save(); g.translate(10, 20); g.scale(2, 2); g.fillStyle = 'blue'; g.fillRect(0, 0, 5, 5); g.restore();"
+           "g.fillRect(1, 1, 1, 1);");
+    svg = canvasSvg(s.html(), "cv");
+    check(has(svg, "<path d=\"M10 20L20 20L20 30L10 30Z\" fill=\"blue\"/>") && has(svg, "M1 1L2 1L2 2L1 2Z\" fill=\"rgb(67,160,71)\""),
+          "transforms, and save/restore of styles", svg);
+
+    s.eval("g.clearRect(0, 0, 60, 60);");
+    svg = canvasSvg(s.html(), "cv");
+    check(has(svg, "<mask id=") && has(svg, "<g mask=\"url(#"), "clearRect of a part erases through a mask", svg);
+    s.eval("g.clearRect(0, 0, c.width, c.height);");
+    svg = canvasSvg(s.html(), "cv");
+    check(!has(svg, "<path") && !has(svg, "<g"), "clearRect of the whole canvas empties it", svg);
+
+    s.eval("var img = document.createElement('img'); img.src = '_dot.png'; g.drawImage(img, 10, 10);"
+           "var grad = g.createLinearGradient(0, 0, 100, 0); grad.addColorStop(0, 'red'); grad.addColorStop(1, 'hsl(240, 100%, 50%)');"
+           "g.fillStyle = grad; g.fillRect(0, 0, 10, 10); document.getElementById('out').textContent = img.naturalWidth + 'x' + img.naturalHeight;"
+           "c.width = 200;");
+    html = s.html();
+    svg  = canvasSvg(html, "cv");
+    check(innerOf(html, "id=\"out\"") == "7x5", "images report their natural size", html);
+    check(has(html, "width=\"200\" height=\"60\"") && !has(svg, "<path"), "setting the width resizes and clears the canvas", svg);
+    s.eval("g.drawImage(img, 10, 10); g.fillStyle = grad; g.fillRect(0, 0, 10, 10);");
+    svg = canvasSvg(s.html(), "cv");
+    check(has(svg, "<image width=\"7\" height=\"5\"") && has(svg, "href=\"data:image/png;base64,") &&
+              has(svg, "<linearGradient id=") && has(svg, "stop-color=\"rgb(0,0,255)\""),
+          "drawImage from the media folder and a linear gradient", svg);
+    check(s.lastError().empty(), "no errors drawing on a canvas", s.lastError());
+}
+
 int main(int argc, char** argv)
 {
     runtime = readFile(argc > 1 ? argv[1] : "resources/script/runtime.js");
@@ -580,6 +692,8 @@ int main(int argc, char** argv)
     writeFile(media + "/_data.json", "{\"x\": \"from media\"}");
     writeFile(media + "/_mod.js", "export const m = 'module';");
     writeFile(media + "/_style.css", ".from-media { color: blue }");
+    // A PNG header only: 7 x 5 (enough for natural sizes).
+    writeFile(media + "/_dot.png", std::string("\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x07\0\0\0\x05\x08\x06\0\0\0", 33));
 
     basics();
     dom();
@@ -588,6 +702,8 @@ int main(int argc, char** argv)
     forms();
     layout();
     mcq();
+    canvas();
+    typing();
     timing();
 
     std::printf("%s\n", failures ? "SCRIPT TESTS FAILED" : "all script tests passed");

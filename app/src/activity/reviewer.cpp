@@ -824,7 +824,30 @@ void ReviewerActivity::afterScript()
                 audio::play({ mediaDir + "/" + command.substr(5) });
             else if (command == "stop")
                 audio::stop();
+            else if (command.rfind("keyboard:", 0) == 0)
+                typeIntoField(command.substr(9));
         });
+}
+
+// The system keyboard for a text field in the template that a tap focused
+// ("keyboard:" command, a JSON description of the field); confirming hands
+// the text to the page, which fills the field and presses Enter.
+void ReviewerActivity::typeIntoField(const std::string& description)
+{
+    anki::json field = anki::json::parse(description, nullptr, false);
+    if (!field.is_object() || !script)
+        return;
+    int serial         = field.value("serial", 0);
+    std::string prompt = field.value("prompt", "");
+    int maxLength      = field.value("maxLength", 0);
+    keyboard::text(prompt.empty() ? "ankinx/review/your_answer"_i18n : prompt, field.value("value", ""),
+                   maxLength > 0 ? std::min(maxLength, 500) : 500,
+                   [this, token = alive, generation = scriptGeneration, serial](const std::string& text) {
+                       if (!*token || !script || generation != scriptGeneration)
+                           return;
+                       script->typed(serial, text);
+                       afterScript();
+                   });
 }
 
 // One pending delay for the page's next timer; a later call replaces it.

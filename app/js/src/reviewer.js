@@ -11,10 +11,10 @@
 // from question to answer (as Anki desktop).
 import { native, stats } from "./native.js";
 import { document, setReadyState } from "./dom.js";
-import { activity, clearListeners, dispatchEvent, Event, KeyboardEvent, MouseEvent, PointerEvent, Touch, TouchEvent, touchList } from "./events.js";
-import { autofocus, focusFromPointer } from "./forms.js";
+import { activity, clearListeners, dispatchEvent, Event, InputEvent, KeyboardEvent, MouseEvent, PointerEvent, Touch, TouchEvent, touchList } from "./events.js";
+import { autofocus, focusFromPointer, formOwner, inputType } from "./forms.js";
 import { domVersion } from "./layout.js";
-import { extraCss, nodeBySerial, serializeBody } from "./serialize.js";
+import { extraCss, nodeBySerial, serialOf, serializeBody } from "./serialize.js";
 import { nextTimer, runTimers } from "./timers.js";
 
 // ------------------------------------------------- ts/reviewer/index.ts --
@@ -288,8 +288,49 @@ function tap(serial, x, y) {
         if (down) dispatchEvent(target, new MouseEvent("mouseup", { ...common, detail: 1 }), true);
         clicked = dispatchEvent(target, new PointerEvent("click", { ...pointer, detail: 1 }), true);
     }
+    // A text field the tap focused: the app opens the keyboard for it.
+    const field = clicked && textField(document.activeElement);
+    if (field) {
+        const maxLength = parseInt(field.getAttribute("maxlength"), 10);
+        native.command("keyboard:" + JSON.stringify({
+            serial: serialOf(field), value: field.value, multiline: field.localName === "textarea",
+            prompt: field.getAttribute("placeholder") || field.getAttribute("aria-label") || field.getAttribute("title") || "",
+            maxLength: maxLength > 0 ? maxLength : 0,
+        }));
+    }
     return !started || !ended || !clicked || activity.elementListeners !== listenersBefore ||
         stats.commands !== commandsBefore || domVersion() !== versionBefore;
+}
+
+// Controls that take text from the keyboard: single-line text inputs and textareas.
+const TEXT_TYPES = new Set(["text", "search", "email", "url", "tel", "number", "password"]);
+function textField(el) {
+    if (!el || el.nodeType !== 1 || !el.isConnected || el.hasAttribute("disabled") || el.hasAttribute("readonly")) return null;
+    if (el.localName === "textarea" || (el.localName === "input" && TEXT_TYPES.has(inputType(el)))) return el;
+    return null;
+}
+
+// Text from the keyboard for the field with this serial: what typing it
+// does (the value, input and change), then Enter, which in a single-line
+// field of a form submits it.
+function typed(serial, text) {
+    const field = textField(nodeBySerial(serial));
+    if (!field) return;
+    field.focus();
+    field.value = String(text);
+    dispatchEvent(field, new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: String(text) }), true);
+    dispatchEvent(field, new Event("change", { bubbles: true }), true);
+    if (field.localName === "textarea") return;
+    const enter = { bubbles: true, cancelable: true, composed: true, view: globalThis, key: "Enter", code: "Enter", keyCode: 13, which: 13 };
+    const notCancelled = dispatchEvent(field, new KeyboardEvent("keydown", enter), true);
+    if (notCancelled) dispatchEvent(field, new KeyboardEvent("keypress", { ...enter, charCode: 13 }), true);
+    dispatchEvent(field, new KeyboardEvent("keyup", enter), true);
+    const form = notCancelled && field.isConnected ? formOwner(field) : null;
+    if (form) {
+        const button = form.querySelector("button:not([type]), button[type=submit], input[type=submit], input[type=image]");
+        if (button && !button.hasAttribute("disabled")) button.click();
+        else form.requestSubmit();
+    }
 }
 
 // A key press, to the focused element (or the body).
@@ -299,6 +340,6 @@ function key(type, keyName, code, keyCode) {
 }
 
 Object.defineProperty(globalThis, "__ankinx", {
-    value: { show, html: serializeBody, bodyClass, extraCss, tap, key, nextTimer, runTimers },
+    value: { show, html: serializeBody, bodyClass, extraCss, tap, typed, key, nextTimer, runTimers },
     enumerable: false,
 });

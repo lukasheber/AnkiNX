@@ -39,6 +39,7 @@ class ReviewerActivity : public brls::Activity
     void showQuestion();
     std::string questionBody() const;
     void typeAnswer();
+    void typeIntoField(const std::string& description);
     void showAnswer();
     void answer(int ease);
     void undo();

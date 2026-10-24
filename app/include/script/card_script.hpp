@@ -71,6 +71,9 @@ class CardScript
     // this data-ankinx-node: the events of a touchscreen tap, then a click.
     // True if the card did something with it (else the tap flips the card).
     bool tap(int serial, float x, float y);
+    // Text typed on the keyboard into the template's field with this
+    // serial (after a "keyboard:" command): its value, input, change, Enter.
+    void typed(int serial, const std::string& text);
     // A key pressed (keydown, keyup) on the focused element.
     bool key(const std::string& key, const std::string& code, int keyCode);
     // Run code in the page (the app's own changes, e.g. hints).

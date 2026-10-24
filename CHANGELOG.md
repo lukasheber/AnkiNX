@@ -8,6 +8,18 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## Unreleased
+
+- CSS grid: cards laid out with `display: grid` show their columns
+  (fixed, `fr`, `repeat()` including auto-fill/auto-fit, `minmax()`), with
+  spans, gaps and alignment. They showed as one column.
+- Canvas: templates that draw on a `<canvas>` (shapes, lines, curves,
+  gradients, text, images) show their drawing.
+- Text fields in templates: tapping one (or highlighting it and pressing A)
+  opens the keyboard; the text goes into the field, and the template sees it
+  as typed, followed by Enter.
+- A new README, with current screenshots.
+
 ## 0.5.0 (2026-10-24)
 
 Card templates' JavaScript now runs as in a browser, cards look closer to

@@ -1,0 +1,928 @@
+CSS grid for AnkiNX (shared decks lay out word tables and option lists with
+it): litehtml has no grid, so display:grid showed as one column. Adds
+render_item_grid (display: grid / inline-grid) for the common subset:
+grid-template-columns (lengths, %, fr, auto, repeat() with a count or
+auto-fill/auto-fit, minmax()), items placed row by row (grid-column: N,
+span N, N / M; grid-column-start/-end), gap/grid-gap/column-gap/row-gap,
+rows as tall as their tallest item, align-items/-self, justify-items/-self
+and place-items/-self. Grid items are blockified like flex items. Not
+covered: grid-template-rows/-areas, grid-row, dense packing.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7c24cd3a..69fdddc1 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -74,6 +74,7 @@ set(SOURCE_LITEHTML
+ 	src/render_inline_context.cpp
+ 	src/render_table.cpp
+ 	src/render_flex.cpp
++	src/render_grid.cpp
+ 	src/render_image.cpp
+ 	src/formatting_context.cpp
+ 	src/flex_item.cpp
+@@ -138,6 +139,7 @@ set(HEADER_LITEHTML
+ 	include/litehtml/line_box.h
+ 	include/litehtml/render_item.h
+ 	include/litehtml/render_flex.h
++	include/litehtml/render_grid.h
+ 	include/litehtml/render_image.h
+ 	include/litehtml/render_inline.h
+ 	include/litehtml/render_table.h
+diff --git a/include/litehtml/css_properties.h b/include/litehtml/css_properties.h
+index c4e4070f..16da8ee7 100644
+--- a/include/litehtml/css_properties.h
++++ b/include/litehtml/css_properties.h
+@@ -83,6 +83,15 @@ namespace litehtml
+         std::string           m_box_shadow;
+         std::string           m_transform;
+         std::string           m_transform_origin;
++        // Grid (render_grid.cpp parses them); gaps also from the gap shorthands.
++        std::string           m_grid_template_columns;
++        std::string           m_grid_column;
++        std::string           m_column_gap;
++        std::string           m_row_gap;
++        std::string           m_justify_items;
++        std::string           m_justify_self;
++        std::string           m_place_items;
++        std::string           m_place_self;
+         border_collapse       m_border_collapse = border_collapse_separate;
+         css_length            m_css_border_spacing_x;
+         css_length            m_css_border_spacing_y;
+@@ -221,6 +230,14 @@ namespace litehtml
+         const std::string& get_box_shadow() const { return m_box_shadow; }
+         const std::string& get_transform() const { return m_transform; }
+         const std::string& get_transform_origin() const { return m_transform_origin; }
++        const std::string& get_grid_template_columns() const { return m_grid_template_columns; }
++        const std::string& get_grid_column() const { return m_grid_column; }
++        const std::string& get_column_gap() const { return m_column_gap; }
++        const std::string& get_row_gap() const { return m_row_gap; }
++        const std::string& get_justify_items() const { return m_justify_items; }
++        const std::string& get_justify_self() const { return m_justify_self; }
++        const std::string& get_place_items() const { return m_place_items; }
++        const std::string& get_place_self() const { return m_place_self; }
+ 
+         const std::string& get_content() const;
+         void               set_content(const std::string& content);
+diff --git a/include/litehtml/css_values.h b/include/litehtml/css_values.h
+index b3291c89..dd6f9193 100644
+--- a/include/litehtml/css_values.h
++++ b/include/litehtml/css_values.h
+@@ -69,10 +69,10 @@ namespace litehtml
+     // ==========================================================
+     // CSS Property: display
+     // ==========================================================
+-    inline constexpr auto style_display_strings = split_css_values<18>(
++    inline constexpr auto style_display_strings = split_css_values<20>(
+         "none;block;inline;inline-block;inline-table;list-item;table;table-caption;table-cell;table-column;"
+         "table-column-group;table-footer-group;table-header-group;table-row;table-row-group;inline-text;flex;"
+-        "inline-flex");
++        "inline-flex;grid;inline-grid");
+ 
+     enum style_display
+     {
+@@ -94,6 +94,8 @@ namespace litehtml
+         display_inline_text,
+         display_flex,
+         display_inline_flex,
++        display_grid,
++        display_inline_grid,
+     };
+ 
+     // ==========================================================
+diff --git a/include/litehtml/element.h b/include/litehtml/element.h
+index 054459f2..bc8df978 100644
+--- a/include/litehtml/element.h
++++ b/include/litehtml/element.h
+@@ -222,6 +222,7 @@ namespace litehtml
+     inline bool element::is_block_box() const
+     {
+         return css().get_display() == display_block || css().get_display() == display_flex ||
++               css().get_display() == display_grid ||
+                css().get_display() == display_table || css().get_display() == display_list_item;
+     }
+ 
+diff --git a/include/litehtml/render_grid.h b/include/litehtml/render_grid.h
+new file mode 100644
+index 00000000..440e2bbc
+--- /dev/null
++++ b/include/litehtml/render_grid.h
+@@ -0,0 +1,33 @@
++#ifndef LITEHTML_RENDER_GRID_H
++#define LITEHTML_RENDER_GRID_H
++
++#include "render_block.h"
++
++namespace litehtml
++{
++    // display: grid / inline-grid, the common subset: columns from
++    // grid-template-columns (lengths, percentages, fr, auto, repeat() with a
++    // count or auto-fill/auto-fit, minmax()), items placed row by row
++    // (grid-column: N, span N, N / M), gaps, rows as tall as their tallest
++    // item, and align/justify-items/-self. Not covered: grid-template-rows and
++    // -areas, explicit rows (grid-row), dense packing.
++    class render_item_grid : public render_item_block
++    {
++        rendered_width _render_content(pixel_t x, pixel_t y, bool second_pass,
++                                       const containing_block_context& self_size, formatting_context* fmt_ctx) override;
++
++      public:
++        explicit render_item_grid(std::shared_ptr<element> src_el) :
++            render_item_block(std::move(src_el))
++        {
++        }
++
++        std::shared_ptr<render_item> clone() override
++        {
++            return std::make_shared<render_item_grid>(src_el());
++        }
++        std::shared_ptr<render_item> init() override;
++    };
++} // namespace litehtml
++
++#endif // LITEHTML_RENDER_GRID_H
+diff --git a/include/litehtml/string_id.h b/include/litehtml/string_id.h
+index 0462bdf8..902289b6 100644
+--- a/include/litehtml/string_id.h
++++ b/include/litehtml/string_id.h
+@@ -86,6 +86,9 @@ namespace litehtml
+         _max_width_, _max_height_, _position_, _overflow_, _display_, _visibility_, _appearance_, _box_sizing_,
+         _z_index_, _float_, _clear_, _text_indent_, _top_, _right_, _bottom_, _left_, _cursor_, _content_,
+         _border_collapse_, _text_transform_, _box_shadow_, _transform_, _transform_origin_,
++        _grid_template_columns_, _grid_column_, _grid_column_start_, _grid_column_end_, _gap_, _grid_gap_,
++        _column_gap_, _row_gap_, _grid_column_gap_, _grid_row_gap_, _justify_items_, _justify_self_, _place_items_,
++        _place_self_,
+ 
+         _flex_, _flex_flow_, _flex_direction_, _flex_wrap_, _justify_content_, _align_items_, _align_content_,
+         _align_self_, _flex_grow_, _flex_shrink_, _flex_basis_,
+diff --git a/src/css_properties.cpp b/src/css_properties.cpp
+index 2f467022..e698bee2 100644
+--- a/src/css_properties.cpp
++++ b/src/css_properties.cpp
+@@ -253,6 +253,52 @@ void litehtml::css_properties::compute(const html_tag* el, const document::ptr&
+     m_transform  = el->get_property<std::string>(_transform_, false, "", offset(m_transform));
+     m_transform_origin = el->get_property<std::string>(_transform_origin_, false, "", offset(m_transform_origin));
+ 
++    auto raw = [&](string_id name, uint_ptr member) { return el->get_property<std::string>(name, false, "", member); };
++    m_grid_template_columns = raw(_grid_template_columns_, offset(m_grid_template_columns));
++    m_grid_column           = raw(_grid_column_, offset(m_grid_column));
++    if(m_grid_column.empty())
++    {
++        std::string start = raw(_grid_column_start_, offset(m_grid_column)), end = raw(_grid_column_end_, offset(m_grid_column));
++        if(!start.empty() || !end.empty())
++        {
++            m_grid_column = (start.empty() ? std::string("auto") : start) + (end.empty() ? "" : " / " + end);
++        }
++    }
++    m_column_gap = raw(_column_gap_, offset(m_column_gap));
++    if(m_column_gap.empty())
++    {
++        m_column_gap = raw(_grid_column_gap_, offset(m_column_gap));
++    }
++    m_row_gap = raw(_row_gap_, offset(m_row_gap));
++    if(m_row_gap.empty())
++    {
++        m_row_gap = raw(_grid_row_gap_, offset(m_row_gap));
++    }
++    // gap / grid-gap: <row-gap> [<column-gap>]
++    std::string gap = raw(_gap_, offset(m_row_gap));
++    if(gap.empty())
++    {
++        gap = raw(_grid_gap_, offset(m_row_gap));
++    }
++    if(!gap.empty())
++    {
++        auto        space = gap.find(' ');
++        std::string first = gap.substr(0, space);
++        std::string second = space == std::string::npos ? first : gap.substr(space + 1);
++        if(m_row_gap.empty())
++        {
++            m_row_gap = first;
++        }
++        if(m_column_gap.empty())
++        {
++            m_column_gap = second;
++        }
++    }
++    m_justify_items = raw(_justify_items_, offset(m_justify_items));
++    m_justify_self  = raw(_justify_self_, offset(m_justify_self));
++    m_place_items   = raw(_place_items_, offset(m_place_items));
++    m_place_self    = raw(_place_self_, offset(m_place_self));
++
+     m_css_text_indent = el->get_property<css_length>(_text_indent_, true, 0, offset(m_css_text_indent));
+     doc->cvt_units(m_css_text_indent, m_font_metrics, 0_px);
+ 
+@@ -409,7 +455,7 @@ void litehtml::css_properties::compute_font(const html_tag* el, const document::
+     m_font_style =
+         static_cast<font_style>(el->get_property<int>(_font_style_, true, font_style_normal, offset(m_font_style)));
+     bool propagate_decoration =
+-        !is_one_of(m_display, display_inline_block, display_inline_table, display_inline_flex) &&
++        !is_one_of(m_display, display_inline_block, display_inline_table, display_inline_flex, display_inline_grid) &&
+         m_float == float_none && !is_one_of(m_el_position, element_position_absolute, element_position_fixed);
+ 
+     m_text_decoration_line = el->get_property<int>(_text_decoration_line_, propagate_decoration,
+@@ -582,7 +628,8 @@ void litehtml::css_properties::compute_background(const html_tag* el, const docu
+ 
+ void litehtml::css_properties::compute_flex(const html_tag* el, const document::ptr& doc)
+ {
+-    if(m_display == display_flex || m_display == display_inline_flex)
++    if(m_display == display_flex || m_display == display_inline_flex || m_display == display_grid ||
++       m_display == display_inline_grid)
+     {
+         m_flex_direction = static_cast<flex_direction>(
+             el->get_property<int>(_flex_direction_, false, flex_direction_row, offset(m_flex_direction)));
+@@ -599,7 +646,8 @@ void litehtml::css_properties::compute_flex(const html_tag* el, const document::
+     m_flex_align_self = static_cast<flex_align_items>(
+         el->get_property<int>(_align_self_, false, flex_align_items_auto, offset(m_flex_align_self)));
+     auto parent = el->parent();
+-    if(parent && (parent->css().m_display == display_flex || parent->css().m_display == display_inline_flex))
++    if(parent && (parent->css().m_display == display_flex || parent->css().m_display == display_inline_flex ||
++                   parent->css().m_display == display_grid || parent->css().m_display == display_inline_grid))
+     {
+         m_flex_grow   = el->get_property<float>(_flex_grow_, false, 0, offset(m_flex_grow));
+         m_flex_shrink = el->get_property<float>(_flex_shrink_, false, 1, offset(m_flex_shrink));
+@@ -621,6 +669,9 @@ void litehtml::css_properties::compute_flex(const html_tag* el, const document::
+         } else if(m_display == display_inline_flex)
+         {
+             m_display = display_flex;
++        } else if(m_display == display_inline_grid)
++        {
++            m_display = display_grid;
+         }
+     }
+ }
+diff --git a/src/element.cpp b/src/element.cpp
+index 021a0124..c6e5b970 100644
+--- a/src/element.cpp
++++ b/src/element.cpp
+@@ -3,6 +3,7 @@
+ #include "document.h"
+ #include "render_item.h"
+ #include "render_flex.h"
++#include "render_grid.h"
+ #include "render_inline.h"
+ #include "render_table.h"
+ #include "el_before_after.h"
+@@ -57,13 +58,13 @@ namespace litehtml
+     {
+         return css().get_display() == display_inline || css().get_display() == display_inline_table ||
+                css().get_display() == display_inline_block || css().get_display() == display_inline_text ||
+-               css().get_display() == display_inline_flex;
++               css().get_display() == display_inline_flex || css().get_display() == display_inline_grid;
+     }
+ 
+     bool element::is_inline_box() const
+     {
+         return css().get_display() == display_inline_table || css().get_display() == display_inline_block ||
+-               css().get_display() == display_inline_flex;
++               css().get_display() == display_inline_flex || css().get_display() == display_inline_grid;
+     }
+ 
+     bool element::is_ancestor(const ptr& el) const
+@@ -145,6 +146,9 @@ namespace litehtml
+         } else if(css().get_display() == display_inline_text)
+         {
+             ret = std::make_shared<render_text>(shared_from_this());
++        } else if(css().get_display() == display_grid || css().get_display() == display_inline_grid)
++        {
++            ret = std::make_shared<render_item_grid>(shared_from_this());
+         } else if(css().get_display() == display_flex || css().get_display() == display_inline_flex)
+         {
+             ret = std::make_shared<render_item_flex>(shared_from_this());
+@@ -256,13 +260,15 @@ namespace litehtml
+         if(m_css.get_display() == display_block)
+         {
+             auto par = parent();
+-            if(par && (par->css().get_display() == display_inline_flex || par->css().get_display() == display_flex))
++            if(par && (par->css().get_display() == display_inline_flex || par->css().get_display() == display_flex ||
++                       par->css().get_display() == display_grid || par->css().get_display() == display_inline_grid))
+             {
+                 return true;
+             }
+         }
+         if(m_css.get_display() == display_inline_block || m_css.get_display() == display_table_cell ||
+            m_css.get_display() == display_inline_flex || m_css.get_display() == display_flex ||
++           m_css.get_display() == display_inline_grid || m_css.get_display() == display_grid ||
+            m_css.get_display() == display_table_caption || is_root() || m_css.get_float() != float_none ||
+            m_css.get_position() == element_position_absolute || m_css.get_position() == element_position_fixed ||
+            m_css.get_overflow() > overflow_visible)
+diff --git a/src/iterators.cpp b/src/iterators.cpp
+index 75f7a258..9d236354 100644
+--- a/src/iterators.cpp
++++ b/src/iterators.cpp
+@@ -58,7 +58,8 @@ bool litehtml::inline_selector::select(const std::shared_ptr<render_item>& el)
+     return el->src_el()->css().get_display() == display_inline_text ||
+            el->src_el()->css().get_display() == display_inline_table ||
+            el->src_el()->css().get_display() == display_inline_block ||
+-           el->src_el()->css().get_display() == display_inline_flex || el->src_el()->css().get_float() != float_none;
++           el->src_el()->css().get_display() == display_inline_flex ||
++           el->src_el()->css().get_display() == display_inline_grid || el->src_el()->css().get_float() != float_none;
+ }
+ 
+ bool litehtml::go_inside_table::select(const std::shared_ptr<render_item>& el)
+diff --git a/src/render_grid.cpp b/src/render_grid.cpp
+new file mode 100644
+index 00000000..91cbb5a1
+--- /dev/null
++++ b/src/render_grid.cpp
+@@ -0,0 +1,542 @@
++#include "types.h"
++#include "render_grid.h"
++#include "html_tag.h"
++#include "document.h"
++#include "css_parser.h"
++
++namespace
++{
++    using namespace litehtml;
++
++    struct grid_track
++    {
++        float size = 0; // px, for a fixed track or once resolved
++        float fr   = 0; // flexible share (0: fixed)
++        float min  = 0; // minimum of a minmax() flexible track
++    };
++
++    std::string lower(std::string s)
++    {
++        for(auto& c : s)
++        {
++            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
++        }
++        return s;
++    }
++
++    bool is_fr(const css_token& t)
++    {
++        return t.type == DIMENSION && lower(t.unit()) == "fr";
++    }
++
++    // The tokens of a property value, whitespace dropped.
++    css_token_vector value_tokens(const std::string& value)
++    {
++        css_token_vector ret;
++        for(const auto& t : normalize(value, f_componentize))
++        {
++            if(t.type != WHITESPACE)
++            {
++                ret.push_back(t);
++            }
++        }
++        return ret;
++    }
++
++    // A function's arguments, split at commas, whitespace dropped.
++    std::vector<css_token_vector> function_args(const css_token& fn)
++    {
++        std::vector<css_token_vector> args(1);
++        for(const auto& t : fn.value)
++        {
++            if(t.type == COMMA)
++            {
++                args.emplace_back();
++            } else if(t.type != WHITESPACE)
++            {
++                args.back().push_back(t);
++            }
++        }
++        return args;
++    }
++
++    // start/center/end/stretch from align-* or justify-* values.
++    enum class grid_align
++    {
++        stretch,
++        start,
++        center,
++        end
++    };
++
++    grid_align align_from_word(const std::string& word, grid_align fallback)
++    {
++        std::string w = lower(word);
++        if(w == "center")
++        {
++            return grid_align::center;
++        }
++        if(w == "start" || w == "flex-start" || w == "self-start" || w == "left" || w == "baseline")
++        {
++            return grid_align::start;
++        }
++        if(w == "end" || w == "flex-end" || w == "self-end" || w == "right")
++        {
++            return grid_align::end;
++        }
++        if(w == "stretch" || w == "normal")
++        {
++            return grid_align::stretch;
++        }
++        return fallback;
++    }
++
++    grid_align align_from_enum(int value, grid_align fallback)
++    {
++        switch(value & 0xff)
++        {
++        case flex_align_items_center:
++            return grid_align::center;
++        case flex_align_items_start:
++        case flex_align_items_self_start:
++        case flex_align_items_flex_start:
++        case flex_align_items_baseline:
++            return grid_align::start;
++        case flex_align_items_end:
++        case flex_align_items_self_end:
++        case flex_align_items_flex_end:
++            return grid_align::end;
++        case flex_align_items_stretch:
++            return grid_align::stretch;
++        default:
++            return fallback;
++        }
++    }
++
++    // The n-th word (0: align, 1: justify) of a place-* shorthand; a single
++    // word sets both.
++    std::string place_word(const std::string& value, size_t n)
++    {
++        auto words = value_tokens(value);
++        if(words.empty())
++        {
++            return "";
++        }
++        return (n < words.size() ? words[n] : words[0]).ident();
++    }
++} // namespace
++
++std::shared_ptr<litehtml::render_item> litehtml::render_item_grid::init()
++{
++    // As render_item_flex::init: runs of text become anonymous block items.
++    src_el()->add_render(shared_from_this());
++    decltype(m_children) new_children;
++    decltype(m_children) inlines;
++
++    auto convert_inlines = [&]() {
++        if(!inlines.empty())
++        {
++            auto not_space =
++                std::find_if(inlines.rbegin(), inlines.rend(),
++                             [&](const std::shared_ptr<render_item>& el) { return !el->src_el()->is_space(); });
++            if(not_space != inlines.rend())
++            {
++                inlines.erase((not_space.base()), inlines.end());
++            }
++
++            auto anon_el = std::make_shared<html_tag>(src_el());
++            auto anon_ri = std::make_shared<render_item_block>(anon_el);
++            for(const auto& inl : inlines)
++            {
++                anon_ri->add_child(inl);
++            }
++            anon_ri->parent(shared_from_this());
++
++            new_children.push_back(anon_ri->init());
++            inlines.clear();
++        }
++    };
++
++    for(const auto& el : m_children)
++    {
++        if(el->src_el()->css().get_display() == display_inline_text)
++        {
++            if(!inlines.empty() || !el->src_el()->is_white_space())
++            {
++                inlines.push_back(el);
++            }
++        } else
++        {
++            convert_inlines();
++            if(el->src_el()->is_block_box())
++            {
++                el->parent(shared_from_this());
++                new_children.push_back(el->init());
++            } else
++            {
++                auto anon_el = std::make_shared<html_tag>(el->src_el());
++                auto anon_ri = std::make_shared<render_item_block>(anon_el);
++                anon_ri->add_child(el->init());
++                anon_ri->parent(shared_from_this());
++                new_children.push_back(anon_ri->init());
++            }
++        }
++    }
++    convert_inlines();
++    children() = new_children;
++
++    return shared_from_this();
++}
++
++litehtml::rendered_width litehtml::render_item_grid::_render_content(pixel_t x, pixel_t y, bool /*second_pass*/,
++                                                                     const containing_block_context& self_size,
++                                                                     formatting_context*             fmt_ctx)
++{
++    auto                doc   = src_el()->get_document();
++    const font_metrics& fm    = css().get_font_metrics();
++    const float         width = static_cast<float>(self_size.render_width.value);
++
++    auto length = [&](const css_token& t, float percent_of, float& out) {
++        css_length len;
++        if(!len.from_token(t, f_length_percentage))
++        {
++            return false;
++        }
++        out = doc->to_pixels(len, fm, pixel_t(percent_of));
++        return true;
++    };
++
++    float col_gap = 0, row_gap = 0;
++    if(auto g = value_tokens(css().get_column_gap()); !g.empty())
++    {
++        length(g[0], width, col_gap);
++    }
++    if(auto g = value_tokens(css().get_row_gap()); !g.empty())
++    {
++        length(g[0], 0, row_gap);
++    }
++
++    /////////////////////////////////////////////////////////////////
++    /// Columns
++    /////////////////////////////////////////////////////////////////
++    auto parse_track = [&](const css_token& t) {
++        grid_track tr;
++        if(is_fr(t))
++        {
++            tr.fr = t.n.number;
++        } else if(t.type == CV_FUNCTION && lower(t.name()) == "minmax")
++        {
++            auto args = function_args(t);
++            if(args.size() == 2 && !args[0].empty() && !args[1].empty())
++            {
++                length(args[0][0], width, tr.min);
++                if(is_fr(args[1][0]))
++                {
++                    tr.fr = args[1][0].n.number;
++                } else if(length(args[1][0], width, tr.size))
++                {
++                    tr.size = std::max(tr.size, tr.min);
++                } else
++                {
++                    tr.fr = 1; // minmax(x, auto/max-content)
++                }
++            } else
++            {
++                tr.fr = 1;
++            }
++        } else if(!length(t, width, tr.size))
++        {
++            tr.fr = 1; // auto, min-content, max-content, fit-content(): share the free space
++        }
++        return tr;
++    };
++
++    std::vector<grid_track> tracks;
++    for(const auto& t : value_tokens(css().get_grid_template_columns()))
++    {
++        if(t.type == CV_FUNCTION && lower(t.name()) == "repeat")
++        {
++            auto args = function_args(t);
++            if(args.size() < 2 || args[0].empty())
++            {
++                continue;
++            }
++            std::vector<grid_track> pattern;
++            for(size_t i = 1; i < args.size(); i++) // a track list with commas inside minmax() was split
++            {
++                for(const auto& tt : args[i])
++                {
++                    if(tt.type != SQUARE_BLOCK)
++                    {
++                        pattern.push_back(parse_track(tt));
++                    }
++                }
++            }
++            if(pattern.empty())
++            {
++                continue;
++            }
++            int         count = 1;
++            std::string word  = lower(args[0][0].ident());
++            if(args[0][0].type == NUMBER)
++            {
++                count = std::max(1, static_cast<int>(args[0][0].n.number));
++            } else if(word == "auto-fill" || word == "auto-fit")
++            {
++                // As many repetitions as fit, each track at its minimum.
++                float rep = 0;
++                for(const auto& tr : pattern)
++                {
++                    rep += (tr.fr > 0 ? tr.min : tr.size) + col_gap;
++                }
++                count = rep > 0 ? std::max(1, static_cast<int>((width + col_gap) / rep)) : 1;
++                if(word == "auto-fit")
++                {
++                    // Empty repetitions collapse: no more columns than items.
++                    int items = 0;
++                    for(const auto& el : m_children)
++                    {
++                        if(!el->src_el()->is_positioned() || el->src_el()->css().get_position() == element_position_relative)
++                        {
++                            items++;
++                        }
++                    }
++                    count = std::max(1, std::min(count, (items + static_cast<int>(pattern.size()) - 1) /
++                                                            static_cast<int>(pattern.size())));
++                }
++            }
++            for(int i = 0; i < count; i++)
++            {
++                tracks.insert(tracks.end(), pattern.begin(), pattern.end());
++            }
++        } else if(t.type != SQUARE_BLOCK) // [line names]
++        {
++            tracks.push_back(parse_track(t));
++        }
++    }
++    if(tracks.empty())
++    {
++        tracks.push_back(grid_track{0, 1, 0});
++    }
++
++    // Fixed tracks first; flexible ones share the rest, but not below their minimum.
++    const size_t n         = tracks.size();
++    float        free_size = width - col_gap * static_cast<float>(n - 1);
++    float        fr_sum    = 0;
++    for(const auto& tr : tracks)
++    {
++        if(tr.fr > 0)
++        {
++            fr_sum += tr.fr;
++        } else
++        {
++            free_size -= tr.size;
++        }
++    }
++    while(fr_sum > 0)
++    {
++        float unit    = std::max(0.0f, free_size) / fr_sum;
++        bool  clamped = false;
++        for(auto& tr : tracks)
++        {
++            if(tr.fr > 0 && unit * tr.fr < tr.min)
++            {
++                tr.size    = tr.min;
++                free_size -= tr.min;
++                fr_sum    -= tr.fr;
++                tr.fr      = 0;
++                clamped    = true;
++            }
++        }
++        if(!clamped)
++        {
++            for(auto& tr : tracks)
++            {
++                if(tr.fr > 0)
++                {
++                    tr.size = unit * tr.fr;
++                }
++            }
++            break;
++        }
++    }
++    std::vector<float> col_x(n);
++    float              total_width = 0;
++    for(size_t i = 0; i < n; i++)
++    {
++        col_x[i]     = total_width;
++        total_width += tracks[i].size + (i + 1 < n ? col_gap : 0);
++    }
++
++    /////////////////////////////////////////////////////////////////
++    /// Items, a row at a time
++    /////////////////////////////////////////////////////////////////
++    grid_align container_align   = align_from_enum(css().get_flex_align_items(), grid_align::stretch);
++    grid_align container_justify = align_from_word(css().get_justify_items(), grid_align::stretch);
++    if(!css().get_place_items().empty())
++    {
++        container_align   = align_from_word(place_word(css().get_place_items(), 0), container_align);
++        container_justify = align_from_word(place_word(css().get_place_items(), 1), container_justify);
++    }
++
++    struct placed
++    {
++        std::shared_ptr<render_item> el;
++        grid_align                   align;
++    };
++    std::vector<placed> row;
++    float               row_top = 0;
++    size_t              col     = 0;
++    bool                any_row = false;
++
++    auto finish_row = [&]() {
++        if(row.empty())
++        {
++            col = 0;
++            return;
++        }
++        float row_height = 0;
++        for(const auto& p : row)
++        {
++            row_height = std::max(row_height, static_cast<float>(p.el->height()));
++        }
++        for(const auto& p : row)
++        {
++            float extra = row_height - p.el->height();
++            switch(p.align)
++            {
++            case grid_align::stretch:
++                if(p.el->src_el()->css().get_height().is_predefined())
++                {
++                    p.el->pos().height += pixel_t(extra);
++                }
++                break;
++            case grid_align::center:
++                p.el->pos().y += pixel_t(extra / 2);
++                break;
++            case grid_align::end:
++                p.el->pos().y += pixel_t(extra);
++                break;
++            case grid_align::start:
++                break;
++            }
++        }
++        row_top += row_height + row_gap;
++        any_row  = true;
++        row.clear();
++        col = 0;
++    };
++
++    for(const auto& el : m_children)
++    {
++        const auto& item_css = el->src_el()->css();
++        if(item_css.get_display() == display_none)
++        {
++            continue;
++        }
++        if(item_css.get_position() == element_position_absolute || item_css.get_position() == element_position_fixed)
++        {
++            // Out of flow: laid out for render_positioned, as block layout does.
++            el->render(0_px, pixel_t(row_top), self_size, fmt_ctx);
++            continue;
++        }
++
++        // grid-column: N | span N | N / M | N / span M (lines count from 1; -1 is the last)
++        size_t start = 0, span = 1; // start 0: auto
++        {
++            auto   tokens = value_tokens(item_css.get_grid_column());
++            size_t slash  = tokens.size();
++            for(size_t i = 0; i < tokens.size(); i++)
++            {
++                if(tokens[i].type == '/')
++                {
++                    slash = i;
++                    break;
++                }
++            }
++            auto line = [&](float v) { return v < 0 ? static_cast<int>(n) + 2 + static_cast<int>(v) : static_cast<int>(v); };
++            for(size_t i = 0; i < slash; i++)
++            {
++                if(tokens[i].ident() == "span" && i + 1 < slash && tokens[i + 1].type == NUMBER)
++                {
++                    span = static_cast<size_t>(std::max(1.0f, tokens[++i].n.number));
++                } else if(tokens[i].type == NUMBER)
++                {
++                    start = static_cast<size_t>(std::max(1, line(tokens[i].n.number)));
++                }
++            }
++            for(size_t i = slash + 1; i < tokens.size(); i++)
++            {
++                if(tokens[i].ident() == "span" && i + 1 < tokens.size() && tokens[i + 1].type == NUMBER)
++                {
++                    span = static_cast<size_t>(std::max(1.0f, tokens[++i].n.number));
++                } else if(tokens[i].type == NUMBER && start > 0)
++                {
++                    int end = line(tokens[i].n.number);
++                    span    = static_cast<size_t>(std::max(1, end - static_cast<int>(start)));
++                }
++            }
++            span = std::min(span, n);
++        }
++        if(start > 0)
++        {
++            size_t wanted = std::min(start - 1, n - span);
++            if(wanted < col)
++            {
++                finish_row();
++            }
++            col = wanted;
++        }
++        if(col + span > n)
++        {
++            finish_row();
++        }
++
++        float cell_x     = col_x[col];
++        float cell_width = col_x[col + span - 1] + tracks[col + span - 1].size - cell_x;
++
++        grid_align justify = container_justify;
++        grid_align align   = align_from_enum(item_css.get_flex_align_self(), container_align);
++        if(auto self = el->src_el()->css().get_justify_self(); !self.empty())
++        {
++            justify = align_from_word(value_tokens(self).empty() ? "" : value_tokens(self)[0].ident(), justify);
++        }
++        if(auto place = item_css.get_place_self(); !place.empty())
++        {
++            align   = align_from_word(place_word(place, 0), align);
++            justify = align_from_word(place_word(place, 1), justify);
++        }
++
++        auto cell = self_size.new_width(pixel_t(cell_width));
++        auto rw   = el->render(pixel_t(cell_x), pixel_t(row_top), cell, fmt_ctx);
++        if(justify != grid_align::stretch && item_css.get_width().is_predefined() &&
++           rw.natural_width < el->width())
++        {
++            // Not stretched: as wide as its content.
++            el->render(pixel_t(cell_x), pixel_t(row_top), cell.new_width(rw.natural_width), fmt_ctx);
++        }
++        float extra = cell_width - el->width();
++        if(justify == grid_align::center)
++        {
++            el->pos().x += pixel_t(extra / 2);
++        } else if(justify == grid_align::end)
++        {
++            el->pos().x += pixel_t(extra);
++        }
++
++        row.push_back({el, align});
++        col += span;
++        if(col >= n)
++        {
++            finish_row();
++        }
++    }
++    finish_row();
++
++    m_pos.height = pixel_t(any_row ? row_top - row_gap : 0.0f);
++    m_pos.move_to(x, y);
++    m_pos.x += content_offset_left();
++    m_pos.y += content_offset_top();
++
++    return {pixel_t(total_width), pixel_t(total_width)};
++}
+diff --git a/src/render_item.cpp b/src/render_item.cpp
+index 2f1c2374..4b92e9a2 100644
+--- a/src/render_item.cpp
++++ b/src/render_item.cpp
+@@ -1088,7 +1088,8 @@ void litehtml::render_item::draw_children(uint_ptr hdc, pixel_t x, pixel_t y, co
+                 {
+                     el->src_el()->draw(hdc, pos.x, pos.y, clip, el);
+                     if(el->src_el()->css().get_display() == display_inline_block ||
+-                       el->src_el()->css().get_display() == display_inline_flex)
++                       el->src_el()->css().get_display() == display_inline_flex ||
++                       el->src_el()->css().get_display() == display_inline_grid)
+                     {
+                         el->draw_stacking_context(hdc, pos.x, pos.y, clip, false);
+                         process = false;
+@@ -1218,7 +1219,8 @@ std::shared_ptr<litehtml::element> litehtml::render_item::get_child_by_point(
+                 {
+                     if(el->src_el()->css().get_display() == display_inline_block ||
+                        el->src_el()->css().get_display() == display_inline_table ||
+-                       el->src_el()->css().get_display() == display_inline_flex)
++                       el->src_el()->css().get_display() == display_inline_flex ||
++                       el->src_el()->css().get_display() == display_inline_grid)
+                     {
+                         ret     = el->get_element_by_point(el_pos.x, el_pos.y, client_x, client_y, check);
+                         process = false;
+@@ -1264,7 +1266,8 @@ std::shared_ptr<litehtml::element> litehtml::render_item::get_child_by_point(
+                 {
+                     if(el->src_el()->css().get_float() == float_none &&
+                        el->src_el()->css().get_display() != display_inline_block &&
+-                       el->src_el()->css().get_display() != display_inline_flex)
++                       el->src_el()->css().get_display() != display_inline_flex &&
++                       el->src_el()->css().get_display() != display_inline_grid)
+                     {
+                         element::ptr child =
+                             el->get_child_by_point(el_pos.x, el_pos.y, client_x, client_y, flag, zindex, check);
+diff --git a/src/style.cpp b/src/style.cpp
+index 49cf941d..0eb5f416 100644
+--- a/src/style.cpp
++++ b/src/style.cpp
+@@ -591,6 +591,20 @@ namespace litehtml
+         case _box_shadow_:
+         case _transform_:
+         case _transform_origin_:
++        case _grid_template_columns_:
++        case _grid_column_:
++        case _grid_column_start_:
++        case _grid_column_end_:
++        case _gap_:
++        case _grid_gap_:
++        case _column_gap_:
++        case _row_gap_:
++        case _grid_column_gap_:
++        case _grid_row_gap_:
++        case _justify_items_:
++        case _justify_self_:
++        case _place_items_:
++        case _place_self_:
+             str = get_repr(value, 0, -1, true);
+             add_parsed_property(name, property_value(str, important));
+             break;

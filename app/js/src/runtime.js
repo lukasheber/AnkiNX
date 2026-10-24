@@ -12,6 +12,7 @@ import "./window.js";     // navigator, location, storage, console, timers...
 import "./forms.js";      // form controls, activation behaviour, focus
 import "./scripts.js";    // <script> execution
 import "./net.js";        // fetch and XMLHttpRequest for media files
+import "./canvas.js";     // <canvas> 2D drawing, recorded as SVG
 import "./serialize.js";  // the DOM as HTML for litehtml
 import "./layout.js";     // geometry and computed style from litehtml
 import "./jquery.js";     // $ and jQuery

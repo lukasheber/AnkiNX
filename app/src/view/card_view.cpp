@@ -293,6 +293,39 @@ bool isSvg(const std::string& path, const std::string& data)
     return ext == "svg" || data.find("<svg") != std::string::npos;
 }
 
+// lunasvg draws SVG text (canvas text among it) with the fonts registered
+// with it, and finds none on the console: the bundled DejaVu faces, under the
+// generic family names, the names lunasvg maps them to on each platform, and
+// their own. Once, before the first SVG.
+void registerSvgFonts()
+{
+    static bool done = false;
+    if (done)
+        return;
+    done = true;
+    static const struct
+    {
+        const char* file;
+        const char* names[3];
+    } FACES[] = {
+        { "DejaVuSans.ttf", { "sans-serif", "Arial", "DejaVu Sans" } },
+        { "DejaVuSerif.ttf", { "serif", "Times New Roman", "DejaVu Serif" } },
+        { "DejaVuSansMono.ttf", { "monospace", "Courier New", "DejaVu Sans Mono" } },
+    };
+    static std::vector<std::string> fonts; // lunasvg reads them in place, for the app's lifetime
+    fonts.reserve(std::size(FACES));
+    for (const auto& face : FACES)
+    {
+        fonts.push_back(readFile(std::string(BRLS_ASSET("card_fonts/")) + face.file));
+        const std::string& data = fonts.back();
+        if (data.empty())
+            continue;
+        for (const char* name : face.names)
+            for (int style = 0; style < 4; style++)
+                lunasvg_add_font_face_from_data(name, style & 1, style & 2, data.data(), data.size(), nullptr, nullptr);
+    }
+}
+
 // Upload tightly packed RGBA pixels, repacking rows if `stride` has padding.
 int uploadRgba(NVGcontext* vg, const uint8_t* pixels, int width, int height, int stride)
 {
@@ -463,6 +496,7 @@ class NvgContainer : public document_container
         }
         else if (isSvg(path, data))
         {
+            registerSvgFonts();
             auto doc = lunasvg::Document::loadFromData(data);
             if (!doc)
                 return img;

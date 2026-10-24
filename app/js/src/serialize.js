@@ -8,6 +8,7 @@ import { document } from "./dom.js";
 import { mediaPath } from "./media.js";
 import { hasListener } from "./events.js";
 import { checkedness, inputType, inputValue, inputValueDirty, selectedness, textareaDirty, textareaValue } from "./forms.js";
+import { canvasImage } from "./canvas.js";
 
 const serials = new WeakMap();
 let nextSerial = 1;
@@ -79,6 +80,18 @@ function write(out, node, svg) {
     if (inSvg) tag = SVG_TAGS[tag] || tag;
     const serial = serialOf(node);
     bySerial.set(serial, node);
+    if (tag === "canvas" && !inSvg) {
+        // An image of what its context drew (canvas.js), the canvas's size.
+        const image = canvasImage(node);
+        out.push("<img");
+        for (const [name, value] of attributesOf(node))
+            if (name !== "width" && name !== "height" && name !== "src") out.push(" ", name, "=\"", escapeAttribute(value), "\"");
+        out.push(" width=\"", String(image.width), "\" height=\"", String(image.height), "\" src=\"", escapeAttribute(image.src), "\"");
+        out.push(" data-ankinx-node=\"", String(serial), "\"");
+        if (hasListener(node, CLICK)) out.push(" data-ankinx-click=\"\"");
+        out.push(">");
+        return;
+    }
     out.push("<", tag);
     for (const [name, value] of attributesOf(node)) out.push(" ", name, "=\"", escapeAttribute(value), "\"");
     out.push(" data-ankinx-node=\"", String(serial), "\"");
