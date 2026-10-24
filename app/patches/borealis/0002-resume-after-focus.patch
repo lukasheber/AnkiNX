@@ -1,0 +1,32 @@
+popActivity: resume the activity underneath after giving it the focus
+
+onResume() ran before the focus was restored. An activity that opens a
+dialog as it resumes (AnkiNX's deck list starting a sync with a "please
+wait" dialog after studying) had the dialog take the focus, and then the
+restore handed it to the activity underneath: its highlighted row drew
+over the dialog. Now the focus is restored first and onResume() comes
+last, so what it opens keeps the focus.
+
+--- a/library/lib/core/application.cpp
++++ b/library/lib/core/application.cpp
+@@ -922,7 +922,6 @@
+     {
+         toShow = Application::activitiesStack[Application::activitiesStack.size() - 2];
+         toShow->hide([]() {}, false, 0);
+-        toShow->onResume();
+         toShow->show([]() {}, false, 0);
+     }
+ 
+@@ -956,6 +955,12 @@
+             Application::currentFocus = nullptr;
+     }
+ 
++    // Resume once the focus is back: an activity that opens a dialog as it
++    // resumes (a sync's "please wait") must leave the dialog with the focus,
++    // not have it handed back to the activity underneath.
++    if (toShow)
++        toShow->onResume();
++
+     // Hide animation (and show previous activity, if any)
+     last->hide([last, cb, free]()
+         {
