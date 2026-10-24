@@ -8,8 +8,37 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
-## Unreleased
+## 0.5.0 (2026-10-24)
 
+Card templates' JavaScript now runs as in a browser, cards look closer to
+Anki desktop, and two crashes are fixed. Verified on hardware, with a new
+test deck (`test-deck/`) that has a card for each feature saying what to
+check.
+
+- JavaScript in cards: templates get a real browser page (a standard DOM
+  with events, the real jQuery 3.7.1, Anki desktop's reviewer functions),
+  instead of the partial DOM written for AnkiNX. Shared templates such as
+  multiple-choice note types work as on the desktop. Card pages are prepared
+  while you read the answer, so the next card opens quickly.
+- Touch: taps that land just beside a link, button or option still reach
+  it, and words inside a sentence can be tapped (for templates that react to
+  them). Checkboxes, radio buttons, text fields and buttons in templates are
+  drawn as such.
+- Card display:
+  - animated GIFs play;
+  - Thai and Hindi (Devanagari) text shows, with bundled fonts;
+  - chemistry formulas (`\ce{...}`, `\pu{...}`, as in Anki's MathJax);
+  - subscript and superscript, `<small>`, `<mark>`, monospace text for code
+    and serif text where a card asks for them;
+  - box shadows, rotated, scaled and skewed elements, and badges placed on a
+    word.
+- Night mode: text left in night mode's light colour on a light background
+  the card paints itself (a highlight, a code block) is drawn dark, so it
+  stays readable. Anki and AnkiDroid show it light on light.
+- Fixed: a crash after the console had been asleep with AnkiNX open.
+- Fixed: a crash on opening when a dialog appeared during start-up.
+- The app writes a log to `/switch/ankinx/ankinx.log` (the previous run's
+  is `ankinx.old.log`), to send with a problem report.
 - Update dialogs: the download question no longer shows the release notes
   (they ran off the screen as one line), and "please wait" dialogs (the
   download's progress, syncing, backing up) take the focus, so the

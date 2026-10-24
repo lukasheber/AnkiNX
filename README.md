@@ -24,9 +24,11 @@ AnkiNX is for **studying**. What it does:
 - **Reviews:** Anki's scheduler and answer buttons, undo and redo, the card
   menu (flag, mark, bury, suspend, set due date, card info), timer and auto
   advance, leech handling.
-- **Cards as Anki shows them:** HTML and CSS, images, audio, maths
-  (`\(...\)` and `\[...\]`), JavaScript in templates, furigana, right-to-left
-  text, fonts from the media folder, type-in-the-answer and Image Occlusion.
+- **Cards as Anki shows them:** HTML and CSS, images (animated GIFs too),
+  audio, maths (`\(...\)` and `\[...\]`, chemistry with `\ce`), JavaScript in
+  templates (a browser page with the real jQuery), furigana, right-to-left
+  text, Thai and Hindi, fonts from the media folder, type-in-the-answer and
+  Image Occlusion.
 - **Controls:** buttons (rebindable, one Joy-Con held sideways works too),
   touch, swipes, rumble, and a whiteboard in handheld mode.
 - **Languages:** English, Portuguese (Brazil), Spanish and Japanese, following
