@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="AnkiNX logo" width="128">
+  <img src="app/assets/logo.png" alt="AnkiNX logo" width="128">
 </p>
 
 <h1 align="center">AnkiNX</h1>
