@@ -21,8 +21,10 @@ use anki_proto::scheduler::bury_or_suspend_cards_request::Mode as BuryOrSuspendM
 const ROOT: &str = "AnkiNX Test";
 const TAG: &str = "ankinx-test";
 
-/// The grey "Check:" line at the end of a card.
+/// The grey "Check:" line at the end of a card (plain text: escaped, so a
+/// mention of <script> is not a script).
 fn check(text: &str) -> String {
+    let text = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     format!(
         "<div style=\"margin-top:20px;padding-top:8px;border-top:1px dashed #999;font-size:15px;color:#888;\
          text-align:left\">Check: {text}</div>"
@@ -510,7 +512,7 @@ fn media(d: &mut Deck) {
     ]);
     d.add(DECK, &basic, &[
         "A large image<br><img src=\"ankinx_test_large.png\">",
-        &check("the 2400 × 1500 picture fits the card's width (no sideways scrolling)."),
+        &check("the 2400 × 1500 picture is as wide as the card (no sideways scrolling) and its label is complete; scroll down for the rest. Zooming (stick press) enlarges text but not a picture already as wide as the card, as in a browser."),
     ]);
     d.add(DECK, &basic, &[
         "Sized with width=\"80\": <img src=\"ankinx_test_image.png\" width=\"80\"> inline with text.",
@@ -566,7 +568,7 @@ fn maths(d: &mut Deck) {
     ]);
     d.add(DECK, &basic, &[
         "LaTeX image: [latex]$\\displaystyle\\sum_{k=0}^{n} k = \\frac{n(n+1)}{2}$[/latex]",
-        &check("an image of the formula, made by Anki desktop when it has LaTeX installed (otherwise an error there; the console shows the image once synced)."),
+        &check("an image of the formula, which Anki desktop makes only when LaTeX is installed on the computer. Without LaTeX no image exists, and the LaTeX source shows instead (on the desktop too)."),
     ]);
 }
 
@@ -658,7 +660,7 @@ fn javascript(d: &mut Deck) {
         "jQuery: <span class=\"jq\">one</span> <span class=\"jq\">two</span> <span id=\"jqv\"></span>\
          <script>$(function () { $('.jq').css('color', '#1e88e5').css('font-weight', 'bold'); \
          $('#jqv').text('(jQuery ' + $.fn.jquery + ')'); });</script>",
-        &check("\"one\" and \"two\" turn blue and bold, followed by the jQuery version (3.7.1 in Anki)."),
+        &check("\"one\" and \"two\" are blue and bold as soon as the card shows (the script runs on load), followed by the jQuery version (3.7.1 in Anki)."),
     ]);
     d.add(DECK, &basic, &[
         "Tap the words to cross them out: <span class=\"tick\">apple</span> · <span class=\"tick\">banana</span> · \
@@ -746,20 +748,20 @@ fn javascript(d: &mut Deck) {
 fn states(d: &mut Deck) {
     const DECK: &str = "11 Card states";
     let basic = d.stock("Basic");
-    d.add(DECK, &basic, &["A new card", &check("blue \"new\" count; shown with the new cards.")]);
+    d.add(DECK, &basic, &["A new card", &check("while this card shows, the blue (new) number in the header is the underlined one.")]);
     let (_, cards) = d.add(DECK, &basic, &[
         "A learning card (answered Again when the deck was made)",
-        &check("red \"learn\" count; due again a minute after the deck was made."),
+        &check("while this card shows, the red (learning) number is underlined; Again on it is due in a minute."),
     ]);
     d.answer(cards[0], Rating::Again);
     let (_, cards) = d.add(DECK, &basic, &[
         "A review card due today",
-        &check("green \"due\" count; its buttons show review intervals (days)."),
+        &check("while this card shows, the green (due) number is underlined; its buttons show intervals in days."),
     ]);
     d.col.set_due_date(&cards, "0", None).unwrap();
     let (_, cards) = d.add(DECK, &basic, &[
         "A review card due in 30 days",
-        &check("should NOT appear today; find it in the card browser (L on the deck overview)."),
+        &check("should NOT appear today (it is there only if the deck was imported without its learning progress); find it in the card browser (L on the deck overview)."),
     ]);
     d.col.set_due_date(&cards, "30", None).unwrap();
     let (_, cards) = d.add(DECK, &basic, &[
@@ -781,7 +783,7 @@ fn states(d: &mut Deck) {
     }
     let (nid, _) = d.add(DECK, &basic, &["A marked note", &check("★ in the header (the note has the \"marked\" tag).")]);
     d.col.add_tags_to_notes(&[nid], "marked").unwrap();
-    let (nid, _) = d.add(DECK, &basic, &["A leech", &check("the note has the \"leech\" tag (it would be suspended after more lapses).")]);
+    let (nid, _) = d.add(DECK, &basic, &["A leech", &check("the note carries the \"leech\" tag. Anki makes a card a leech after 8 lapses (forgetting it as a review card, a deck option), not when a new or learning card is missed.")]);
     d.col.add_tags_to_notes(&[nid], "leech").unwrap();
 }
 

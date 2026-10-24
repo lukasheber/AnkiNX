@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -1139,6 +1140,34 @@ std::string cssColor(const web_color& c)
     return text;
 }
 
+// What an element covers on the page, in document coordinates: its border
+// box, or for an inline element (a <span>, a link inside text) the union of
+// its line fragments; get_placement() has no size for those.
+bool renderedBox(const element::ptr& el, float& x, float& y, float& width, float& height)
+{
+    auto ri = el->get_render_item();
+    if (!ri)
+        return false;
+    float left = 0, top = 0, right = 0, bottom = 0;
+    bool any = false;
+    ri->get_rendering_boxes([&](const position& p) {
+        float w = (float)p.width, h = (float)p.height;
+        if (w <= 0 && h <= 0)
+            return;
+        float l = (float)p.x, t = (float)p.y, r = l + w, b = t + h;
+        if (!any)
+            left = l, top = t, right = r, bottom = b;
+        left   = std::min(left, l);
+        top    = std::min(top, t);
+        right  = std::max(right, r);
+        bottom = std::max(bottom, b);
+        any    = true;
+    });
+    if (any)
+        x = left, y = top, width = right - left, height = bottom - top;
+    return any;
+}
+
 std::string cssPixels(float value)
 {
     char text[32];
@@ -1179,6 +1208,8 @@ CardScript::Layout CardView::measure(const std::string& page)
                 box.clientHeight = p.height + padY;
                 box.width        = box.clientWidth + ri->border_left() + ri->border_right();
                 box.height       = box.clientHeight + ri->border_top() + ri->border_bottom();
+                // Inline elements: what their line fragments cover.
+                renderedBox(el, box.x, box.y, box.width, box.height);
             }
             const css_properties& css = el->css();
             box.style = {
@@ -1204,6 +1235,7 @@ CardScript::Layout CardView::measure(const std::string& page)
 
 void CardView::layout(float width)
 {
+    auto start = std::chrono::steady_clock::now();
     container->clearImages();
     container->fontFaces = parseFontFaces(html);
     layoutWidth = width / scale();
@@ -1211,6 +1243,8 @@ void CardView::layout(float width)
     if (document)
         document->render(layoutWidth);
     needsLayout = false;
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    brls::Logger::info("card layout: {} ms", ms);
 
     if (scrollToAnswer && document)
     {
@@ -1247,6 +1281,9 @@ struct Box
 
 Box placement(const element::ptr& el)
 {
+    Box box;
+    if (renderedBox(el, box.x, box.y, box.width, box.height))
+        return box;
     position p = el->get_placement();
     return { (float)p.x, (float)p.y, (float)p.width, (float)p.height };
 }
@@ -1389,7 +1426,38 @@ void CardView::handleTap(brls::Point point)
     if (!document || whiteboard)
         return;
     // Screen point -> document coordinates.
-    tapAt((point.x - this->getX()) / scale(), (point.y - this->getY() + scroll) / scale());
+    float x = (point.x - this->getX()) / scale(), y = (point.y - this->getY() + scroll) / scale();
+    adjustTouch(x, y);
+    tapAt(x, y);
+}
+
+// A finger tap that misses every tappable element but lands close to one goes
+// to the nearest, as phone browsers do ("touch adjustment"): template words
+// and buttons are small for a finger, and a near miss would flip the card.
+void CardView::adjustTouch(float& x, float& y) const
+{
+    const float slop = 32.0f / scale(); // screen pixels, in document units
+    float best       = slop;
+    const element::ptr* nearest = nullptr;
+    for (const element::ptr& el : focusList)
+    {
+        Box p    = placement(el);
+        float dx = std::max({ p.x - x, 0.0f, x - (p.x + p.width) });
+        float dy = std::max({ p.y - y, 0.0f, y - (p.y + p.height) });
+        if (dx == 0 && dy == 0)
+            return; // on one already
+        float d = std::hypot(dx, dy);
+        if (d < best)
+        {
+            best    = d;
+            nearest = &el;
+        }
+    }
+    if (!nearest)
+        return;
+    Box p = placement(*nearest);
+    x     = std::clamp(x, p.x + 1, p.x + std::max(1.0f, p.width - 1));
+    y     = std::clamp(y, p.y + 1, p.y + std::max(1.0f, p.height - 1));
 }
 
 void CardView::tapAt(float docX, float docY)

@@ -29,6 +29,16 @@ code#typeans { white-space: pre-wrap; }
 button { display: inline-block; border: 1px solid #999999; border-radius: 6px; padding: 4px 12px;
          margin: 4px; background-color: #e9e9e9; color: #222222; }
 rt { font-size: 0.5em; }
+input[type=checkbox], input[type=radio] { display: inline-block; width: 18px; height: 18px; margin: 0 6px 0 2px;
+                                          vertical-align: middle; background-color: #c4c4c4; border-radius: 3px; }
+input[type=radio] { border-radius: 9px; }
+input[type=checkbox][checked], input[type=radio][checked] { background-color: #1e88e5; }
+input[type=text], input[type=search], input[type=number], input[type=email], input[type=url], input:not([type]),
+textarea, select { display: inline-block; min-width: 160px; min-height: 1.2em; padding: 4px 6px;
+                   border: 1px solid #999999; border-radius: 4px; background-color: #ffffff; }
+input[type=button], input[type=submit], input[type=reset] { display: inline-block; padding: 4px 12px; margin: 4px;
+                                                            border: 1px solid #999999; border-radius: 6px;
+                                                            background-color: #e9e9e9; }
 .ankinx-ruby { display: inline-block; text-align: center; text-indent: 0; }
 .ankinx-ruby > rt { display: block; line-height: 1.2; }
 .ankinx-ruby > rb { display: block; }
@@ -40,6 +50,10 @@ const char* NIGHT_CSS = R"CSS(
 .card.nightMode { color: #e6e6e6; background-color: #2c2c2c; }
 .nightMode a { color: #8ab4f8; }
 .nightMode button { background-color: #3a3a3a; color: #e6e6e6; border-color: #666666; }
+.nightMode input[type=checkbox], .nightMode input[type=radio] { background-color: #5a5a5a; }
+.nightMode input[type=checkbox][checked], .nightMode input[type=radio][checked] { background-color: #42a5f5; }
+.nightMode input[type=text], .nightMode input:not([type]), .nightMode textarea, .nightMode select {
+    background-color: #3a3a3a; color: #e6e6e6; border-color: #666666; }
 )CSS";
 
 bool nightMode() { return brls::Application::getThemeVariant() == brls::ThemeVariant::DARK; }

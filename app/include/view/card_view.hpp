@@ -126,6 +126,7 @@ class CardView : public brls::View
     float maxScroll() const;
     void handleTap(brls::Point point);
     void tapAt(float docX, float docY);
+    void adjustTouch(float& x, float& y) const;
     std::vector<litehtml::element::ptr> focusables() const;
     // Move the highlight by `delta` elements; false at either end.
     bool moveFocus(int delta);

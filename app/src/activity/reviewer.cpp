@@ -302,8 +302,11 @@ void ReviewerActivity::onContentAvailable()
     cardView->setOnElementTap([this](int serial, float x, float y) {
         if (!script)
             return false;
+        auto start   = std::chrono::steady_clock::now();
         bool handled = script->tap(serial, x, y);
         afterScript();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        CardScript::log(0, "tap handled in " + std::to_string(ms) + " ms" + (handled ? "" : " (not by the card)"));
         return handled;
     });
     cardView->setOnLink([this](const std::string& url) { followLink(url); });

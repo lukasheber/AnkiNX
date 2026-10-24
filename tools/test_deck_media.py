@@ -30,7 +30,7 @@ def labelled(width, height, background, label):
     img = Image.new("RGB", (width, height), background)
     d = ImageDraw.Draw(img)
     d.rectangle([4, 4, width - 5, height - 5], outline=(30, 30, 30), width=4)
-    d.text((16, 12), label, fill=(20, 20, 20), font=font(max(14, height // 10)))
+    d.text((16, 12), label, fill=(20, 20, 20), font=font(max(14, min(height // 10, width // 22))))
     return img, d
 
 
