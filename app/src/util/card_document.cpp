@@ -39,6 +39,15 @@ input[type=checkbox][checked], input[type=radio][checked] { background-color: #1
 input[type=text], input[type=search], input[type=number], input[type=email], input[type=url], input:not([type]),
 textarea, select { display: inline-block; min-width: 160px; min-height: 1.2em; padding: 4px 6px;
                    border: 1px solid #999999; border-radius: 4px; background-color: #ffffff; }
+input, textarea { text-align: left; }
+input { white-space: nowrap; overflow: hidden; }
+/* litehtml draws no field content: a text field shows its value (the page
+   writes typed text into the attribute), or its placeholder in grey. */
+input[type=text]::before, input[type=search]::before, input[type=number]::before, input[type=email]::before,
+input[type=url]::before, input[type=tel]::before, input:not([type])::before { content: attr(value); }
+input[placeholder]:not([value])::before, input[placeholder][value=""]::before { content: attr(placeholder);
+                                                                                color: #888888; }
+input[type=password][value]::before { content: "••••••"; }
 input[type=button], input[type=submit], input[type=reset] { display: inline-block; padding: 4px 12px; margin: 4px;
                                                             border: 1px solid #999999; border-radius: 6px;
                                                             background-color: #e9e9e9; }
