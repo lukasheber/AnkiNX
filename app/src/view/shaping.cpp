@@ -20,6 +20,11 @@ struct Script
 const Script SCRIPTS[] = {
     { "NotoSansDevanagari-Regular.ttf", { { 0x0900, 0x097F }, { 0xA8E0, 0xA8FF }, { 0x1CD0, 0x1CFF } } },
     { "NotoSansThai-Regular.ttf", { { 0x0E00, 0x0E7F } } },
+    // Right to left (rtl_text.cpp cuts words into these runs): HarfBuzz lays
+    // them out right to left and returns the glyphs in drawing order.
+    { "NotoSansArabic-Regular.ttf",
+      { { 0x0600, 0x06FF }, { 0x0750, 0x077F }, { 0x08A0, 0x08FF }, { 0xFB50, 0xFDFF }, { 0xFE70, 0xFEFF } } },
+    { "NotoSansHebrew-Regular.ttf", { { 0x0590, 0x05FF }, { 0xFB1D, 0xFB4F } } },
 };
 constexpr int PLAIN   = -1;
 constexpr int INHERIT = -2; // joiners and the dotted circle: part of the run they are in

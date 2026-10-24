@@ -6,11 +6,12 @@
 struct NVGcontext;
 
 // Scripts that need shaping for the card view. NanoVG draws one glyph per
-// codepoint, which is enough for Latin, Cyrillic, Greek, CJK and (with
-// rtl_text.cpp) Arabic and Hebrew, but not for scripts whose letters
-// reorder, join into conjuncts or stack marks: Devanagari (Hindi, Marathi,
-// Nepali, Sanskrit) and Thai. Their runs are shaped with HarfBuzz against the
-// bundled Noto fonts and drawn from the glyph outlines as NanoVG paths.
+// codepoint, which is enough for Latin, Cyrillic, Greek and CJK, but not for
+// scripts whose letters join, reorder, form conjuncts or stack marks:
+// Devanagari (Hindi, Marathi, Nepali, Sanskrit), Thai, Arabic (with Persian
+// and Urdu letters) and Hebrew. Their runs are shaped with HarfBuzz against
+// the bundled Noto fonts and drawn from the glyph outlines as NanoVG paths.
+// Right-to-left words are cut into runs by rtl_text.cpp.
 namespace shaping
 {
 

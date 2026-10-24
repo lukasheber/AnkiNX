@@ -687,11 +687,10 @@ class NvgContainer : public document_container
         return -1;
     }
 
-    // Scripts the console's system fonts lack (resources/card_fonts): DejaVu
-    // Sans for Arabic-script glyphs, including the presentation forms
-    // rtl::visual produces; Noto Sans Thai; Noto Sans Devanagari (Hindi,
-    // Marathi, Sanskrit, Nepali). Loaded once, as fallbacks of the system
-    // font and of card fonts.
+    // Scripts the console's system fonts lack (resources/card_fonts), for text
+    // not shaped by shaping.cpp (a card font's own text, a missing shaping
+    // font): DejaVu Sans (Arabic, Hebrew), Noto Sans Thai and Devanagari.
+    // Loaded once, as fallbacks of the system font and of card fonts.
     const std::vector<int>& bundledFallbacks()
     {
         static std::vector<int> ids;
@@ -771,28 +770,36 @@ class NvgContainer : public document_container
 
     void delete_font(uint_ptr hFont) override { delete (Font*)hFont; }
 
-    // A word's runs: Devanagari, Thai and the like shaped by HarfBuzz
-    // (shaping.cpp); the rest by NanoVG, right-to-left words shaped and in
-    // visual order (rtl_text.cpp). The font must be applied.
+    // A word in drawing order: runs HarfBuzz shapes (Devanagari, Thai,
+    // Arabic, Hebrew; shaping.cpp) and text NanoVG draws as it is.
+    // Right-to-left words are cut and ordered by rtl_text.cpp.
+    static std::vector<shaping::Run> wordRuns(const std::string& logical)
+    {
+        if (rtl::rtlWord(logical))
+        {
+            std::vector<shaping::Run> runs;
+            for (auto& piece : rtl::pieces(logical))
+                runs.push_back({ std::move(piece.text), piece.shaped });
+            return runs;
+        }
+        if (shaping::needed(logical))
+            return shaping::runs(logical);
+        return { { logical, false } };
+    }
+
+    // The font must be applied.
     float wordWidth(const std::string& logical, const Font* f)
     {
-        if (!shaping::needed(logical))
-            return nvgTextBounds(vg, 0, 0, rtl::visual(logical).c_str(), nullptr, nullptr);
         float width = 0;
-        for (const auto& run : shaping::runs(logical))
+        for (const auto& run : wordRuns(logical))
             width += run.shaped ? shaping::width(run.text, f->size)
-                                : nvgTextBounds(vg, 0, 0, rtl::visual(run.text).c_str(), nullptr, nullptr);
+                                : nvgTextBounds(vg, 0, 0, run.text.c_str(), nullptr, nullptr);
         return width;
     }
 
     void drawWord(const std::string& logical, const Font* f, float x, float baseline)
     {
-        if (!shaping::needed(logical))
-        {
-            nvgText(vg, x, baseline, rtl::visual(logical).c_str(), nullptr);
-            return;
-        }
-        for (const auto& run : shaping::runs(logical))
+        for (const auto& run : wordRuns(logical))
         {
             if (run.shaped)
             {
@@ -801,9 +808,8 @@ class NvgContainer : public document_container
             }
             else
             {
-                std::string shown = rtl::visual(run.text);
-                nvgText(vg, x, baseline, shown.c_str(), nullptr);
-                x += nvgTextBounds(vg, 0, 0, shown.c_str(), nullptr, nullptr);
+                nvgText(vg, x, baseline, run.text.c_str(), nullptr);
+                x += nvgTextBounds(vg, 0, 0, run.text.c_str(), nullptr, nullptr);
             }
         }
     }

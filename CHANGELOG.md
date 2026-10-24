@@ -21,6 +21,13 @@ build, then commit and tag (`git tag v0.2.0`).
 - Hindi and Thai as in print: letters join into conjuncts (स्त), vowel
   signs go where they belong (the ि of हिंदी before ह) and Thai marks stack
   over their letters, shaped with HarfBuzz.
+- Arabic, Persian, Urdu and Hebrew are shaped with HarfBuzz too: letters
+  join as the font intends (ligatures included), and harakat and Hebrew
+  vowel points sit where they belong. Uses Noto Sans Arabic and Hebrew.
+- Text fields in templates show their placeholder (in grey) until something
+  is typed, then the typed text. They were drawn as empty boxes.
+- Coming back from studying or Settings while a sync starts, the deck list's
+  highlight no longer draws over the "Syncing…" dialog.
 - Tap the answer (Settings › Study, off by default): in handheld mode, a tap
   on the left third of the answer is Again and on the right third Good, or
   the card is four columns from Again to Easy.
