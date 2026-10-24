@@ -3,9 +3,12 @@ the render item with its element, so get_placement() of any display:flex
 element is 0x0 (render_item::init does `src_el()->add_render(...)`).
 AnkiNX needs placements to highlight card elements for the controller.
 
+diff --git a/src/render_flex.cpp b/src/render_flex.cpp
+index 24b6f88d..7a02c116 100644
 --- a/src/render_flex.cpp
 +++ b/src/render_flex.cpp
-@@ -330,5 +330,6 @@
+@@ -329,6 +329,7 @@ std::list<litehtml::flex_line> litehtml::render_item_flex::get_lines(
+ 
  std::shared_ptr<litehtml::render_item> litehtml::render_item_flex::init()
  {
 +    src_el()->add_render(shared_from_this());

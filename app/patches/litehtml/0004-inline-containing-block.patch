@@ -1,0 +1,95 @@
+Absolutely positioned elements inside a relatively positioned inline element
+(a badge on a word: <span style="position:relative">word<span
+style="position:absolute; top:-10px; right:-12px">3</span></span>) were
+placed against the inline element's empty box. The containing block of an
+inline element is now the box around its line fragments' padding boxes, as
+CSS 2.2 (10.1.4) says.
+
+diff --git a/src/render_item.cpp b/src/render_item.cpp
+index fa065759..2f1c2374 100644
+--- a/src/render_item.cpp
++++ b/src/render_item.cpp
+@@ -152,7 +152,11 @@ litehtml::render_item::split_inlines()
+         ret;
+     for(const auto& child : m_children)
+     {
+-        if(child->src_el()->is_block_box() && child->src_el()->css().get_float() == float_none)
++        // Out-of-flow boxes (absolutely positioned) stay inside the inline,
++        // which can be their containing block.
++        if(child->src_el()->is_block_box() && child->src_el()->css().get_float() == float_none &&
++           child->src_el()->css().get_position() != element_position_absolute &&
++           child->src_el()->css().get_position() != element_position_fixed)
+         {
+             std::get<0>(ret) = clone();
+             std::get<1>(ret) = child;
+@@ -245,6 +249,31 @@ void litehtml::render_item::render_positioned(render_type rt)
+     position view_port;
+     src_el()->get_document()->container()->get_viewport(view_port);
+ 
++    // A positioned inline element is the containing block of its absolutely
++    // positioned descendants: the box around the padding boxes of its line
++    // fragments (CSS 2.2, 10.1.4). Its own m_pos is empty; the fragments are in
++    // its parent's coordinates.
++    position inline_box;
++    bool     has_inline_box = false;
++    for_inline_boxes([&](const position& box, bool, bool) {
++        position padding_box  = box;
++        padding_box          -= m_borders;
++        if(!has_inline_box)
++        {
++            inline_box     = padding_box;
++            has_inline_box = true;
++        } else
++        {
++            pixel_t right  = std::max(inline_box.right(), padding_box.right());
++            pixel_t bottom = std::max(inline_box.bottom(), padding_box.bottom());
++            inline_box.x      = std::min(inline_box.x, padding_box.x);
++            inline_box.y      = std::min(inline_box.y, padding_box.y);
++            inline_box.width  = right - inline_box.x;
++            inline_box.height = bottom - inline_box.y;
++        }
++        return true;
++    });
++
+     bool process = false;
+     for(auto& el : m_positioned)
+     {
+@@ -275,6 +304,17 @@ void litehtml::render_item::render_positioned(render_type rt)
+             {
+                 containing_block_size.height = view_port.height;
+                 containing_block_size.width  = view_port.width;
++            } else if(has_inline_box)
++            {
++                containing_block_size.height = inline_box.height;
++                containing_block_size.width  = inline_box.width;
++                // The inline layout skips out-of-flow boxes: lay it out here,
++                // shrink-to-fit, as render_item_block_context does for blocks.
++                pixel_t min_rendered_width = el->render(0_px, 0_px, containing_block_size, nullptr).natural_width;
++                if(min_rendered_width < el->width() && el->src_el()->css().get_width().is_predefined())
++                {
++                    el->render(0_px, 0_px, containing_block_size.new_width(min_rendered_width), nullptr);
++                }
+             } else
+             {
+                 containing_block_size.height = m_pos.height + m_padding.height();
+@@ -760,6 +800,20 @@ void litehtml::render_item::render_positioned(render_type rt)
+             {
+                 el->m_pos.x -= el_static_offset_x;
+                 el->m_pos.y -= el_static_offset_y;
++
++                // Offsets from an inline containing block start at its box,
++                // not at the empty m_pos (a static position needs no change).
++                if(has_inline_box)
++                {
++                    if(!css_left.is_predefined() || !css_right.is_predefined())
++                    {
++                        el->m_pos.x += inline_box.x - m_pos.x + m_padding.left;
++                    }
++                    if(!css_top.is_predefined() || !css_bottom.is_predefined())
++                    {
++                        el->m_pos.y += inline_box.y - m_pos.y + m_padding.top;
++                    }
++                }
+             }
+ 
+             if(need_render)

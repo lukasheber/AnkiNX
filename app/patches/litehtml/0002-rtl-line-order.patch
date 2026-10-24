@@ -5,6 +5,8 @@ right-to-left words reversed; dir="rtl" on an ancestor makes the line read
 right to left and turns left alignment into right). Shaping and the order
 inside each word are done by the container (app/src/view/rtl_text.cpp).
 
+diff --git a/src/line_box.cpp b/src/line_box.cpp
+index 835e8d3f..f7130af8 100644
 --- a/src/line_box.cpp
 +++ b/src/line_box.cpp
 @@ -4,6 +4,10 @@
@@ -18,7 +20,7 @@ inside each word are done by the container (app/src/view/rtl_text.cpp).
  
  //////////////////////////////////////////////////////////////////////////////////////////
  
-@@ -217,6 +221,176 @@
+@@ -217,6 +221,176 @@ litehtml::pixel_t litehtml::line_box::calc_va_baseline(const va_context& current
      }
  }
  
@@ -195,7 +197,7 @@ inside each word are done by the container (app/src/view/rtl_text.cpp).
  std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
      bool last_box, const containing_block_context& containing_block_size)
  {
-@@ -304,6 +478,8 @@
+@@ -304,6 +478,8 @@ std::list<std::unique_ptr<litehtml::line_box_item>> litehtml::line_box::finish(
          return ret_items;
      }
  

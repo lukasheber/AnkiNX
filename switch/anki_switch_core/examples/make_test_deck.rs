@@ -626,10 +626,10 @@ fn css(d: &mut Deck) {
         "CSS",
         &check(
             "Card 1 has a green bar and Card 2 a pink one (.card1/.card2). Each bar is as tall as its side's \
-             content, so Card 2's is a short one beside its heading. Card 1:the mono card font (0 and O \
-             differ), three flex boxes in a row, a 3 × 2 grid, the gradient, a shadow, a tilted word, purple \
-             bold text, a red badge \"3\" at the corner, and the day or night line matching the theme. Missing \
-             pieces (shadow, rotation...) are known gaps worth noting.",
+             content, so Card 2's is a short one beside its heading. Card 1: the mono card font (0 and O \
+             differ), three flex boxes in a row, a 3 × 2 grid, the gradient, a soft shadow under the box, a \
+             word tilted up to the right, purple bold text, a red badge \"3\" at the top right of \"Badge\", \
+             and the day or night line matching the theme. Known gap: the grid shows as one column.",
         ),
     ]);
 }

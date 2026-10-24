@@ -11,6 +11,7 @@
 #include <functional>
 #include <fstream>
 #include <iterator>
+#include <litehtml/css_parser.h>
 #include <litehtml/render_item.h>
 #include <lunasvg.h>
 #include <map>
@@ -120,6 +121,43 @@ std::string trimQuotes(std::string s)
     if (s.size() >= 2 && (s.front() == '"' || s.front() == '\'') && s.back() == s.front())
         s = s.substr(1, s.size() - 2);
     return s;
+}
+
+// A length token in a box-shadow or transform value (a bare 0 counts).
+bool isCssLength(const css_token& t)
+{
+    return t.type == DIMENSION || t.type == PERCENTAGE || (t.type == NUMBER && t.n.number == 0);
+}
+
+// The length in CSS pixels: em by the element's font size, rem by the root
+// default (16px), a percentage of `percentOf`.
+float cssLength(const css_token& t, float fontSize, float percentOf = 0)
+{
+    if (t.type == PERCENTAGE)
+        return t.n.number * percentOf / 100;
+    if (t.type != DIMENSION)
+        return t.type == NUMBER ? t.n.number : 0;
+    std::string unit = lowerAscii(t.unit());
+    if (unit == "em")
+        return t.n.number * fontSize;
+    if (unit == "rem")
+        return t.n.number * 16;
+    if (unit == "pt")
+        return t.n.number * 4 / 3;
+    return t.n.number;
+}
+
+// An angle token in radians (deg, rad, turn, grad; a bare number is radians).
+float cssAngle(const css_token& t)
+{
+    std::string unit = t.type == DIMENSION ? lowerAscii(t.unit()) : "";
+    if (unit == "deg")
+        return t.n.number * (float)M_PI / 180;
+    if (unit == "turn")
+        return t.n.number * 2 * (float)M_PI;
+    if (unit == "grad")
+        return t.n.number * (float)M_PI / 200;
+    return t.n.number;
 }
 
 // A card font from an @font-face rule (litehtml ignores those rules).
@@ -1080,6 +1118,127 @@ class NvgContainer : public document_container
     }
 
     void del_clip() override { nvgRestore(vg); }
+
+    // Outer box shadows (app/patches/litehtml/0003): NanoVG's feathered box
+    // gradient, outside the border box only. Inset shadows are not drawn.
+    void draw_box_shadow(uint_ptr, const element::ptr& el, const position& box, const border_radiuses& radius) override
+    {
+        float fontSize = el->css().get_font_size();
+        auto shadows   = parse_comma_separated_list(normalize(el->css().get_box_shadow(), f_componentize));
+        // The first shadow is on top: draw it last.
+        for (auto it = shadows.rbegin(); it != shadows.rend(); ++it)
+        {
+            float len[4]    = {};
+            int count       = 0;
+            bool inset      = false;
+            web_color color = el->css().get_color(); // currentColor
+            for (const css_token& t : *it)
+            {
+                if (t.type == WHITESPACE)
+                    continue;
+                if (t.type == IDENT && lowerAscii(t.name()) == "inset")
+                    inset = true;
+                else if (isCssLength(t) && count < 4)
+                    len[count++] = cssLength(t, fontSize);
+                else
+                    parse_color(t, color, this);
+            }
+            if (inset || count < 2 || color.alpha == 0)
+                continue;
+            float blur = std::max(0.0f, len[2]), spread = len[3];
+            float x = box.x + len[0] - spread, y = box.y + len[1] - spread;
+            float w = box.width + 2 * spread, h = box.height + 2 * spread;
+            if (w <= 0 || h <= 0)
+                continue;
+            float r       = std::max(0.0f, (float)radius.top_left_x + spread);
+            float feather = std::max(1.0f, blur * 1.5f);
+            NVGcolor inner = toNvg(color), outer = inner;
+            outer.a        = 0;
+            nvgBeginPath(vg);
+            nvgRect(vg, x - feather, y - feather, w + 2 * feather, h + 2 * feather);
+            nvgRoundedRect(vg, box.x, box.y, box.width, box.height, (float)radius.top_left_x);
+            nvgPathWinding(vg, NVG_HOLE);
+            nvgFillPaint(vg, nvgBoxGradient(vg, x, y, w, h, r, feather, inner, outer));
+            nvgFill(vg);
+        }
+    }
+
+    // 2D transforms (app/patches/litehtml/0003) around transform-origin:
+    // translate, rotate, scale, skew and matrix; 3D functions are ignored.
+    void begin_transform(uint_ptr, const element::ptr& el, const position& box) override
+    {
+        nvgSave(vg);
+        float fontSize = el->css().get_font_size();
+        float ox = box.x + box.width / 2, oy = box.y + box.height / 2;
+        int axis = 0;
+        for (const css_token& t : normalize(el->css().get_transform_origin(), f_componentize))
+        {
+            if (t.type == WHITESPACE)
+                continue;
+            std::string word = t.type == IDENT ? lowerAscii(t.name()) : "";
+            if (word == "left")
+                ox = box.x;
+            else if (word == "right")
+                ox = box.x + box.width;
+            else if (word == "top")
+                oy = box.y;
+            else if (word == "bottom")
+                oy = box.y + box.height;
+            else if (word.empty() && axis == 0)
+                ox = box.x + cssLength(t, fontSize, box.width);
+            else if (word.empty() && axis == 1)
+                oy = box.y + cssLength(t, fontSize, box.height);
+            axis++;
+        }
+        nvgTranslate(vg, ox, oy);
+        for (const css_token& fn : normalize(el->css().get_transform(), f_componentize))
+        {
+            if (fn.type != CV_FUNCTION)
+                continue;
+            std::vector<css_token> args;
+            for (const css_token& a : fn.value)
+                if (a.type != WHITESPACE && a.type != COMMA)
+                    args.push_back(a);
+            if (args.empty())
+                continue;
+            std::string name = lowerAscii(fn.name());
+            auto arg = [&](size_t i, float percentOf) {
+                return i < args.size() ? cssLength(args[i], fontSize, percentOf) : 0.0f;
+            };
+            auto number = [&](size_t i, float fallback) {
+                if (i >= args.size())
+                    return fallback;
+                return args[i].type == PERCENTAGE ? args[i].n.number / 100 : args[i].n.number;
+            };
+            if (name == "rotate" || name == "rotatez")
+                nvgRotate(vg, cssAngle(args[0]));
+            else if (name == "translate")
+                nvgTranslate(vg, arg(0, box.width), arg(1, box.height));
+            else if (name == "translatex")
+                nvgTranslate(vg, arg(0, box.width), 0);
+            else if (name == "translatey")
+                nvgTranslate(vg, 0, arg(0, box.height));
+            else if (name == "scale")
+                nvgScale(vg, number(0, 1), number(1, number(0, 1)));
+            else if (name == "scalex")
+                nvgScale(vg, number(0, 1), 1);
+            else if (name == "scaley")
+                nvgScale(vg, 1, number(0, 1));
+            else if (name == "skew" || name == "skewx")
+            {
+                nvgSkewX(vg, cssAngle(args[0]));
+                if (name == "skew" && args.size() > 1)
+                    nvgSkewY(vg, cssAngle(args[1]));
+            }
+            else if (name == "skewy")
+                nvgSkewY(vg, cssAngle(args[0]));
+            else if (name == "matrix" && args.size() == 6)
+                nvgTransform(vg, number(0, 1), number(1, 0), number(2, 0), number(3, 1), number(4, 0), number(5, 0));
+        }
+        nvgTranslate(vg, -ox, -oy);
+    }
+
+    void end_transform(uint_ptr, const element::ptr&) override { nvgRestore(vg); }
 
     void get_viewport(position& viewport) const override
     {

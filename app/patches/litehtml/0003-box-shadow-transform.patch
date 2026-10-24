@@ -1,0 +1,174 @@
+box-shadow and transform for AnkiNX (cards with shadows, rotated or scaled
+elements): litehtml ignores both. The values are kept as written in the
+computed style (get_box_shadow, get_transform, get_transform_origin) and the
+document container draws them: draw_box_shadow before an element's
+background; begin_transform/end_transform around each transformed element's
+drawing and its descendants', in every drawing pass. The new container calls
+have empty defaults. Layout ignores transforms, as in browsers; so does hit
+testing (taps on a rotated element use its unrotated box).
+
+diff --git a/include/litehtml/css_properties.h b/include/litehtml/css_properties.h
+index 039af372..c4e4070f 100644
+--- a/include/litehtml/css_properties.h
++++ b/include/litehtml/css_properties.h
+@@ -79,6 +79,10 @@ namespace litehtml
+         web_color             m_color;
+         std::string           m_cursor;
+         std::string           m_content;
++        // Kept as written; the document container draws them.
++        std::string           m_box_shadow;
++        std::string           m_transform;
++        std::string           m_transform_origin;
+         border_collapse       m_border_collapse = border_collapse_separate;
+         css_length            m_css_border_spacing_x;
+         css_length            m_css_border_spacing_y;
+@@ -214,6 +218,10 @@ namespace litehtml
+         const std::string& get_cursor() const;
+         void               set_cursor(const std::string& cursor);
+ 
++        const std::string& get_box_shadow() const { return m_box_shadow; }
++        const std::string& get_transform() const { return m_transform; }
++        const std::string& get_transform_origin() const { return m_transform_origin; }
++
+         const std::string& get_content() const;
+         void               set_content(const std::string& content);
+ 
+diff --git a/include/litehtml/document_container.h b/include/litehtml/document_container.h
+index 6928f6ce..8d26ea1b 100644
+--- a/include/litehtml/document_container.h
++++ b/include/litehtml/document_container.h
+@@ -56,6 +56,20 @@ namespace litehtml
+                                          const background_layer::conic_gradient& gradient)                          = 0;
+         virtual void draw_borders(litehtml::uint_ptr hdc, const litehtml::borders& borders,
+                                   const litehtml::position& draw_pos, bool root)                                    = 0;
++        // box-shadow (el->css().get_box_shadow(), as written), drawn before the
++        // element's background.
++        virtual void draw_box_shadow(litehtml::uint_ptr /*hdc*/, const litehtml::element::ptr& /*el*/,
++                                     const litehtml::position& /*border_box*/,
++                                     const litehtml::border_radiuses& /*radius*/)
++        {
++        }
++        // transform (el->css().get_transform(), as written): everything drawn
++        // between these two calls is the element and its descendants.
++        virtual void begin_transform(litehtml::uint_ptr /*hdc*/, const litehtml::element::ptr& /*el*/,
++                                     const litehtml::position& /*border_box*/)
++        {
++        }
++        virtual void end_transform(litehtml::uint_ptr /*hdc*/, const litehtml::element::ptr& /*el*/) {}
+ 
+         virtual void set_caption(const char* caption)                                                       = 0;
+         virtual void set_base_url(const char* base_url)                                                     = 0;
+diff --git a/include/litehtml/string_id.h b/include/litehtml/string_id.h
+index a2d4ebf4..0462bdf8 100644
+--- a/include/litehtml/string_id.h
++++ b/include/litehtml/string_id.h
+@@ -85,7 +85,7 @@ namespace litehtml
+         _white_space_, _text_align_, _vertical_align_, _color_, _width_, _height_, _min_width_, _min_height_,
+         _max_width_, _max_height_, _position_, _overflow_, _display_, _visibility_, _appearance_, _box_sizing_,
+         _z_index_, _float_, _clear_, _text_indent_, _top_, _right_, _bottom_, _left_, _cursor_, _content_,
+-        _border_collapse_, _text_transform_,
++        _border_collapse_, _text_transform_, _box_shadow_, _transform_, _transform_origin_,
+ 
+         _flex_, _flex_flow_, _flex_direction_, _flex_wrap_, _justify_content_, _align_items_, _align_content_,
+         _align_self_, _flex_grow_, _flex_shrink_, _flex_basis_,
+diff --git a/src/css_properties.cpp b/src/css_properties.cpp
+index 5b03ba4d..2f467022 100644
+--- a/src/css_properties.cpp
++++ b/src/css_properties.cpp
+@@ -249,6 +249,9 @@ void litehtml::css_properties::compute(const html_tag* el, const document::ptr&
+     m_z_index = el->get_property<css_length>(_z_index_, false, _auto, offset(m_z_index));
+     m_content = el->get_property<std::string>(_content_, false, "", offset(m_content));
+     m_cursor  = el->get_property<std::string>(_cursor_, true, "auto", offset(m_cursor));
++    m_box_shadow = el->get_property<std::string>(_box_shadow_, false, "", offset(m_box_shadow));
++    m_transform  = el->get_property<std::string>(_transform_, false, "", offset(m_transform));
++    m_transform_origin = el->get_property<std::string>(_transform_origin_, false, "", offset(m_transform_origin));
+ 
+     m_css_text_indent = el->get_property<css_length>(_text_indent_, true, 0, offset(m_css_text_indent));
+     doc->cvt_units(m_css_text_indent, m_font_metrics, 0_px);
+diff --git a/src/html_tag.cpp b/src/html_tag.cpp
+index a32b90f6..eb62f678 100644
+--- a/src/html_tag.cpp
++++ b/src/html_tag.cpp
+@@ -954,6 +954,12 @@ namespace litehtml
+                     bdr.right = m_css.get_borders().right;
+                 }
+ 
++                if(!m_css.get_box_shadow().empty())
++                {
++                    get_document()->container()->draw_box_shadow(hdc, shared_from_this(), box,
++                                                                 bdr.radius.calc_percents(box.width, box.height));
++                }
++
+                 if(bg)
+                 {
+                     int num_layers = bg->get_layers_number();
+@@ -1002,6 +1008,16 @@ namespace litehtml
+                 pos.y         += v_offset;
+                 pos.height    -= v_offset;
+ 
++                if(!m_css.get_box_shadow().empty() && !is_root())
++                {
++                    position shadow_box  = border_box;
++                    shadow_box.y        += v_offset;
++                    shadow_box.height   -= v_offset;
++                    get_document()->container()->draw_box_shadow(
++                        hdc, shared_from_this(), shadow_box,
++                        m_css.get_borders().radius.calc_percents(shadow_box.width, shadow_box.height));
++                }
++
+                 const background* bg = get_background();
+                 if(bg)
+                 {
+diff --git a/src/render_item.cpp b/src/render_item.cpp
+index 9f8b440f..fa065759 100644
+--- a/src/render_item.cpp
++++ b/src/render_item.cpp
+@@ -978,6 +978,22 @@ void litehtml::render_item::draw_children(uint_ptr hdc, pixel_t x, pixel_t y, co
+     {
+         if(el->is_visible())
+         {
++            // A transformed element (not inline: transforms don't apply to
++            // inline boxes) wraps its own drawing and its descendants' in every
++            // pass.
++            bool transformed = !el->src_el()->css().get_transform().empty() &&
++                               el->src_el()->css().get_display() != display_inline;
++            if(transformed)
++            {
++                bool fixed           = el->src_el()->css().get_position() == element_position_fixed;
++                position border_box  = el->pos();
++                border_box.x        += fixed ? 0_px : pos.x;
++                border_box.y        += fixed ? 0_px : pos.y;
++                border_box          += el->get_paddings();
++                border_box          += el->get_borders();
++                doc->container()->begin_transform(hdc, el->src_el(), border_box);
++            }
++
+             bool process = true;
+             switch(flag)
+             {
+@@ -1046,6 +1062,11 @@ void litehtml::render_item::draw_children(uint_ptr hdc, pixel_t x, pixel_t y, co
+                     }
+                 }
+             }
++
++            if(transformed)
++            {
++                doc->container()->end_transform(hdc, el->src_el());
++            }
+         }
+     }
+ 
+diff --git a/src/style.cpp b/src/style.cpp
+index 98be9dbb..49cf941d 100644
+--- a/src/style.cpp
++++ b/src/style.cpp
+@@ -588,6 +588,9 @@ namespace litehtml
+             //  ==================================  OTHER  ==================================
+ 
+         case _cursor_:
++        case _box_shadow_:
++        case _transform_:
++        case _transform_origin_:
+             str = get_repr(value, 0, -1, true);
+             add_parsed_property(name, property_value(str, important));
+             break;
