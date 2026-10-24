@@ -28,7 +28,7 @@ password).
 Touch works too: tap the card to show the answer, tap the buttons, tap ▶ to
 replay a sound, tap a hint link to reveal it.
 
-Supported media: images PNG, JPEG, GIF (first frame), BMP, **WebP**, **SVG**
+Supported media: images PNG, JPEG, GIF (animated), BMP, **WebP**, **SVG**
 (including Anki's LaTeX SVGs); audio MP3, OGG/Vorbis, Opus, WAV (SDL2_mixer) and,
 through FFmpeg, **M4A/AAC, ALAC, FLAC** and the audio of WebM/MP4.
 

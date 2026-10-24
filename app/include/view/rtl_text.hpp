@@ -15,7 +15,8 @@ bool hasRtl(const std::string& utf8);
 
 // One word (litehtml draws text a word at a time) in drawing order: letters
 // joined, right-to-left runs reversed, digits and Latin kept left to right,
-// brackets mirrored. Text without right-to-left letters comes back as is.
+// brackets mirrored; Devanagari's vowel sign i moved before its consonants.
+// Other text comes back as is.
 std::string visual(const std::string& utf8);
 
 } // namespace rtl

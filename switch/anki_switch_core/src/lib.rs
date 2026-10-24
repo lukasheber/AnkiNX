@@ -6,6 +6,7 @@
 
 mod api;
 mod math;
+mod mhchem;
 mod occlusion;
 mod update;
 

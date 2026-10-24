@@ -18,6 +18,8 @@
 #include <sys/stat.h>
 #include <webp/decode.h>
 
+#include <borealis/extern/nanovg/stb_image.h> // compiled into NanoVG (nanovg.c)
+
 #include "util/controls.hpp"
 #include "view/rtl_text.hpp"
 
@@ -238,6 +240,8 @@ bool isFontFile(const std::string& data)
                                 data.compare(0, 4, "true") == 0 || data.compare(0, 4, "ttcf") == 0);
 }
 
+bool isGif(const std::string& data) { return data.size() > 6 && data.compare(0, 4, "GIF8") == 0; }
+
 bool isWebp(const std::string& data)
 {
     return data.size() > 12 && data.compare(0, 4, "RIFF") == 0 && data.compare(8, 4, "WEBP") == 0;
@@ -318,8 +322,13 @@ class NvgContainer : public document_container
     {
         NVGcontext* ctx = brls::Application::getNVGContext();
         for (auto& [_, img] : images)
-            if (img.id > 0 && ctx)
-                nvgDeleteImage(ctx, img.id);
+            if (ctx)
+            {
+                if (img.id > 0)
+                    nvgDeleteImage(ctx, img.id);
+                for (int frame : img.frames)
+                    nvgDeleteImage(ctx, frame);
+            }
         images.clear();
     }
 
@@ -340,9 +349,60 @@ class NvgContainer : public document_container
         // Layout size (CSS pixels); SVG textures are rasterised larger.
         int width  = 0;
         int height = 0;
+        // Animated GIF: one texture per frame after the first (id), and when
+        // each frame ends, in ms from the start of the loop.
+        std::vector<int> frames;
+        std::vector<int> frameEnds;
+
+        // The texture to draw now.
+        int current() const
+        {
+            if (frames.empty() || frameEnds.back() <= 0)
+                return id;
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count() %
+                      frameEnds.back();
+            for (size_t i = 0; i < frameEnds.size(); i++)
+                if (ms < frameEnds[i])
+                    return i == 0 ? id : frames[i - 1];
+            return id;
+        }
     };
 
-    // PNG, JPEG, GIF (first frame), BMP via NanoVG's stb_image; WebP via
+    // An animated GIF: every frame and its delay (stb_image). False for a
+    // single frame, or frames too large to keep (the first is used then).
+    bool decodeGif(const std::string& data, Image& img)
+    {
+        int* delays = nullptr;
+        int w = 0, h = 0, count = 0, comp = 0;
+        stbi_uc* pixels = stbi_load_gif_from_memory((const stbi_uc*)data.data(), (int)data.size(), &delays, &w, &h,
+                                                    &count, &comp, 4);
+        bool animated = pixels && count > 1 && (size_t)w * h * 4 * count <= (64u << 20);
+        if (animated)
+        {
+            const size_t frameSize = (size_t)w * h * 4;
+            int end                = 0;
+            for (int i = 0; i < count; i++)
+            {
+                int id = nvgCreateImageRGBA(vg, w, h, 0, pixels + frameSize * i);
+                if (i == 0)
+                    img.id = id;
+                else
+                    img.frames.push_back(id);
+                // Browsers show frames of 0 or 10 ms for 100 ms.
+                end += delays && delays[i] > 10 ? delays[i] : 100;
+                img.frameEnds.push_back(end);
+            }
+            img.width  = w;
+            img.height = h;
+        }
+        stbi_image_free(pixels);
+        free(delays);
+        return animated;
+    }
+
+    // PNG, JPEG, GIF (animated too), BMP via NanoVG's stb_image; WebP via
     // libwebp; SVG (including Anki's LaTeX SVGs) via lunasvg.
     // `path` is only used to recognise SVG by extension.
     Image decodeImage(const std::string& path, const std::string& data)
@@ -377,6 +437,9 @@ class NvgContainer : public document_container
             img.id     = uploadRgba(vg, bitmap.data(), bitmap.width(), bitmap.height(), bitmap.stride());
             img.width  = (int)std::ceil(w);
             img.height = (int)std::ceil(h);
+        }
+        else if (isGif(data) && decodeGif(data, img))
+        {
         }
         else
         {
@@ -460,7 +523,7 @@ class NvgContainer : public document_container
                    brls::FONT_EMOJI, brls::FONT_SWITCH_ICONS, brls::FONT_MATERIAL_ICONS })
                 if (int f = brls::Application::getFont(fallback); f >= 0)
                     nvgAddFallbackFontId(vg, id, f);
-            if (int f = rtlFallback(); f >= 0)
+            for (int f : bundledFallbacks())
                 nvgAddFallbackFontId(vg, id, f);
             return face.id = id;
         }
@@ -498,35 +561,46 @@ class NvgContainer : public document_container
         return -1;
     }
 
-    // DejaVu Sans (resources/card_fonts): Arabic-script glyphs, including the
-    // presentation forms rtl::visual produces, which the system fonts lack.
-    // Loaded once, as a fallback of the system font and of card fonts.
-    int rtlFallback()
+    // Scripts the console's system fonts lack (resources/card_fonts): DejaVu
+    // Sans for Arabic-script glyphs, including the presentation forms
+    // rtl::visual produces; Noto Sans Thai; Noto Sans Devanagari (Hindi,
+    // Marathi, Sanskrit, Nepali). Loaded once, as fallbacks of the system
+    // font and of card fonts.
+    const std::vector<int>& bundledFallbacks()
     {
-        static int id = -2;
-        if (id != -2 || !vg)
-            return id;
-        id = nvgFindFont(vg, "ankinx-rtl");
-        if (id >= 0)
-            return id;
-        std::string data = readFile(BRLS_ASSET("card_fonts/DejaVuSans.ttf"));
-        auto* copy       = isFontFile(data) ? (unsigned char*)std::malloc(data.size()) : nullptr;
-        if (!copy)
+        static std::vector<int> ids;
+        static bool loaded = false;
+        if (loaded || !vg)
+            return ids;
+        loaded = true;
+        for (const char* file : { "DejaVuSans.ttf", "NotoSansThai-Regular.ttf", "NotoSansDevanagari-Regular.ttf" })
         {
-            brls::Logger::error("card fonts: no right-to-left fallback font");
-            return id = -1;
+            std::string name = std::string("ankinx-") + file;
+            int id           = nvgFindFont(vg, name.c_str());
+            if (id < 0)
+            {
+                std::string data = readFile(std::string(BRLS_ASSET("card_fonts/")) + file);
+                auto* copy       = isFontFile(data) ? (unsigned char*)std::malloc(data.size()) : nullptr;
+                if (!copy)
+                {
+                    brls::Logger::error("card fonts: missing fallback font {}", file);
+                    continue;
+                }
+                std::memcpy(copy, data.data(), data.size());
+                id = nvgCreateFontMem(vg, name.c_str(), copy, (int)data.size(), 1); // NanoVG frees `copy`
+                if (id >= 0)
+                    nvgAddFallbackFontId(vg, brls::Application::getFont(brls::FONT_REGULAR), id);
+            }
+            if (id >= 0)
+                ids.push_back(id);
         }
-        std::memcpy(copy, data.data(), data.size());
-        id = nvgCreateFontMem(vg, "ankinx-rtl", copy, (int)data.size(), 1);
-        if (id >= 0)
-            nvgAddFallbackFontId(vg, brls::Application::getFont(brls::FONT_REGULAR), id);
-        return id;
+        return ids;
     }
 
   public:
     uint_ptr create_font(const font_description& descr, const document*, font_metrics* fm) override
     {
-        rtlFallback(); // the system fallbacks are set up in main.cpp
+        bundledFallbacks(); // the system fallbacks are set up in main.cpp
         auto* f       = new Font();
         f->face       = brls::Application::getFont(brls::FONT_REGULAR);
         f->size       = std::max(1.0f, (float)descr.size);
@@ -708,7 +782,7 @@ class NvgContainer : public document_container
         // taller than the line (rendered maths, by absolute path) must not be.
         if (url.empty() || url[0] != '/')
             nvgIntersectScissor(vg, c.x, c.y, c.width, c.height);
-        NVGpaint paint = nvgImagePattern(vg, o.x, o.y, o.width, o.height, 0, it->second.id, 1.0f);
+        NVGpaint paint = nvgImagePattern(vg, o.x, o.y, o.width, o.height, 0, it->second.current(), 1.0f);
         nvgBeginPath(vg);
         if (layer.repeat == background_repeat_no_repeat)
             roundedRect(vg, o, layer.border_radius);

@@ -168,7 +168,7 @@ impl MathRenderer {
             }
         }
 
-        let code = mitex::convert_math(latex, None).ok()?;
+        let code = mitex::convert_math(&crate::mhchem::expand(latex), None).ok()?;
         self.world.main = Source::new(
             file_id("main.typ"),
             format!(
@@ -241,9 +241,14 @@ fn next_open(html: &str) -> Option<(usize, &'static str)> {
 fn latex_text(html: &str) -> String {
     let mut text = String::with_capacity(html.len());
     let mut in_tag = false;
-    for c in html.chars() {
+    let mut chars = html.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
-            '<' => in_tag = true,
+            // As in browsers, `<` opens a tag only before a letter, `/`, `!`
+            // or `?`: a bare `<=>` (an mhchem arrow) is text.
+            '<' if !in_tag && chars.peek().is_some_and(|n| n.is_ascii_alphabetic() || "/!?".contains(*n)) => {
+                in_tag = true
+            }
             '>' if in_tag => {
                 in_tag = false;
                 text.push(' ');
@@ -320,8 +325,21 @@ mod tests {
         assert!(tall.depth > 0.2, "limits reach below the baseline: {}", tall.depth);
     }
 
+    /// mhchem, which MiTeX lacks, is expanded first.
+    #[test]
+    fn renders_chemistry() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut renderer = MathRenderer::new(dir.path().to_path_buf());
+        for latex in [r"\ce{2H2 + O2 -> 2H2O}", r"\ce{N2 + 3H2 <=>[Fe] 2NH3}", r"\ce{SO4^2- + Ba^2+ -> BaSO4 v}",
+            r"\ce{CuSO4*5H2O}", r"\pu{25 kJ/mol}"]
+        {
+            assert!(renderer.render(latex, false, "#000000").is_some(), "{latex}");
+        }
+    }
+
     #[test]
     fn latex_text_strips_html() {
         assert_eq!(latex_text("a &lt; b<br>c&amp;d"), "a < b c&d");
+        assert_eq!(latex_text(r"\ce{A <=> B} <b>x</b>"), r"\ce{A <=> B}  x ");
     }
 }

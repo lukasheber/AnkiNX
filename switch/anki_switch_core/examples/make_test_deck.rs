@@ -487,7 +487,7 @@ fn languages(d: &mut Deck) {
     ]);
     d.add(DECK, &basic, &[
         "Привет · Γειά σου · สวัสดี · नमस्ते · Tiếng Việt · e\u{301} (e + combining accent)",
-        &check("Russian, Greek, Thai, Hindi, Vietnamese, and é built from two characters."),
+        &check("Russian, Greek, Thai, Hindi, Vietnamese, and é built from two characters. Known gap: the Hindi conjunct स्त shows as स with a small stroke under it, then त (no shaping)."),
     ]);
 }
 
@@ -500,7 +500,7 @@ fn media(d: &mut Deck) {
     ]);
     d.add(DECK, &basic, &[
         "Animated GIF<br><img src=\"ankinx_test_anim.gif\">",
-        &check("the GIF (frame 1 at least; whether it animates is worth noting)."),
+        &check("the GIF animates: the label counts frames 1/8 to 8/8 and the red dot moves right, over and over."),
     ]);
     d.add(DECK, &basic, &[
         "BMP and WebP<br><img src=\"ankinx_test_bitmap.bmp\"> <img src=\"ankinx_test_badge.webp\">",
@@ -563,8 +563,8 @@ fn maths(d: &mut Deck) {
         &check("sum, integral, limit, cube root, Greek letters, and upright text inside maths."),
     ]);
     d.add(DECK, &basic, &[
-        r"Chemistry (mhchem): \(\ce{2H2 + O2 -> 2H2O}\)",
-        &check("the reaction with subscripts and an arrow (Anki's MathJax supports \\ce; the console may not)."),
+        r"Chemistry (mhchem): \(\ce{2H2 + O2 -> 2H2O}\), \(\ce{N2 + 3H2 <=>[Fe] 2NH3}\), \(\ce{SO4^2- + Ba^2+ -> BaSO4 v}\), \(\ce{CuSO4*5H2O}\), \(\pu{25 kJ/mol}\)",
+        &check("formulas with subscripts and charges (2-, 2+), a plain arrow, a two-way arrow with Fe above it, a down arrow for the precipitate, a hydrate dot, then 25 kJ/mol upright."),
     ]);
     d.add(DECK, &basic, &[
         "LaTeX image: [latex]$\\displaystyle\\sum_{k=0}^{n} k = \\frac{n(n+1)}{2}$[/latex]",
@@ -625,7 +625,8 @@ fn css(d: &mut Deck) {
     d.add(DECK, &nt, &[
         "CSS",
         &check(
-            "Card 1 has a green bar and Card 2 a pink one (.card1/.card2). Card 1: the mono card font (0 and O \
+            "Card 1 has a green bar and Card 2 a pink one (.card1/.card2). Each bar is as tall as its side's \
+             content, so Card 2's is a short one beside its heading. Card 1:the mono card font (0 and O \
              differ), three flex boxes in a row, a 3 × 2 grid, the gradient, a shadow, a tilted word, purple \
              bold text, a red badge \"3\" at the corner, and the day or night line matching the theme. Missing \
              pieces (shadow, rotation...) are known gaps worth noting.",

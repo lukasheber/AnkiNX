@@ -74,6 +74,11 @@ int main()
     // ۱۲۳تومان: digits keep their order, on the right of the word.
     expect(utf8({ 0x06F1, 0x06F2, 0x06F3, 0x062A, 0x0648, 0x0645, 0x0627, 0x0646 }),
            utf8({ 0xFEE5, 0xFE8E, 0xFEE3, 0xFEEE, 0xFE97, 0x06F1, 0x06F2, 0x06F3 }), "digits stay left to right");
+    // हिंदी: the vowel sign i goes before ह; क्षि: before the whole cluster.
+    expect(utf8({ 0x0939, 0x093F, 0x0902, 0x0926, 0x0940 }), utf8({ 0x093F, 0x0939, 0x0902, 0x0926, 0x0940 }),
+           "Devanagari vowel sign i before its consonant");
+    expect(utf8({ 0x0915, 0x094D, 0x0937, 0x093F }), utf8({ 0x093F, 0x0915, 0x094D, 0x0937 }),
+           "Devanagari vowel sign i before a conjunct");
     // (سلام): brackets mirrored.
     expect(utf8({ '(', 0x0633, 0x0644, 0x0627, 0x0645, ')' }), utf8({ '(', 0xFEE1, 0xFEFC, 0xFEB3, ')' }),
            "brackets mirrored");
