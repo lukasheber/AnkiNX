@@ -71,6 +71,16 @@ target_include_directories(quickjs PUBLIC ${QJS_DIR})
 target_compile_definitions(quickjs PRIVATE _GNU_SOURCE NDEBUG)
 target_compile_options(quickjs PRIVATE -w)
 
+# HarfBuzz (shaping Devanagari, Thai and other complex scripts in cards,
+# src/view/shaping.cpp): its single-file build, with its own OpenType font
+# functions and outline drawing (no FreeType). Used from the UI thread only.
+set(HB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/library/harfbuzz)
+add_library(harfbuzz STATIC ${HB_DIR}/src/harfbuzz.cc)
+set_target_properties(harfbuzz PROPERTIES CXX_STANDARD 17)
+target_include_directories(harfbuzz PUBLIC ${HB_DIR}/src)
+target_compile_definitions(harfbuzz PRIVATE HB_NO_MT)
+target_compile_options(harfbuzz PRIVATE -w -fno-exceptions -fno-rtti)
+
 file(GLOB_RECURSE MAIN_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 # Exactly one audio backend: SDL2_mixer, or the silent stub.
 if (ANKINX_AUDIO)
@@ -90,7 +100,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE include
 target_compile_options(${PROJECT_NAME} PRIVATE -ffunction-sections -fdata-sections -Wall)
 target_link_directories(${PROJECT_NAME} PRIVATE ${AUDIO_STATIC_LIBRARY_DIRS} ${WEBP_STATIC_LIBRARY_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    borealis litehtml gumbo quickjs lunasvg::lunasvg anki_switch_core
+    borealis litehtml gumbo quickjs lunasvg::lunasvg harfbuzz anki_switch_core
     ${AUDIO_STATIC_LIBRARIES} ${WEBP_STATIC_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} m)
 if (PLATFORM_DESKTOP)
     target_link_libraries(${PROJECT_NAME} PRIVATE dl) # Rust std on Linux

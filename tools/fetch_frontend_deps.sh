@@ -16,6 +16,8 @@ DEPS=(
     "lunasvg https://github.com/dragonflylee/lunasvg.git master"
     # JavaScript in card templates (app/src/view/card_script.cpp)
     "quickjs https://github.com/quickjs-ng/quickjs.git v0.17.0"
+    # Text shaping for scripts NanoVG can't draw letter by letter (app/src/view/shaping.cpp)
+    "harfbuzz https://github.com/harfbuzz/harfbuzz.git 12.3.2"
 )
 
 pinned() { [[ -f "$PINS" ]] && awk -v n="$1" '$1 == n {print $2}' "$PINS"; }

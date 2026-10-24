@@ -18,6 +18,9 @@ build, then commit and tag (`git tag v0.2.0`).
 - Text fields in templates: tapping one (or highlighting it and pressing A)
   opens the keyboard; the text goes into the field, and the template sees it
   as typed, followed by Enter.
+- Hindi and Thai as in print: letters join into conjuncts (स्त), vowel
+  signs go where they belong (the ि of हिंदी before ह) and Thai marks stack
+  over their letters, shaped with HarfBuzz.
 - A new README, with current screenshots.
 
 ## 0.5.0 (2026-10-24)

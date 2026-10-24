@@ -228,6 +228,7 @@ must also offer its source code.
 | … htmlparser2, dom-serializer, cssom, html-escaper, jQuery | MIT |
 | … css-select, css-what, domhandler, domutils, domelementtype, entities, nth-check | BSD-2-Clause |
 | lunasvg (SVG) | MIT |
+| HarfBuzz (text shaping) | Old MIT |
 | DejaVu Sans, Sans Mono and Serif fonts (`app/resources/card_fonts`) | Bitstream Vera licence; DejaVu changes public domain |
 | Noto Sans Thai and Noto Sans Devanagari fonts (`app/resources/card_fonts`; `LICENSE-Noto.txt`) | SIL Open Font License 1.1 |
 | Material Icons font (`app/resources/material`) | Apache-2.0 |

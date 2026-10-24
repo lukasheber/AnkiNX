@@ -287,54 +287,8 @@ bool hasRtl(const std::string& utf8)
     return false;
 }
 
-namespace
+std::string visual(const std::string& utf8)
 {
-
-bool devanagariConsonant(uint32_t c)
-{
-    return (c >= 0x0915 && c <= 0x0939) || (c >= 0x0958 && c <= 0x095F) || (c >= 0x0978 && c <= 0x097F);
-}
-
-// Devanagari's vowel sign i (ि) is written after its consonant cluster but
-// drawn before it; without a shaping engine, move it there. The cluster:
-// consonants (each with an optional nukta) joined by viramas, as in क्षि.
-std::string devanagariOrder(const std::string& utf8)
-{
-    if (utf8.find("\xE0\xA4\xBF") == std::string::npos) // U+093F
-        return utf8;
-    std::vector<uint32_t> cps = decode(utf8);
-    for (size_t i = 1; i < cps.size(); i++)
-    {
-        if (cps[i] != 0x093F)
-            continue;
-        size_t start = i;
-        while (start > 0)
-        {
-            size_t j = start - 1;
-            if (cps[j] == 0x093C && j > 0) // nukta
-                j--;
-            if (!devanagariConsonant(cps[j]))
-                break;
-            start = j;
-            if (start >= 2 && cps[start - 1] == 0x094D && devanagariConsonant(cps[start - 2])) // virama
-                start--;
-            else
-                break;
-        }
-        if (start < i && devanagariConsonant(cps[start]))
-            std::rotate(cps.begin() + start, cps.begin() + i, cps.begin() + i + 1);
-    }
-    std::string out;
-    for (uint32_t c : cps)
-        encode(out, c);
-    return out;
-}
-
-} // namespace
-
-std::string visual(const std::string& input)
-{
-    const std::string utf8 = devanagariOrder(input);
     // Words of Arabic-Indic digits and punctuation, like "(۱۱۰", are in
     // right-to-left text too: their punctuation goes the right-to-left way.
     if (!hasRtl(utf8))

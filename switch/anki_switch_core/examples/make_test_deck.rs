@@ -486,8 +486,9 @@ fn languages(d: &mut Deck) {
         &check("Arabic and Persian letters joined, all three lines read right to left; Persian digits ۱۲۳; Hebrew with vowel points."),
     ]);
     d.add(DECK, &basic, &[
-        "Привет · Γειά σου · สวัสดี · नमस्ते · Tiếng Việt · e\u{301} (e + combining accent)",
-        &check("Russian, Greek, Thai, Hindi, Vietnamese, and é built from two characters. Known gap: the Hindi conjunct स्त shows as स with a small stroke under it, then त (no shaping)."),
+        "Привет · Γειά σου · สวัสดี · नमस्ते · हिंदी · Tiếng Việt · e\u{301} (e + combining accent)",
+        &check("Russian, Greek, Thai, Hindi, Vietnamese, and é built from two characters. Hindi as in print: स्त in \
+                नमस्ते is one stacked letter, and the ि of हिंदी sits before ह. Thai marks sit above their letters."),
     ]);
 }
 

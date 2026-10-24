@@ -24,6 +24,7 @@
 
 #include "util/controls.hpp"
 #include "view/rtl_text.hpp"
+#include "view/shaping.hpp"
 
 using namespace litehtml;
 
@@ -770,19 +771,53 @@ class NvgContainer : public document_container
 
     void delete_font(uint_ptr hFont) override { delete (Font*)hFont; }
 
-    // Right-to-left words are measured and drawn shaped, in visual order.
+    // A word's runs: Devanagari, Thai and the like shaped by HarfBuzz
+    // (shaping.cpp); the rest by NanoVG, right-to-left words shaped and in
+    // visual order (rtl_text.cpp). The font must be applied.
+    float wordWidth(const std::string& logical, const Font* f)
+    {
+        if (!shaping::needed(logical))
+            return nvgTextBounds(vg, 0, 0, rtl::visual(logical).c_str(), nullptr, nullptr);
+        float width = 0;
+        for (const auto& run : shaping::runs(logical))
+            width += run.shaped ? shaping::width(run.text, f->size)
+                                : nvgTextBounds(vg, 0, 0, rtl::visual(run.text).c_str(), nullptr, nullptr);
+        return width;
+    }
+
+    void drawWord(const std::string& logical, const Font* f, float x, float baseline)
+    {
+        if (!shaping::needed(logical))
+        {
+            nvgText(vg, x, baseline, rtl::visual(logical).c_str(), nullptr);
+            return;
+        }
+        for (const auto& run : shaping::runs(logical))
+        {
+            if (run.shaped)
+            {
+                shaping::draw(vg, run.text, x, baseline, f->size);
+                x += shaping::width(run.text, f->size);
+            }
+            else
+            {
+                std::string shown = rtl::visual(run.text);
+                nvgText(vg, x, baseline, shown.c_str(), nullptr);
+                x += nvgTextBounds(vg, 0, 0, shown.c_str(), nullptr, nullptr);
+            }
+        }
+    }
+
     pixel_t text_width(const char* logical, uint_ptr hFont) override
     {
-        applyFont((Font*)hFont);
-        std::string shown = rtl::visual(logical);
-        return nvgTextBounds(vg, 0, 0, shown.c_str(), nullptr, nullptr);
+        auto* f = (Font*)hFont;
+        applyFont(f);
+        return wordWidth(logical, f);
     }
 
     void draw_text(uint_ptr, const char* logical, uint_ptr hFont, web_color color, const position& pos) override
     {
-        std::string shown = rtl::visual(logical);
-        const char* text  = shown.c_str();
-        auto* f           = (Font*)hFont;
+        auto* f = (Font*)hFont;
         applyFont(f);
         float baseline = pos.y + pos.height - f->metrics.descent;
         nvgFillColor(vg, toNvg(color));
@@ -794,12 +829,12 @@ class NvgContainer : public document_container
                 nvgSave(vg);
                 nvgTranslate(vg, x, baseline);
                 nvgSkewX(vg, -0.2f);
-                nvgText(vg, 0, 0, text, nullptr);
+                drawWord(logical, f, 0, 0);
                 nvgRestore(vg);
             }
             else
             {
-                nvgText(vg, x, baseline, text, nullptr);
+                drawWord(logical, f, x, baseline);
             }
         };
         drawRun(pos.x);
@@ -808,7 +843,7 @@ class NvgContainer : public document_container
 
         if (f->decoration & (text_decoration_line_underline | text_decoration_line_line_through))
         {
-            float w = nvgTextBounds(vg, 0, 0, text, nullptr, nullptr);
+            float w = wordWidth(logical, f);
             nvgStrokeColor(vg, toNvg(color));
             nvgStrokeWidth(vg, std::max(1.0f, f->size / 16.0f));
             nvgBeginPath(vg);
