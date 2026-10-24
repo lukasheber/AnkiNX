@@ -8,26 +8,36 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
-## Unreleased
+## 0.6.0 (2026-10-24)
+
+More cards look as they do in Anki: grid layouts, canvas drawings and text
+fields in templates work, and Hindi, Thai, Arabic, Persian, Urdu and Hebrew
+are shaped as in print. Also new: answering with a tap, a theme setting and
+syncing after the console wakes. Verified on hardware.
+
+Cards:
 
 - CSS grid: cards laid out with `display: grid` show their columns
   (fixed, `fr`, `repeat()` including auto-fill/auto-fit, `minmax()`), with
   spans, gaps and alignment. They showed as one column.
 - Canvas: templates that draw on a `<canvas>` (shapes, lines, curves,
   gradients, text, images) show their drawing.
-- Text fields in templates: tapping one (or highlighting it and pressing A)
-  opens the keyboard; the text goes into the field, and the template sees it
-  as typed, followed by Enter.
+- Text fields in templates show their placeholder (in grey), and tapping
+  one (or highlighting it and pressing A) opens the keyboard; the text goes
+  into the field, and the template sees it as typed, followed by Enter.
+
+Languages:
+
 - Hindi and Thai as in print: letters join into conjuncts (स्त), vowel
   signs go where they belong (the ि of हिंदी before ह) and Thai marks stack
-  over their letters, shaped with HarfBuzz.
-- Arabic, Persian, Urdu and Hebrew are shaped with HarfBuzz too: letters
-  join as the font intends (ligatures included), and harakat and Hebrew
-  vowel points sit where they belong. Uses Noto Sans Arabic and Hebrew.
-- Text fields in templates show their placeholder (in grey) until something
-  is typed, then the typed text. They were drawn as empty boxes.
-- Coming back from studying or Settings while a sync starts, the deck list's
-  highlight no longer draws over the "Syncing…" dialog.
+  over their letters.
+- Arabic, Persian, Urdu and Hebrew: letters join as the font intends
+  (ligatures included), and harakat and Hebrew vowel points sit where they
+  belong.
+- Both shaped with HarfBuzz, using the Noto fonts for these scripts.
+
+Studying:
+
 - Tap the answer (Settings › Study, off by default): in handheld mode, a tap
   on the left third of the answer is Again and on the right third Good, or
   the card is four columns from Again to Easy.
@@ -35,7 +45,13 @@ build, then commit and tag (`git tag v0.2.0`).
 - Waking the console with AnkiNX open: the card you were studying stays,
   and the deck list refreshes its counts and syncs (automatic sync on) once
   Wi-Fi is back, or as soon as you return to it.
-- A new README, with current screenshots.
+
+Fixed:
+
+- Coming back from studying or Settings while a sync starts, the deck list's
+  highlight no longer draws over the "Syncing…" dialog.
+
+Also a new README, with current screenshots.
 
 ## 0.5.0 (2026-10-24)
 

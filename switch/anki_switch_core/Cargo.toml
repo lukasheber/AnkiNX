@@ -1,6 +1,6 @@
 [package]
 name = "anki_switch_core"
-version = "0.5.0" # = ../../VERSION (build_core.sh checks)
+version = "0.6.0" # = ../../VERSION (build_core.sh checks)
 edition = "2021"
 license = "AGPL-3.0-or-later"
 publish = false
