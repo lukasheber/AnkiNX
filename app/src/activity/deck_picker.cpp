@@ -530,7 +530,7 @@ void DeckPickerActivity::showMessage(const std::string& text)
 // new leaves the scene as it is), behind the list, with its tree count.
 void DeckPickerActivity::growForest()
 {
-    const forest::Scenery* scenery = forest::scenery(settings::forest());
+    const forest::Scenery* scenery = forest::forToday();
     forestShown = scenery != nullptr;
     if (!scenery)
     {

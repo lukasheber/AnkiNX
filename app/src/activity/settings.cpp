@@ -10,6 +10,8 @@
 #include "util/sync_flow.hpp"
 #include "util/update.hpp"
 
+#include <algorithm>
+
 using namespace brls::literals;
 
 namespace
@@ -332,26 +334,83 @@ brls::View* SettingsActivity::backgroundTab()
     brls::ScrollingFrame* scroller;
     brls::Box* box = column(&scroller);
     box->addView(header("ankinx/settings/forest_header"_i18n));
-    const auto& all                    = forest::sceneries();
-    std::vector<std::string> sceneries = { "ankinx/settings/forest_off"_i18n };
-    int forestIndex                    = 0;
-    for (size_t i = 0; i < all.size(); i++)
+    // Off, Surprise me daily, then the sceneries there are today (a
+    // holiday's only in its week)
+    static std::vector<std::string> keys;
+    keys = { "", forest::DAILY };
+    std::vector<std::string> names = { "ankinx/settings/forest_off"_i18n, "ankinx/settings/forest_daily"_i18n };
+    for (const forest::Scenery* s : forest::available(forest::Date::today()))
     {
-        sceneries.push_back(all[i].label);
-        if (settings::forest() == all[i].key)
-            forestIndex = (int)i + 1;
+        keys.push_back(s->key);
+        names.push_back(s->label);
     }
+    auto at          = std::find(keys.begin(), keys.end(), settings::forest());
     auto* forestCell = new brls::SelectorCell();
-    forestCell->init("ankinx/settings/forest"_i18n, sceneries, forestIndex, [](int index) {
-        const auto& all = forest::sceneries();
-        if (index >= 0 && index <= (int)all.size())
-            settings::setForest(index ? all[index - 1].key : "");
-    });
+    forestCell->init("ankinx/settings/forest"_i18n, names, at == keys.end() ? 0 : (int)(at - keys.begin()),
+                     [](int index) {
+                         if (index >= 0 && index < (int)keys.size())
+                             settings::setForest(keys[index]);
+                     });
     box->addView(forestCell);
+
+    // Nature: what missing days cost the forest, and a line on each
+    static const char* LEVELS[] = { "peaceful", "wild", "merciless" };
+    auto noteOf = [](int level) {
+        return brls::getStr(std::string("ankinx/settings/nature_") + LEVELS[level] + "_note") +
+               (level ? " " + "ankinx/settings/nature_switch_back"_i18n : "");
+    };
+    std::string nature = settings::forestNature();
+    int level          = nature == "wild" ? 1 : nature == "merciless" ? 2 : 0;
+    auto* natureNote   = new brls::Label();
+    natureNote->setFontSize(16);
+    natureNote->setMarginTop(8);
+    natureNote->setMarginLeft(16);
+    natureNote->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+    natureNote->setText(noteOf(level));
+    auto* natureCell = new brls::SelectorCell();
+    natureCell->init("ankinx/settings/nature"_i18n,
+                     { "ankinx/settings/nature_peaceful"_i18n, "ankinx/settings/nature_wild"_i18n,
+                       "ankinx/settings/nature_merciless"_i18n },
+                     level, [natureNote, noteOf](int index) {
+                         if (index < 0 || index > 2)
+                             return;
+                         settings::set("forest_nature", LEVELS[index]);
+                         natureNote->setText(noteOf(index));
+                     });
+    box->addView(natureCell);
+    box->addView(natureNote);
+
+    // Live weather: the real sky over your city, and the time of day by the
+    // clock; the scenery's own without a city
+    box->addView(header("ankinx/settings/weather_header"_i18n));
+    auto cityText = [] {
+        std::string c = settings::forestCity();
+        return c.empty() ? "ankinx/settings/weather_off"_i18n : c;
+    };
+    auto* city = detail("ankinx/settings/weather_city"_i18n, cityText());
+    city->registerClickAction([city, cityText, token = alive](brls::View*) {
+        keyboard::text("ankinx/settings/weather_prompt"_i18n, settings::forestCity(), 80,
+                       [city, cityText, token](const std::string& text) {
+                           if (!*token)
+                               return;
+                           size_t a = text.find_first_not_of(' '), b = text.find_last_not_of(' ');
+                           settings::set("forest_city", a == std::string::npos ? "" : text.substr(a, b - a + 1));
+                           city->setDetailText(cityText());
+                       });
+        return true;
+    });
+    box->addView(city);
+    auto* weatherNote = new brls::Label();
+    weatherNote->setFontSize(16);
+    weatherNote->setMarginTop(8);
+    weatherNote->setMarginLeft(16);
+    weatherNote->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+    weatherNote->setText("ankinx/settings/weather_note"_i18n);
+    box->addView(weatherNote);
 
     auto* note = new brls::Label();
     note->setFontSize(16);
-    note->setMarginTop(16);
+    note->setMarginTop(24);
     note->setTextColor(brls::Application::getTheme()["brls/text"]);
     note->setText("ankinx/settings/forest_note"_i18n);
     box->addView(note);

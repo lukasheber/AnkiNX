@@ -43,6 +43,10 @@ const MEDIA_FOLDER: &str = "collection.media";
 const MEDIA_DB: &str = "collection.mdb";
 const BACKUP_FOLDER: &str = "backups";
 const SYNC_FILE: &str = "sync.json";
+/// What Memory Forest remembers between days (src/forest.rs `memory`).
+const FOREST_STATE_FILE: &str = "forest-state.json";
+/// Memory Forest's live weather (src/weather.rs).
+const FOREST_WEATHER_FILE: &str = "forest-weather.json";
 const CRASH_LOG: &str = "crash.log";
 /// Rendered maths (SVG). Not in collection.media, so media sync ignores it.
 const MATH_CACHE: &str = "cache/math";
@@ -242,6 +246,8 @@ struct State {
     /// Memory Forest's last page data and what it was worked out from
     /// (forest::Moment::key): the same again until the collection changes.
     forest: Option<(String, Value)>,
+    /// A sync has finished this session: the review log is all there.
+    synced: bool,
     /// A download of a newer .nro (see update.rs), while or after it runs.
     update: Option<crate::update::Progress>,
     runtime: tokio::runtime::Runtime,
@@ -313,6 +319,19 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
     }
     if cmd == "shutdown" {
         return shutdown(&mut guard);
+    }
+    if cmd == "forest_weather" {
+        // `forest_weather {city}`: the live weather for Memory Forest, fetched if
+        // due (src/weather.rs). Network requests: made without the state lock.
+        let city = args.get("city").and_then(Value::as_str).unwrap_or("").to_string();
+        let (client, runtime, path) = {
+            let state = guard
+                .as_ref()
+                .ok_or_else(|| ApiError::new("not_initialized", "init has not been called"))?;
+            (state.client.clone(), state.runtime.handle().clone(), state.base.join(FOREST_WEATHER_FILE))
+        };
+        drop(guard);
+        return Ok(runtime.block_on(crate::weather::refresh(&path, &city, &client)));
     }
     if cmd == "check_update" {
         // A slow network request: made without holding the state lock, so
@@ -421,6 +440,7 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         math: None,
         daily: None,
         forest: None,
+        synced: false,
         update: None,
         runtime,
         client,
@@ -1591,6 +1611,7 @@ impl State {
             } => "full_upload",
             SyncActionRequired::FullSyncRequired { .. } => "full_sync",
         };
+        self.synced = true;
         if required == "none" {
             self.start_media_sync()?;
         }
@@ -1625,6 +1646,7 @@ impl State {
         // Re-open regardless of the outcome, as Anki's backend does.
         self.col = Some(builder.build().map_err(|e| self.err(e))?);
         result.map_err(|e| self.err(e))?;
+        self.synced = true;
         self.start_media_sync()?;
         Ok(json!({}))
     }
@@ -1698,27 +1720,61 @@ impl State {
         }))
     }
 
-    /// `forest {environment, landscape, landmark, weather, time}`: Memory
-    /// Forest's page data for the whole collection, drawn in that scenery
-    /// (src/forest.rs).
+    /// `forest {environment, landscape, landmark, weather, time, nature?, city?}`:
+    /// Memory Forest's page data for the whole collection, drawn in that
+    /// scenery, with Nature "peaceful" (the default), "wild" or "merciless"
+    /// (src/forest.rs); with a `city`, under its real sky (the live weather
+    /// `forest_weather` fetched, and the clock). What the add-on remembers
+    /// between days is kept in FOREST_STATE_FILE.
     fn forest(&mut self, args: &Value) -> ApiResult {
+        let city = args.get("city").and_then(Value::as_str).map(str::trim).filter(|c| !c.is_empty());
+        let weather_file = self.base.join(FOREST_WEATHER_FILE);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
         let look = crate::forest::Look {
             environment: str_arg(args, "environment")?.into(),
             landscape: str_arg(args, "landscape")?.into(),
             landmark: str_arg(args, "landmark")?.into(),
             weather: str_arg(args, "weather")?.into(),
             time: str_arg(args, "time")?.into(),
+            real_sky: city.is_some(),
+            live: city.and_then(|c| crate::weather::current(&weather_file, c, now)),
+            city: city
+                .and_then(|c| crate::weather::place(&weather_file, c))
+                .and_then(|p| p["name"].as_str().map(str::to_string)),
+        };
+        let opts = crate::forest::Options {
+            nature: args.get("nature").and_then(Value::as_str).unwrap_or("peaceful").into(),
+            // (until this session's sync has brought in what was studied elsewhere)
+            settled: self.login.is_none() || self.synced,
         };
         let tr = self.tr.clone();
         let err = |e| ApiError::anki(e, &tr);
         let col = self.col()?;
         let at = crate::forest::now(col).map_err(err)?;
         // (worked out again only when something it is grown from changed)
-        let key = crate::forest::key(col, at, &look).map_err(err)?;
+        let key = format!(
+            "{} {} {}",
+            crate::forest::key(col, at, &look).map_err(err)?,
+            opts.nature,
+            opts.settled
+        );
         if let Some((_, page)) = self.forest.as_ref().filter(|(k, _)| *k == key) {
-            return Ok(page.clone());
+            // (the sky moves on with the clock and the weather: the rest is the same)
+            let mut page = page.clone();
+            page["mood"] = crate::forest::mood(&look, at.now);
+            return Ok(page);
         }
-        let page = crate::forest::page(self.col()?, at, &look).map_err(err)?;
+        let path = self.base.join(FOREST_STATE_FILE);
+        let before: Value = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_else(|| json!({}));
+        let mut memory = before.clone();
+        let page = crate::forest::page(self.col()?, at, &look, &opts, &mut memory).map_err(err)?;
+        if memory != before {
+            std::fs::write(&path, serde_json::to_vec_pretty(&memory).unwrap())
+                .map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))?;
+        }
         self.forest = Some((key, page.clone()));
         Ok(page)
     }

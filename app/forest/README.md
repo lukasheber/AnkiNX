@@ -9,7 +9,7 @@ remembered, and **A** opens them in the browser.
 
 | Part | What it does |
 | --- | --- |
-| `switch/anki_switch_core/src/forest.rs` | The forest from the collection: the add-on's Python (`study_log`, `forest_data`, `memory`, `milestones`, the Peaceful parts of `events`, the mood from `scene`) in Rust, as the backend's `forest` call |
+| `switch/anki_switch_core/src/forest.rs` | The forest from the collection: the add-on's Python (`study_log`, `forest_data`, `memory`, `milestones`, `events` and `events_state`, the mood from `scene`, `weather`) in Rust, as the backend's `forest` call |
 | `src/shim.js` | The browser the scenes expect: canvases, `Path2D`, `ImageData`, an English `Intl`, a document that only makes canvases |
 | `src/runner.js` | The add-on's `AF.mount` without a page: builds a scene at a given size, draws frames, and answers what is at a point (`web/hover.js`) |
 | `build.py` | Bundles the two with the add-on's `web/` scripts into `resources/forest/forest.js`, lists its sceneries in `resources/forest/presets.json`, and makes the sample forests in `samples/` |
@@ -29,9 +29,16 @@ forest_dump <dir>/collection.anki2 > dump.json
 python3 app/forest/reference.py <dir>/collection.anki2 dump.json
 ```
 
-(both are `switch/anki_switch_core` examples). Not ported yet: the Wild and Merciless natures (fire,
-the asteroid, crows, tall grass, tumbleweeds), remembering the day each animal came, live weather
-and Surprise me daily.
+(both are `switch/anki_switch_core` examples; add a nature, `wild` or `merciless`, to both, and
+`800 2 4` to `make_forest_history` for a history away 2 to 4 days ago). What the add-on remembers
+between days (the animals that came, the ancient trees, what was shown) is kept in
+`forest-state.json` beside the collection, its live weather (`src/weather.rs`, `weather_probe <city>`)
+in `forest-weather.json`. Surprise me daily and the holidays' sceneries are worked out in the app
+(`src/util/forest.cpp`).
+
+Not ported: the strike played over the page when Merciless's asteroid falls (its crater and the
+asteroid on its way are drawn), the journal and the caption under the forest, zooming in, the
+study heatmap, and the add-on's other settings (decks left out, a start date).
 
 `build_desktop/forest_bench resources/forest/forest.js ../forest/samples <out> [w h frames]` (from
 `app/`, after `build_desktop.sh`) builds every sample, times its frames and saves a PNG of each.

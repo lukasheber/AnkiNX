@@ -10,6 +10,7 @@ mod math;
 mod mhchem;
 mod occlusion;
 mod update;
+pub mod weather;
 
 use std::ffi::c_char;
 use std::ffi::CStr;

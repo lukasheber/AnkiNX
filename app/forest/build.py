@@ -57,8 +57,14 @@ def visitor_text() -> dict:
 def preset_list() -> list:
     """The sceneries the app offers (Settings > About), each the five settings its preset stands
     for, in the add-on's order: the app passes them to the Rust port, which makes the mood."""
+    def season(p) -> dict | None:
+        # (a seasonal one: only in its week, from the year it arrives - presets.unlocked)
+        if not p.season:
+            return None
+        first, starts, ends = p.season
+        return {"first": first.isoformat(), "from": list(starts), "to": list(ends)}
     return [{"key": p.key, "label": p.label, "environment": p.environment, "landscape": p.landscape,
-             "landmark": p.landmark, "weather": p.weather, "time": p.time}
+             "landmark": p.landmark, "weather": p.weather, "time": p.time, "season": season(p)}
             for p in presets.FOREST_PRESETS if p.key != presets.DAILY]
 
 

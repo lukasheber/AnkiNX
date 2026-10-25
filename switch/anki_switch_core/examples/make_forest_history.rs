@@ -2,7 +2,9 @@
 //! (src/forest.rs): new cards most days, a break of a fortnight, reviews at
 //! growing intervals with some lapses, FSRS memory on half the cards, a few
 //! suspended cards and leeches.
-//! Usage: cargo run --example make_forest_history -- <data dir> [days]
+//! Usage: cargo run --example make_forest_history -- <data dir> [days [away_from away_to]]
+//! (away_from to away_to: days ago with no study at all, besides the
+//! fortnight long ago: 2 4, say, for Wild's fire and Merciless's asteroid)
 //! Writes <dir>/collection.anki2.
 
 use anki::collection::CollectionBuilder;
@@ -28,6 +30,13 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let dir = std::path::PathBuf::from(args.next().expect("usage: make_forest_history <dir> [days]"));
     let days: i64 = args.next().map_or(800, |d| d.parse().expect("days"));
+    let recent = match (args.next(), args.next()) {
+        (Some(a), Some(b)) => a.parse::<i64>().expect("away_from")..b.parse::<i64>().expect("away_to") + 1,
+        _ => 0..0,
+    };
+    let away = |ago: i64| AWAY.contains(&ago) || recent.contains(&ago);
+    // the day studying resumed after the break that holds `ago`
+    let back = |ago: i64| if AWAY.contains(&ago) { AWAY.start - 1 } else { recent.start - 1 };
     std::fs::create_dir_all(dir.join("collection.media")).unwrap();
     let mut col = CollectionBuilder::new(dir.join("collection.anki2"))
         .set_media_paths(dir.join("collection.media"), dir.join("collection.mdb"))
@@ -41,8 +50,7 @@ fn main() {
     // (card id, note id, first study day as days ago, cards learned that day)
     let mut cards = Vec::new();
     for ago in (0..days).rev() {
-        let away = AWAY.contains(&ago);
-        if away || rng.next() < 0.15 {
+        if away(ago) || rng.next() < 0.15 {
             continue;
         }
         let n = if rng.next() < 0.05 { rng.range(60, 90) } else { rng.range(4, 30) };
@@ -78,8 +86,8 @@ fn main() {
         let (mut ago, mut ivl, mut lapsed) = (first, 1i64, false);
         while ago - ivl >= 0 {
             ago -= ivl;
-            if AWAY.contains(&ago) {
-                ago = AWAY.start - 1; // (reviews wait until the break is over)
+            if away(ago) {
+                ago = back(ago); // (reviews wait until the break is over)
             }
             let last = ivl;
             if rng.next() < lapse_rate {

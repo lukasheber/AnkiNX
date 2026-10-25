@@ -85,6 +85,19 @@ void setForest(const std::string& scenery)
     save();
 }
 
+std::string forestCity()
+{
+    anki::json value = values().value("forest_city", anki::json());
+    return value.is_string() ? value.get<std::string>() : "";
+}
+
+std::string forestNature()
+{
+    anki::json value = values().value("forest_nature", anki::json());
+    std::string level = value.is_string() ? value.get<std::string>() : "";
+    return level == "wild" || level == "merciless" ? level : "peaceful";
+}
+
 anki::json get(const std::string& key) { return values().contains(key) ? values()[key] : anki::json(); }
 
 void set(const std::string& key, anki::json value)

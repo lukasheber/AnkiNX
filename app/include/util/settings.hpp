@@ -29,9 +29,16 @@ void setTheme(const std::string& value);
 void applyTheme();
 
 // Memory Forest behind the deck list (Settings > Background): a scenery's
-// key (resources/forest/presets.json), or "" for none, the default.
+// key (resources/forest/presets.json), "daily" (Surprise me daily), or ""
+// for none, the default.
 std::string forest();
 void setForest(const std::string& scenery);
+// What missing days cost the forest: "peaceful" (the default), "wild" or
+// "merciless" (Memory Forest's Nature).
+std::string forestNature();
+// The city whose live weather the forest shows (and whose sun sets its time
+// of day), or "" for the scenery's own weather and hour, the default.
+std::string forestCity();
 
 // Any other setting (null when unset), e.g. "controls" (util/controls.cpp).
 anki::json get(const std::string& key);

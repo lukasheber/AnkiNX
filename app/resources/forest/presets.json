@@ -6,7 +6,8 @@
   "landscape": "lake",
   "landmark": "none",
   "weather": "clear",
-  "time": "golden_hour"
+  "time": "golden_hour",
+  "season": null
  },
  {
   "key": "misty_valley",
@@ -15,7 +16,8 @@
   "landscape": "mountains",
   "landmark": "peak",
   "weather": "fog",
-  "time": "dawn"
+  "time": "dawn",
+  "season": null
  },
  {
   "key": "starry_night",
@@ -24,7 +26,8 @@
   "landscape": "lake",
   "landmark": "none",
   "weather": "clear",
-  "time": "night"
+  "time": "night",
+  "season": null
  },
  {
   "key": "aurora",
@@ -33,7 +36,8 @@
   "landscape": "lake",
   "landmark": "none",
   "weather": "clear",
-  "time": "night"
+  "time": "night",
+  "season": null
  },
  {
   "key": "lanterns",
@@ -42,7 +46,8 @@
   "landscape": "lake",
   "landmark": "moon_bridge",
   "weather": "clear",
-  "time": "night"
+  "time": "night",
+  "season": null
  },
  {
   "key": "frozen_market",
@@ -51,7 +56,18 @@
   "landscape": "river",
   "landmark": "none",
   "weather": "snow",
-  "time": "dusk"
+  "time": "dusk",
+  "season": {
+   "first": "2026-12-18",
+   "from": [
+    12,
+    18
+   ],
+   "to": [
+    12,
+    25
+   ]
+  }
  },
  {
   "key": "pumpkin_patch",
@@ -60,7 +76,18 @@
   "landscape": "meadow",
   "landmark": "none",
   "weather": "clear",
-  "time": "dusk"
+  "time": "dusk",
+  "season": {
+   "first": "2026-10-24",
+   "from": [
+    10,
+    24
+   ],
+   "to": [
+    10,
+    31
+   ]
+  }
  },
  {
   "key": "bamboo",
@@ -69,7 +96,8 @@
   "landscape": "river",
   "landmark": "pagoda",
   "weather": "rain",
-  "time": "day"
+  "time": "day",
+  "season": null
  },
  {
   "key": "synthwave",
@@ -78,6 +106,7 @@
   "landscape": "meadow",
   "landmark": "none",
   "weather": "clear",
-  "time": "dusk"
+  "time": "dusk",
+  "season": null
  }
 ]

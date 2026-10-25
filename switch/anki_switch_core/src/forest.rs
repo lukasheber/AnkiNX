@@ -1,14 +1,16 @@
 //! The forest Memory Forest grows from a collection (app/forest): one tree a
 //! day of new cards, grown by how well they are remembered, with its ponds,
-//! animals and anniversaries, and the scene it is drawn in. A port of the
-//! add-on's study_log.py, forest_data.py, memory.py and milestones.py, the
-//! Peaceful parts of events.py and events_state.py, and scene.py's mood, at
-//! the commit pinned in app/library/PINS; names follow theirs. Days are
-//! counted as `ago` (0 today, 1 yesterday, ...), as there.
+//! animals and anniversaries, what the way you study brings to it (Nature:
+//! fire, the asteroid, crows, tall grass, tumbleweeds, flowers, songbirds),
+//! and the scene it is drawn in. A port of the add-on's study_log.py,
+//! forest_data.py, memory.py, milestones.py, events.py, events_state.py and
+//! scene.py's mood, at the commit pinned in app/library/PINS; names follow
+//! theirs. Days are counted as `ago` (0 today, 1 yesterday, ...), as there.
 //!
 //! The add-on's defaults throughout: every deck, suspended cards keep their
-//! trees, no start date. Nothing is remembered between calls (the add-on
-//! remembers when each animal came; here they are those the numbers bring).
+//! trees, no start date. What it remembers between days (the animals that
+//! came and when, the ancient trees, what was shown) is the caller's
+//! `memory`, kept as its state file is.
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -16,9 +18,11 @@ use std::collections::HashSet;
 
 use anki::collection::Collection;
 use anki::error::Result;
+use chrono::DateTime;
 use chrono::Datelike;
 use chrono::NaiveDate;
 use chrono::TimeZone;
+use chrono::Utc;
 use regex::Regex;
 use serde_json::json;
 use serde_json::Map;
@@ -57,12 +61,27 @@ const MAX_INDIVIDUAL_TREES: usize = 730;
 const DEFAULT_DECAY: f64 = 0.5;
 const STABILITY_RECALL: f64 = 0.9;
 
-// events.py: big learning days, and cured leeches' songbirds
+// events.py: big learning days, cured leeches' songbirds, Nature's strikes
+// and fire, tall grass, review hell
 const BIG_DAY_WINDOW: i64 = 14;
 const BIG_DAY_JUMP: f64 = 1.25;
 const BIG_DAY_MORE: i64 = 2;
 const BIG_DAY_HISTORY: usize = 7;
 const CURED_DAYS: i64 = 7;
+const LOOKBACK_DAYS: i64 = 3660;
+const STRIKE_NEWS_DAYS: i64 = 7;
+const CRATER_GONE_DAYS: i64 = 400;
+const FIRE_FROM: i64 = 3;
+const FIRE_PER_DAY: f64 = 0.05;
+const FIRE_MAX: f64 = 0.5;
+const FIRE_HEAL_DAYS: i64 = 7;
+const STAGNANT_AFTER: i64 = 7;
+const STAGNANT_FULL: i64 = 30;
+const STAGNANT_REVIEWING: i64 = 3;
+const REVIEW_HELL_TIMES: i64 = 2;
+const REVIEW_HELL_MIN: i64 = 30;
+const REVIEW_HELL_USUAL_DAYS: i64 = 30;
+const BACKLOG_CLEARED_WITHIN: i64 = 7;
 
 // milestones.py
 const RABBIT_TREES: i64 = 50;
@@ -76,6 +95,11 @@ const EAGLE_MATURE: i64 = 25_000;
 
 // scene.py
 const WIND_CHANCE: f64 = 0.3;
+// Without the place's own, the sun rises and sets at these local times; dawn and
+// dusk last this long either side, golden hour as long before dusk.
+const DEFAULT_SUNRISE: (u32, u32) = (6, 30);
+const DEFAULT_SUNSET: (u32, u32) = (19, 0);
+const TWILIGHT_MINUTES: i64 = 60;
 const METEOR_SHOWER_STREAKS: [i64; 6] = [100, 200, 365, 500, 730, 1000];
 const PERSEIDS: (u32, u32) = (8, 12);
 const DAYS_PER_YEAR: i64 = 365;
@@ -101,37 +125,149 @@ pub struct Look {
     pub landmark: String,
     pub weather: String,
     pub time: String,
+    /// The real sky: the weather is the live weather (`live`, the preset's own
+    /// without it) and the time of day follows the clock.
+    pub real_sky: bool,
+    /// The live weather now (weather::current), and the place it is for.
+    pub live: Option<Value>,
+    pub city: Option<String>,
 }
 
-/// The page's data (web/core.js AF.mount's `data`) for the whole collection.
-pub fn page(col: &mut Collection, at: Moment, look: &Look) -> Result<Value> {
+/// What the forest is grown with, besides the collection.
+pub struct Options {
+    /// "peaceful", "wild" or "merciless" (events.py's Nature).
+    pub nature: String,
+    /// The review log is all there: this session's sync has finished, or the
+    /// collection doesn't sync. Until then a day studied on another device
+    /// looks missed, so no strike, fire, smoke or doom that hasn't shown yet
+    /// comes (events_state.settled).
+    pub settled: bool,
+}
+
+/// The page's data (web/core.js AF.mount's `data`) for the whole collection,
+/// as payload.payload makes it. `memory` is what the add-on keeps in its
+/// state file (the animals that came, the ancient trees, what was shown):
+/// read and updated here, saved by the caller.
+pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memory: &mut Value) -> Result<Value> {
+    if !memory.is_object() {
+        *memory = json!({});
+    }
     let rows = load_rows(col, at.cutoff)?;
     let forest = build_forest(&rows, at);
-    let mut trees = mark_big_days(&forest.trees);
+    let level = nature_level(&opts.nature);
+    let days = &rows.review_days;
+    let date = |d: i64| iso(day_date(d, at.cutoff));
+    let mut trees = forest.trees;
+    let mut stats = forest.stats;
+
+    // Nature (events_state.apply)
+    let mut extras = Map::new();
+    extras.insert("nature".into(), json!(level));
+    extras.insert("craters".into(), json!([]));
+    extras.insert("strike".into(), Value::Null);
+    extras.insert("doom".into(), Value::Null);
+    extras.insert("fire".into(), Value::Null);
+    let mut struck = None;
+    if level == "merciless" {
+        let held = held(days, opts.settled, memory, &date);
+        let out = merciless(&trees, days, &held);
+        if let (Some(&last), true) = (out.hits.last(), opts.settled) {
+            remember_shown(memory, "strike", &date(last));
+        }
+        if let Some(latest) = &out.latest {
+            let craters: Vec<Value> = out
+                .craters
+                .iter()
+                .map(|c| json!({ "ago": c.ago, "lost": c.lost, "streak": c.streak, "date": date(c.ago) }))
+                .collect();
+            extras.insert("craters".into(), json!(craters));
+            // (never `fresh`: the strike plays over the add-on's page, which there isn't)
+            let news = latest.ago <= STRIKE_NEWS_DAYS;
+            extras.insert(
+                "strike".into(),
+                json!({ "date": date(latest.ago), "lost": latest.lost, "seen": date(latest.ago),
+                        "fresh": false, "news": news, "told": false }),
+            );
+        }
+        if let Some(&hit) = out.hits.last() {
+            // the forest now: only what grew since, its streak, reviews and animals counted from there
+            struck = Some(at.today - hit);
+            let reviews = rows.day_reviews.iter().filter(|(d, _)| **d < hit).map(|(_, n)| n).sum();
+            let since: HashSet<i64> = days.iter().filter(|d| **d < hit).copied().collect();
+            let (streak, longest) = streaks(&since, &HashSet::new());
+            trees = out.trees;
+            stats = make_stats(&trees, streak, longest, reviews, rows.today_reviews);
+        }
+        if out.doom && shows(memory, "doom", &date(0), opts.settled) {
+            extras.insert("doom".into(), json!({ "missed": 1, "grace": 1, "left": 0 }));
+        }
+    } else if level == "wild" {
+        let (burning, fire) = set_fire(&trees, days, Some(MAX_INDIVIDUAL_TREES));
+        let kind = fire.as_ref().and_then(|f| {
+            if f["smoke"].as_i64().unwrap_or(0) > 0 {
+                Some("smoke")
+            } else if f["trees"].as_i64().unwrap_or(0) > 0 {
+                Some("fire")
+            } else {
+                None
+            }
+        });
+        let shown = match (kind, &fire) {
+            (Some(kind), Some(f)) => shows(memory, kind, &date(f["began"].as_i64().unwrap_or(0)), opts.settled),
+            _ => true,
+        };
+        if shown {
+            trees = burning;
+            extras.insert("fire".into(), fire.unwrap_or(Value::Null));
+        }
+    }
+    // (the first tree standing: after an asteroid, the new forest's)
+    let seed = trees.first().map_or(0, |t| t["seed"].as_i64().unwrap_or(0));
+    let key = struck.map_or_else(|| "all".to_string(), |s| s.to_string());
+    let visitors = animals(memory, &key, &stats, at.today);
+    let mut trees = mark_big_days(&trees);
+    let mut stagnation = stagnation(&trees, days);
+    if stagnation > 0.0 && !has_new_cards(col)? {
+        stagnation = 0.0; // every card learned: reviewing alone is what is left to do
+    }
+    let mut backlog = backlog(col, memory, at)?;
     let cured = load_cured(col, at.cutoff, CURED_DAYS)?;
     for t in trees.iter_mut() {
         if let Some(n) = cured.get(&ago(t)) {
             t.insert("cured".into(), json!(n));
         }
-        // Peaceful: no crows (events.calm_trees)
-        t.remove("leeches");
+    }
+    if level == "peaceful" {
+        // only the good things: no crows, tall grass or tumbleweeds (events_state.keep_calm)
+        for t in trees.iter_mut() {
+            t.remove("leeches");
+        }
+        stagnation = 0.0;
+        backlog.insert("hell".into(), json!(0.0));
     }
     let today = day_date(0, at.cutoff);
+    let new_ancient = new_ancient_today(memory, &trees, today);
+
     let anniversaries_all = anniversaries(&trees, today);
+    let all = trees.len();
     let (kept, merged) = merge_old(trees);
-    let merged_count = forest.stats_trees as usize - kept.len();
+    let merged_count = all - kept.len();
     let anniversaries: Vec<usize> = anniversaries_all
         .iter()
         .filter(|&&i| i >= merged_count)
         .map(|&i| i - merged_count)
         .collect();
+    let mut events = scene_events(&stats, today);
+    if new_ancient {
+        events.push("new_ancient");
+    }
+    // the page's streak: every day you studied, passing over days with nothing due
     let free = load_free_days(col, at.cutoff)?;
-    let (streak, longest) = streaks(&rows.review_days, &free);
-    let mut stats = forest.stats.clone();
-    stats.insert("streak".into(), json!(streak));
-    stats.insert("longest_streak".into(), json!(longest));
-    stats.insert("streak_week".into(), json!(7));
-    let now_local = local(at.now as i64);
+    let (streak, longest) = streaks(days, &free);
+    let mut page_stats = stats;
+    page_stats.insert("streak".into(), json!(streak));
+    page_stats.insert("longest_streak".into(), json!(longest));
+    page_stats.insert("streak_week".into(), json!(7));
     let page_trees: Vec<Value> = kept
         .into_iter()
         .map(|mut t| {
@@ -141,26 +277,24 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look) -> Result<Value> {
             Value::Object(t)
         })
         .collect();
-    Ok(json!({
+    let mut out = json!({
         "trees": page_trees,
-        "stats": stats,
-        "visitors": forest.visitors,
+        "stats": page_stats,
+        "visitors": visitors,
         "anniversaries": anniversaries,
-        "mood": mood(look, now_local, at.now),
-        "events": scene_events(&forest.stats, today),
+        "mood": mood(look, at.now),
+        "events": events,
         "merged": merged,
-        "forestSeed": forest.seed,
+        "forestSeed": seed,
         "dayNumber": today.num_days_from_ce(),
         "testForest": false,
         "animations": true,
         "tooltips": true,
-        "nature": "peaceful",
-        "craters": [],
-        "strike": null,
-        "doom": null,
-        "fire": null,
-        "stagnation": 0.0,
-    }))
+        "stagnation": stagnation,
+        "backlog": backlog,
+    });
+    out.as_object_mut().unwrap().extend(extras);
+    Ok(out)
 }
 
 /// What the forest is worked out from, in short: the same until the day, the
@@ -198,6 +332,7 @@ struct Rows {
     first_last: HashMap<i64, (i64, i64)>,     // cid -> (first review ms, last review ms)
     recent_lapses: HashSet<i64>,
     review_days: HashSet<i64>,
+    day_reviews: HashMap<i64, i64>, // days ago -> reviews that day
     total_reviews: i64,
     today_reviews: i64,
     leeches: HashSet<i64>,
@@ -264,6 +399,7 @@ fn load_rows(col: &Collection, cutoff: i64) -> Result<Rows> {
         total_reviews: day_reviews.values().sum(),
         today_reviews: day_reviews.get(&0).copied().unwrap_or(0),
         review_days: day_reviews.keys().copied().collect(),
+        day_reviews,
         leeches,
     })
 }
@@ -540,9 +676,6 @@ fn ponds(trees: &mut [Tree], breaks: &[(i64, i64)], cutoff: i64) {
 struct Forest {
     trees: Vec<Tree>,
     stats: Map<String, Value>,
-    stats_trees: i64,
-    visitors: Vec<Value>,
-    seed: i64,
 }
 
 #[derive(Default)]
@@ -630,14 +763,7 @@ fn build_forest(rows: &Rows, at: Moment) -> Forest {
     }
     let (current, longest) = streaks(&rows.review_days, &HashSet::new());
     let stats = make_stats(&trees, current, longest, rows.total_reviews, rows.today_reviews);
-    let visitors = visitors(&stats);
-    Forest {
-        stats_trees: trees.len() as i64,
-        seed: trees.first().map_or(0, |t| t["seed"].as_i64().unwrap_or(0)),
-        trees,
-        stats,
-        visitors,
-    }
+    Forest { trees, stats }
 }
 
 fn make_stats(trees: &[Tree], streak: i64, longest: i64, reviews: i64, today_reviews: i64) -> Map<String, Value> {
@@ -713,28 +839,467 @@ fn mark_big_days(trees: &[Tree]) -> Vec<Tree> {
     out
 }
 
+fn nature_level(value: &str) -> &'static str {
+    match value {
+        "wild" => "wild",
+        "merciless" => "merciless",
+        _ => "peaceful",
+    }
+}
+
+fn iso(date: NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+// What has shown, so it shows again after a restart while the review log is
+// still on its way (events_state._shows and friends).
+
+/// The day (ISO) of the last `kind` shown: a strike, a fire, its smoke, a doom.
+fn last_shown(memory: &Value, kind: &str) -> Option<String> {
+    let shown = memory.get("shown").and_then(|s| s.get(kind)).and_then(Value::as_str);
+    let seen = if kind == "strike" { memory.get("strike_seen").and_then(Value::as_str) } else { None };
+    [shown, seen]
+        .into_iter()
+        .flatten()
+        .filter(|d| d.starts_with(|c: char| c.is_ascii_digit()))
+        .max()
+        .map(str::to_string)
+}
+
+fn remember_shown(memory: &mut Value, kind: &str, day: &str) {
+    if memory.get("shown").and_then(|s| s.get(kind)).and_then(Value::as_str) == Some(day) {
+        return;
+    }
+    if !memory.get("shown").is_some_and(Value::is_object) {
+        memory["shown"] = json!({});
+    }
+    memory["shown"][kind] = json!(day);
+}
+
+/// Whether `kind` of `day` shows: once the review log is all there it does
+/// (and is remembered); before that, only if it showed already.
+fn shows(memory: &mut Value, kind: &str, day: &str, settled: bool) -> bool {
+    if !settled {
+        return last_shown(memory, kind).as_deref() == Some(day);
+    }
+    remember_shown(memory, kind, day);
+    true
+}
+
+/// The strikes that don't come yet: until the review log is all there, any
+/// newer than the last one shown.
+fn held(days: &HashSet<i64>, settled: bool, memory: &Value, date: &dyn Fn(i64) -> String) -> HashSet<i64> {
+    if settled {
+        return HashSet::new();
+    }
+    let last = last_shown(memory, "strike");
+    strikes(days).into_iter().filter(|&d| last.as_ref().is_none_or(|l| date(d) > *l)).collect()
+}
+
+/// (oldest missed day, newest missed day) for each run of days without
+/// reviews, oldest first; today is left out, not being over.
+fn runs(days: &HashSet<i64>, oldest: i64) -> Vec<(i64, i64)> {
+    let (mut out, mut start) = (Vec::new(), None);
+    for d in (1..=oldest).rev() {
+        if days.contains(&d) {
+            if let Some(s) = start.take() {
+                out.push((s, d + 1));
+            }
+        } else if start.is_none() {
+            start = Some(d);
+        }
+    }
+    if let Some(s) = start {
+        out.push((s, 1));
+    }
+    out
+}
+
+/// The days Merciless's asteroid struck, oldest first: the first day of each
+/// run of days without reviews since you first studied.
+fn strikes(days: &HashSet<i64>) -> Vec<i64> {
+    match days.iter().max() {
+        None => vec![],
+        Some(&max) => runs(days, max.min(LOOKBACK_DAYS)).into_iter().map(|(start, _)| start).collect(),
+    }
+}
+
+/// The run of review days that ended just before the break containing `ago`.
+fn streak_before(days: &HashSet<i64>, ago: i64) -> i64 {
+    let mut d = ago;
+    while !days.contains(&d) && d < LOOKBACK_DAYS {
+        d += 1;
+    }
+    let mut run = 0;
+    while days.contains(&(d + run)) {
+        run += 1;
+    }
+    run
+}
+
+struct Crater {
+    ago: i64,
+    lost: usize,
+    streak: i64,
+}
+
+struct Strikes {
+    hits: Vec<i64>,
+    trees: Vec<Tree>,
+    craters: Vec<Crater>,
+    latest: Option<Crater>,
+    doom: bool,
+}
+
+/// What Merciless does: a strike for every run of missed days (but those
+/// `held`), the forest starting again after the latest; and today, with no
+/// reviews yet after a day studied, the asteroid on its way (events.merciless).
+fn merciless(trees: &[Tree], days: &HashSet<i64>, held: &HashSet<i64>) -> Strikes {
+    let hits: Vec<i64> = strikes(days).into_iter().filter(|d| !held.contains(d)).collect();
+    // (events._wipe)
+    let (mut craters, mut latest, mut prev): (Vec<Crater>, Option<Crater>, Option<i64>) = (vec![], None, None);
+    for &hit in &hits {
+        let lost = trees.iter().filter(|t| ago(t) >= hit && prev.is_none_or(|p| ago(t) < p)).count();
+        prev = Some(hit);
+        if lost > 0 {
+            let streak = streak_before(days, hit);
+            if hit <= CRATER_GONE_DAYS {
+                craters.push(Crater { ago: hit, lost, streak });
+            }
+            latest = Some(Crater { ago: hit, lost, streak });
+        }
+    }
+    let mut kept: Vec<Tree> = trees.iter().filter(|t| hits.last().is_none_or(|&h| ago(t) < h)).cloned().collect();
+    if !hits.is_empty() {
+        // the break that struck is marked by its crater: no pond for it in the new forest
+        if let Some(first) = kept.first_mut() {
+            first.remove("gap");
+        }
+    }
+    Strikes { doom: !days.contains(&0) && days.contains(&1), hits, trees: kept, craters, latest }
+}
+
+struct FireState {
+    share: f64,
+    healed: i64,
+    missed: i64,
+    began: Option<i64>,
+    epoch: i64,
+    out: bool,
+    news: bool,
+}
+
+/// Wild's fire as the days studied leave it (events.fire_state).
+fn fire_state(days: &HashSet<i64>) -> Option<FireState> {
+    let max = *days.iter().max()?;
+    let (mut share, mut healed, mut run, mut missed, mut began, mut epoch, mut out) = (0.0, 0, 0, 0, None, 0, false);
+    for d in (0..=max.min(LOOKBACK_DAYS)).rev() {
+        if days.contains(&d) {
+            run = 0;
+            if share != 0.0 {
+                healed += 1;
+                if healed >= FIRE_HEAL_DAYS {
+                    share = 0.0;
+                    out = d == 0;
+                }
+            }
+        } else if d != 0 {
+            run += 1;
+            out = false;
+            if run >= FIRE_FROM {
+                if share == 0.0 {
+                    let b = d + run - 1;
+                    began = Some(b);
+                    epoch = days.iter().filter(|&&x| x > b).count() as i64;
+                    missed = 0;
+                }
+                share = f64::min(FIRE_MAX, f64::max(share, FIRE_PER_DAY * (run - FIRE_FROM + 1) as f64));
+                healed = 0;
+                missed = missed.max(run);
+            }
+        }
+    }
+    if share == 0.0 && !out {
+        return None;
+    }
+    let news = share != 0.0 && (healed == 0 || (healed == 1 && days.contains(&0)));
+    Some(FireState { share, healed, missed, began, epoch, out, news })
+}
+
+/// Days in a row without reviews up to now, counting today while it has none.
+fn missed_now(days: &HashSet<i64>) -> i64 {
+    let mut run = 0;
+    while run < LOOKBACK_DAYS && !days.contains(&run) {
+        run += 1;
+    }
+    run
+}
+
+/// Python's zlib.crc32.
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &b in bytes {
+        crc ^= b as u32;
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+        }
+    }
+    !crc
+}
+
+/// Python's round() to a whole number: halves to even.
+fn round_even(x: f64) -> i64 {
+    let r = x.round();
+    if (x - x.trunc()).abs() == 0.5 && r % 2.0 != 0.0 {
+        (r - x.signum()) as i64
+    } else {
+        r as i64
+    }
+}
+
+/// The indexes of the trees a fire of `share` takes: among those that stood
+/// when the break began, of the newest `limit`, picked by lot - the same ones
+/// every day of it (events._fire_lot).
+fn fire_lot(trees: &[Tree], share: f64, began: i64, epoch: i64, limit: Option<usize>) -> HashSet<usize> {
+    let from = limit.map_or(0, |l| trees.len().saturating_sub(l));
+    let mut pool: Vec<usize> = (from..trees.len()).filter(|&i| ago(&trees[i]) > began).collect();
+    if pool.is_empty() {
+        return HashSet::new();
+    }
+    let n = (round_even(share * pool.len() as f64).max(1) as usize).min(pool.len());
+    let lot = |i: &usize| {
+        let t = &trees[*i];
+        let seed = t.get("seed").and_then(Value::as_i64).unwrap_or_else(|| ago(t));
+        crc32(format!("fire|{seed}|{epoch}").as_bytes())
+    };
+    pool.sort_by_key(lot);
+    pool.into_iter().take(n).collect()
+}
+
+/// The trees with Wild's fire on them (`burn`, 1 while it blazes and less
+/// each day you study), or the day before one breaks out its `smoke`, and
+/// what the page says of it (events.set_fire).
+fn set_fire(trees: &[Tree], days: &HashSet<i64>, limit: Option<usize>) -> (Vec<Tree>, Option<Value>) {
+    let mark = |picked: &HashSet<usize>, key: &str, value: Value| -> Vec<Tree> {
+        trees
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let mut t = t.clone();
+                if picked.contains(&i) {
+                    t.insert(key.into(), value.clone());
+                }
+                t
+            })
+            .collect()
+    };
+    let Some(st) = fire_state(days) else {
+        // smoke: FIRE_FROM - 1 days missed, today none yet (events.smoke_state)
+        let run = missed_now(days) - 1;
+        if days.is_empty() || run != FIRE_FROM - 1 {
+            return (trees.to_vec(), None);
+        }
+        let epoch = days.iter().filter(|&&x| x > run).count() as i64;
+        let smoking = fire_lot(trees, FIRE_PER_DAY, run, epoch, limit);
+        let info = json!({ "left": 0, "trees": 0, "missed": FIRE_FROM - 1, "began": run, "out": false,
+                           "news": false, "smoke": smoking.len() });
+        return (mark(&smoking, "smoke", json!(1)), Some(info));
+    };
+    let mut info = json!({ "left": 0, "trees": 0, "missed": st.missed, "began": st.began, "out": st.out,
+                           "news": st.news, "smoke": 0 });
+    if st.share == 0.0 {
+        return (trees.to_vec(), Some(info));
+    }
+    let burning = fire_lot(trees, st.share, st.began.unwrap_or(0), st.epoch, limit);
+    let burn = round_to(1.0 - st.healed as f64 / FIRE_HEAL_DAYS as f64, 3);
+    info["left"] = json!(FIRE_HEAL_DAYS - st.healed);
+    info["trees"] = json!(burning.len());
+    (mark(&burning, "burn", json!(burn)), Some(info))
+}
+
+/// 0, or how tall the grass has grown (up to 1) after weeks without new
+/// cards while still reviewing (events.stagnation).
+fn stagnation(trees: &[Tree], days: &HashSet<i64>) -> f64 {
+    let Some(newest) = trees.last() else { return 0.0 };
+    if !(0..STAGNANT_REVIEWING).any(|d| days.contains(&d)) {
+        return 0.0; // not reviewing either: that is a break, not coasting
+    }
+    let idle = ago(newest);
+    if idle < STAGNANT_AFTER {
+        return 0.0;
+    }
+    f64::min(1.0, (idle - STAGNANT_AFTER + 1) as f64 / (STAGNANT_FULL - STAGNANT_AFTER + 1) as f64)
+}
+
+/// Whether any new card is left to learn (suspended ones don't count).
+fn has_new_cards(col: &Collection) -> Result<bool> {
+    Ok(col
+        .storage
+        .db()
+        .query_row("select exists (select 1 from cards c where c.type = 0 and c.queue != -1)", [], |r| r.get(0))?)
+}
+
+/// The overdue reviews, how deep in review hell they put you, and whether
+/// today is the day you cleared them (events_state._backlog).
+fn backlog(col: &Collection, memory: &mut Value, at: Moment) -> Result<Map<String, Value>> {
+    let db = col.storage.db();
+    let overdue: i64 = db.query_row(
+        "select count() from cards c where c.queue in (2, 3) \
+         and (case when c.odid != 0 and c.odue != 0 then c.odue else c.due end) < ?1",
+        [at.today],
+        |r| r.get(0),
+    )?;
+    let mut counts = Vec::new();
+    {
+        let mut st = db.prepare(&format!(
+            "select (?1 - 1 - id / 1000) / {DAY_SECS}, count() from revlog \
+             where ease > 0 and type in {STUDY_TYPES} and id >= ?2 and id < ?3 group by 1"
+        ))?;
+        let from = (at.cutoff - (REVIEW_HELL_USUAL_DAYS + 1) * DAY_SECS) * 1000;
+        let mut rows = st.query([at.cutoff, from, (at.cutoff - DAY_SECS) * 1000])?;
+        while let Some(r) = rows.next()? {
+            counts.push(r.get::<_, i64>(1)? as f64);
+        }
+    }
+    let studied: Vec<f64> = counts.into_iter().filter(|&n| n > 0.0).collect();
+    let usual = if studied.is_empty() { 0.0 } else { median(&studied) };
+    let limit = f64::max(REVIEW_HELL_MIN as f64, REVIEW_HELL_TIMES as f64 * usual);
+    let hell = if overdue as f64 <= limit { 0.0 } else { f64::min(1.0, overdue as f64 / limit - 1.0) };
+    let day = |memory: &Value, key: &str| memory.get(key).and_then(Value::as_i64);
+    let (hell_day, cleared_day) = (day(memory, "hell_day"), day(memory, "backlog_cleared"));
+    let cleared = cleared_day == Some(at.today)
+        || (overdue == 0
+            && hell_day.is_some_and(|h| (0..=BACKLOG_CLEARED_WITHIN).contains(&(at.today - h)))
+            && cleared_day.is_none_or(|c| c < hell_day.unwrap()));
+    for (key, on) in [("hell_day", hell > 0.0), ("backlog_cleared", cleared)] {
+        if on && day(memory, key) != Some(at.today) {
+            memory[key] = json!(at.today);
+        }
+    }
+    if hell > 0.0 && memory.get("hell_level").and_then(Value::as_f64) != Some(round_to(hell, 3)) {
+        memory["hell_level"] = json!(round_to(hell, 3));
+    }
+    let mut out = Map::new();
+    out.insert("overdue".into(), json!(overdue));
+    out.insert("usual".into(), json!(round_even(usual)));
+    out.insert("hell".into(), json!(round_to(hell, 3)));
+    out.insert("cleared".into(), json!(cleared));
+    if cleared {
+        let level = memory.get("hell_level").and_then(Value::as_f64).filter(|&l| l > 0.0 && l <= 1.0);
+        out.insert("was".into(), json!(level.unwrap_or(0.5)));
+    }
+    Ok(out)
+}
+
 // ---------- animals and anniversaries (milestones.py) ----------
 
-fn visitors(s: &Map<String, Value>) -> Vec<Value> {
+/// The milestone animals these numbers bring (milestones.VISITORS), in order.
+fn earned(s: &Map<String, Value>) -> Vec<&'static str> {
     let int = |k: &str| s.get(k).and_then(Value::as_i64).unwrap_or(0);
-    let planted_today = s.get("planted_today").and_then(Value::as_bool).unwrap_or(false);
-    let (streak, longest) = (int("streak"), int("longest_streak"));
-    let came = [
-        ("rabbit", int("trees") >= RABBIT_TREES, int("trees") == RABBIT_TREES && planted_today),
-        ("deer", longest >= DEER_STREAK, streak == DEER_STREAK && longest == DEER_STREAK),
-        ("fox", int("reviews") >= FOX_REVIEWS, int("reviews") - int("today_reviews") < FOX_REVIEWS && FOX_REVIEWS <= int("reviews")),
-        ("owl", int("ancient") >= 1, false),
-        ("heron", int("ponds") >= 1, false),
-        ("stag", longest >= STAG_STREAK, streak == STAG_STREAK && longest == STAG_STREAK),
-        ("cabin", int("forest_age") >= CABIN_AGE_DAYS, int("forest_age") == CABIN_AGE_DAYS),
-        ("bear", longest >= BEAR_STREAK, streak == BEAR_STREAK && longest == BEAR_STREAK),
-        ("squirrel", int("mature_cards") >= SQUIRREL_MATURE, false),
-        ("eagle", int("mature_cards") >= EAGLE_MATURE, false),
-    ];
-    came.iter()
-        .filter(|(_, here, _)| *here)
-        .map(|(key, _, new)| json!({ "key": key, "new": new }))
+    let longest = int("longest_streak");
+    [
+        ("rabbit", int("trees") >= RABBIT_TREES),
+        ("deer", longest >= DEER_STREAK),
+        ("fox", int("reviews") >= FOX_REVIEWS),
+        ("owl", int("ancient") >= 1),
+        ("heron", int("ponds") >= 1),
+        ("stag", longest >= STAG_STREAK),
+        ("cabin", int("forest_age") >= CABIN_AGE_DAYS),
+        ("bear", longest >= BEAR_STREAK),
+        ("squirrel", int("mature_cards") >= SQUIRREL_MATURE),
+        ("eagle", int("mature_cards") >= EAGLE_MATURE),
+    ]
+    .into_iter()
+    .filter_map(|(key, here)| here.then_some(key))
+    .collect()
+}
+
+const ANIMALS: [&str; 10] = ["rabbit", "deer", "fox", "owl", "heron", "stag", "cabin", "bear", "squirrel", "eagle"];
+
+/// Every animal that has come to the forest `key` ("all", or the day an
+/// asteroid began it again), remembered in `memory`: once come, an animal
+/// stays, and is new on the day it came. The first look at a forest takes
+/// in the animals it already has without announcing them
+/// (events_state._animals, milestones.arrivals and visitors).
+fn animals(memory: &mut Value, key: &str, stats: &Map<String, Value>, today: i64) -> Vec<Value> {
+    let every = memory.get("animals").filter(|v| v.is_object()).cloned().unwrap_or_else(|| json!({}));
+    let known = every.get(key).filter(|v| v.is_object()).cloned();
+    let first = known.is_none();
+    let mut arrived: Map<String, Value> = known
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, v)| v.is_null() || v.is_i64())
+        .collect();
+    for animal in earned(stats) {
+        if !arrived.contains_key(animal) {
+            arrived.insert(animal.into(), if first { Value::Null } else { json!(today) });
+        }
+    }
+    if every.get(key) != Some(&Value::Object(arrived.clone())) {
+        let mut every = every;
+        every[key] = Value::Object(arrived.clone());
+        memory["animals"] = every;
+    }
+    ANIMALS
+        .iter()
+        .filter_map(|&a| {
+            let day = arrived.get(a)?;
+            Some(json!({ "key": a, "new": day.as_i64() == Some(today), "day": day }))
+        })
         .collect()
+}
+
+/// Whether a tree turned ancient today: remembered in `memory`, so a tree is
+/// news once, and the first look takes in the ancient trees already there
+/// (payload._new_ancient_today, for the whole forest and no start date).
+fn new_ancient_today(memory: &mut Value, trees: &[Tree], today: NaiveDate) -> bool {
+    let today_iso = iso(today);
+    let mut days: Vec<i64> =
+        trees.iter().filter(|t| t["stage"].as_i64() == Some(ANCIENT)).filter_map(|t| t["day"].as_i64()).collect();
+    days.sort();
+    let ints = |v: Option<&Value>| -> Option<Vec<i64>> {
+        v.and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_i64).collect())
+    };
+    let every: Map<String, Value> = memory.get("ancient").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+    let known = ints(every.get("all")).or_else(|| ints(memory.get("ancient_days")));
+    let mut event = memory.get("ancient_event").and_then(Value::as_str) == Some(today_iso.as_str());
+    let turned: Vec<i64> = match &known {
+        None => vec![],
+        Some(k) => days.iter().filter(|d| !k.contains(d)).copied().collect(),
+    };
+    if known.is_none() || !turned.is_empty() {
+        let mut turned: HashSet<i64> = turned.into_iter().collect();
+        if !turned.is_empty() {
+            if event {
+                turned.extend(ints(memory.get("ancient_event_days")).unwrap_or_default());
+            }
+            let mut sorted: Vec<i64> = turned.iter().copied().collect();
+            sorted.sort();
+            memory["ancient_event"] = json!(today_iso);
+            memory["ancient_event_days"] = json!(sorted);
+            event = true;
+        }
+        let mut every_out = Map::new();
+        for (k, v) in &every {
+            if let Some(list) = ints(Some(v)) {
+                let mut all: Vec<i64> = list.into_iter().chain(turned.iter().copied()).collect();
+                all.sort();
+                all.dedup();
+                every_out.insert(k.clone(), json!(all));
+            }
+        }
+        let mut all: Vec<i64> = days.iter().copied().chain(known.unwrap_or_default()).collect();
+        all.sort();
+        all.dedup();
+        every_out.insert("all".into(), json!(all));
+        memory["ancient"] = Value::Object(every_out);
+        if let Some(m) = memory.as_object_mut() {
+            m.remove("ancient_days");
+        }
+    }
+    let shown = ints(memory.get("ancient_event_days")).unwrap_or_default();
+    event && shown.iter().any(|d| days.contains(d))
 }
 
 /// Indexes of trees planted on this calendar day in an earlier year (29 Feb
@@ -766,22 +1331,74 @@ fn moon_phase(now: f64) -> f64 {
     (days / SYNODIC_MONTH).rem_euclid(1.0)
 }
 
-fn mood(look: &Look, now: chrono::DateTime<chrono::Local>, now_ts: f64) -> Value {
+/// The time of day at `now`: by the place's sunrise and sunset (instants), or
+/// without them by the default ones on the local clock (scene.time_of_day).
+fn time_of_day(now: f64, sun: Option<(DateTime<Utc>, DateTime<Utc>)>) -> &'static str {
+    let t = DateTime::<Utc>::from_timestamp(now as i64, 0).unwrap_or_default();
+    let (rise, set) = sun.unwrap_or_else(|| {
+        let local = local(now as i64);
+        let at = |h: u32, m: u32| {
+            local
+                .date_naive()
+                .and_hms_opt(h, m, 0)
+                .and_then(|d| chrono::Local.from_local_datetime(&d).single())
+                .map_or(t, |d| d.with_timezone(&Utc))
+        };
+        (at(DEFAULT_SUNRISE.0, DEFAULT_SUNRISE.1), at(DEFAULT_SUNSET.0, DEFAULT_SUNSET.1))
+    });
+    let tw = chrono::Duration::minutes(TWILIGHT_MINUTES);
+    if rise - tw <= t && t < rise + tw {
+        "dawn"
+    } else if set - tw <= t && t < set + tw {
+        "dusk"
+    } else if set - tw * 2 <= t && t < set - tw {
+        "golden_hour"
+    } else if rise + tw <= t && t < set - tw {
+        "day"
+    } else {
+        "night"
+    }
+}
+
+/// The five look settings for this moment (scene.choose_mood): the preset's,
+/// or with the real sky on, the live weather (the preset's own without it)
+/// and the time of day by the clock.
+pub fn mood(look: &Look, now_ts: f64) -> Value {
+    let now = local(now_ts as i64);
     let date = now.date_naive();
-    let windy = matches!(look.weather.as_str(), "cloudy" | "rain" | "storm") && roll(date, "wind") < WIND_CHANCE;
-    json!({
-        "time": look.time,
+    let rolled = |weather: &str| matches!(weather, "cloudy" | "rain" | "storm") && roll(date, "wind") < WIND_CHANCE;
+    let instant = |v: &Value| DateTime::parse_from_rfc3339(v.as_str()?).ok().map(|t| t.with_timezone(&Utc));
+    let real = look.live.as_ref().filter(|_| look.real_sky);
+    let (weather, source, windy) = match real {
+        Some(r) => (r["weather"].as_str().unwrap_or("cloudy").to_string(), "real", r["windy"].as_bool().unwrap_or(false)),
+        None => (look.weather.clone(), if look.real_sky { "preset" } else { "manual" }, rolled(&look.weather)),
+    };
+    let time = if !look.real_sky {
+        look.time.clone()
+    } else if let Some(polar) = real.and_then(|r| r["polar"].as_str()) {
+        (if polar == "day" { "day" } else { "night" }).to_string()
+    } else {
+        let sun = real.and_then(|r| Some((instant(&r["sunrise"])?, instant(&r["sunset"])?)));
+        time_of_day(now_ts, sun).to_string()
+    };
+    let mut mood = json!({
+        "time": time,
         "home": look.time,
-        "clock": false,
-        "weather": look.weather,
+        "clock": look.real_sky,
+        "weather": weather,
         "special": look.environment,
         "wind": windy,
         "environment": look.environment,
         "landscape": look.landscape,
         "landmark": look.landmark,
         "moon": round_to(moon_phase(now_ts), 3),
-        "source": "manual",
-    })
+        "source": source,
+    });
+    if let Some(r) = real {
+        mood["temp"] = r["temp"].clone();
+        mood["city"] = json!(look.city);
+    }
+    mood
 }
 
 /// Night-sky events tied to your study (they only show on clear nights).
@@ -843,6 +1460,28 @@ mod tests {
             let d = Sha1::digest(b"anki-forest-100");
             (u32::from_be_bytes([d[0], d[1], d[2], d[3]]) & 0x7FFF_FFFF) as i64
         });
+    }
+
+    #[test]
+    fn fire_helpers_match_python() {
+        assert_eq!(crc32(b"hello"), 907060870); // zlib.crc32(b"hello")
+        assert_eq!(round_even(2.5), 2); // round(2.5)
+        assert_eq!(round_even(3.5), 4);
+        assert_eq!(round_even(0.4), 0);
+    }
+
+    #[test]
+    fn strikes_and_fire() {
+        // studied until 6 days ago, away 5 to 3 days ago, back since: one strike, at 5
+        let review: HashSet<i64> = [0, 1, 2, 6, 7, 8].into_iter().collect();
+        assert_eq!(strikes(&review), vec![5]);
+        // three days away: a fire, healing for the 3 days studied since
+        let fire = fire_state(&review).unwrap();
+        assert_eq!((fire.share, fire.healed, fire.missed, fire.began), (FIRE_PER_DAY, 3, 3, Some(5)));
+        // two days missed, today not studied yet: smoke, no fire
+        let smoke: HashSet<i64> = [3, 4, 5].into_iter().collect();
+        assert!(fire_state(&smoke).is_none());
+        assert_eq!(missed_now(&smoke), 3);
     }
 
     #[test]
