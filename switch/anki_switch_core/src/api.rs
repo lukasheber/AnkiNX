@@ -239,6 +239,9 @@ struct State {
     math: Option<crate::math::MathRenderer>,
     /// Streak and pace for the deck list, computed once per Anki day.
     daily: Option<DailyStats>,
+    /// Memory Forest's last page data and what it was worked out from
+    /// (forest::Moment::key): the same again until the collection changes.
+    forest: Option<(String, Value)>,
     /// A download of a newer .nro (see update.rs), while or after it runs.
     update: Option<crate::update::Progress>,
     runtime: tokio::runtime::Runtime,
@@ -361,6 +364,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "media_sync_status" => state.media_sync_status(),
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
+        "forest" => state.forest(&args),
         _ => Err(ApiError::new("unknown_command", format!("unknown command: {cmd}"))),
     }
 }
@@ -416,6 +420,7 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         media_error: None,
         math: None,
         daily: None,
+        forest: None,
         update: None,
         runtime,
         client,
@@ -618,6 +623,7 @@ impl State {
     fn close_with(&mut self, force: bool, prune: bool) -> ApiResult {
         self.stop_media_sync();
         self.shown = None;
+        self.forest = None;
         self.daily = None;
         let Some(col) = self.col.take() else {
             return Ok(json!({}));
@@ -1690,6 +1696,31 @@ impl State {
             "done": p.done,
             "error": p.error,
         }))
+    }
+
+    /// `forest {environment, landscape, landmark, weather, time}`: Memory
+    /// Forest's page data for the whole collection, drawn in that scenery
+    /// (src/forest.rs).
+    fn forest(&mut self, args: &Value) -> ApiResult {
+        let look = crate::forest::Look {
+            environment: str_arg(args, "environment")?.into(),
+            landscape: str_arg(args, "landscape")?.into(),
+            landmark: str_arg(args, "landmark")?.into(),
+            weather: str_arg(args, "weather")?.into(),
+            time: str_arg(args, "time")?.into(),
+        };
+        let tr = self.tr.clone();
+        let err = |e| ApiError::anki(e, &tr);
+        let col = self.col()?;
+        let at = crate::forest::now(col).map_err(err)?;
+        // (worked out again only when something it is grown from changed)
+        let key = crate::forest::key(col, at, &look).map_err(err)?;
+        if let Some((_, page)) = self.forest.as_ref().filter(|(k, _)| *k == key) {
+            return Ok(page.clone());
+        }
+        let page = crate::forest::page(self.col()?, at, &look).map_err(err)?;
+        self.forest = Some((key, page.clone()));
+        Ok(page)
     }
 
     fn media_sync_status(&mut self) -> ApiResult {

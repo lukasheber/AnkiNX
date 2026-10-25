@@ -210,5 +210,54 @@ g.console = {
   log: (...a) => native.log(0, text(a)), info: (...a) => native.log(0, text(a)), debug: (...a) => native.log(0, text(a)),
   warn: (...a) => native.log(1, text(a)), error: (...a) => native.log(2, text(a)),
 };
+/* ---------- Intl, in English: QuickJS has none (the tooltips' dates and numbers) ---------- */
+if (typeof g.Intl === 'undefined') {
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+    'November', 'December'];
+  const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const english = locales => [].concat(locales || []).filter(l => /^en\b/i.test(l));
+  class DateTimeFormat {
+    constructor(_locale, opts) { this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return english(locales); }
+    // "Oct 17, 2026", "October 2026", "October", "Sunday"
+    format(date) {
+      const o = this.o, d = date instanceof Date ? date : new Date(date), utc = o.timeZone === 'UTC';
+      const get = k => (utc ? d['getUTC' + k]() : d['get' + k]());
+      const month = get('Month'), day = get('Date'), year = get('FullYear'), weekday = WEEKDAYS[get('Day')];
+      const m = o.month === 'long' ? MONTHS[month] : o.month === 'short' ? MONTHS[month].slice(0, 3)
+        : o.month ? String(month + 1) : '';
+      let s = m && o.day ? `${m} ${day}` : m || (o.day ? String(day) : '');
+      if (o.year) s = s ? (o.day ? `${s}, ${year}` : `${s} ${year}`) : String(year);
+      if (o.weekday) { const w = o.weekday === 'long' ? weekday : weekday.slice(0, 3); s = s ? `${w}, ${s}` : w; }
+      return s || d.toISOString().slice(0, 10);
+    }
+  }
+  class NumberFormat {
+    constructor(_locale, opts) { this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return english(locales); }
+    // "1,234", "1.5"
+    format(n) {
+      const o = this.o, digits = o.maximumFractionDigits;
+      const [whole, frac] = (digits != null ? Number(n).toFixed(Math.max(digits, o.minimumFractionDigits || 0))
+        : String(Math.round(Number(n) * 1000) / 1000)).split('.');
+      return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac ? '.' + frac : '');
+    }
+  }
+  class RelativeTimeFormat {
+    constructor(_locale, opts) { this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return english(locales); }
+    format(v, unit) {
+      if (unit === 'day' && this.o.numeric === 'auto' && Math.abs(v) <= 1) return ['yesterday', 'today', 'tomorrow'][v + 1];
+      const u = Math.abs(v) === 1 ? unit : unit + 's';
+      return v < 0 ? `${-v} ${u} ago` : `in ${v} ${u}`;
+    }
+  }
+  class PluralRules {
+    static supportedLocalesOf(locales) { return english(locales); }
+    select(n) { return n === 1 ? 'one' : 'other'; }
+  }
+  g.Intl = { DateTimeFormat, NumberFormat, RelativeTimeFormat, PluralRules };
+}
+
 Object.assign(g, { Path2D, ImageData, CanvasRenderingContext2D, HTMLCanvasElement });
 })();

@@ -1,5 +1,11 @@
 {
   "title": "AnkiNX",
+  "forest": {
+    "title": "あなたの森",
+    "trees_one": "{}本の木",
+    "trees_other": "{}本の木",
+    "cards": "カードを見る"
+  },
   "decks": {
     "col_new": "新規",
     "col_learn": "学習",

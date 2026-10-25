@@ -1,10 +1,12 @@
 #include "activity/deck_picker.hpp"
 
 #include "activity/deck_overview.hpp"
+#include "activity/forest.hpp"
 #include "activity/reviewer.hpp"
 #include "anki/api.hpp"
 #include "app.hpp"
 #include "activity/settings.hpp"
+#include "util/forest.hpp"
 #include "util/settings.hpp"
 #include "util/sync_flow.hpp"
 #include "util/update.hpp"
@@ -35,6 +37,7 @@ const char* ICON_SETTINGS = "\xEE\xA2\xB8"; // Material settings
 const char* ICON_EXIT     = "\xEE\xA1\xB9"; // Material exit_to_app
 const char* ICON_CLOUD     = "\xEE\x8A\xBF"; // Material cloud_done
 const char* ICON_STREAK    = "\xEE\xA0\x8E"; // Material whatshot (a flame)
+const char* ICON_FOREST    = "\xEE\x90\x86"; // Material nature (a tree)
 const char* ICON_CLOUD_OFF ="\xEE\x8B\x81"; // Material cloud_off
 
 // Width of a line of text in the regular font, as a Label measures it.
@@ -112,6 +115,8 @@ class DeckDataSource : public brls::RecyclerDataSource
         auto* cell = (DeckCell*)recycler->dequeueReusableCell("Deck");
         size_t row = index.row;
         cell->bind(activity->getEntries()[row]);
+        // (over the forest, the highlighted row shows it through: only its frame is drawn)
+        cell->setHideHighlightBackground(activity->forestOn());
         cell->onToggle   = [this, row] { activity->toggle(row); };
         cell->onOverview = [this, row] { activity->overview(row); };
         return cell;
@@ -196,10 +201,16 @@ void DeckPickerActivity::onContentAvailable()
     streakLabel->setTextColor(mutedColor());
     streakIcon->setText(ICON_STREAK);
     // The forest behind it all, if one is chosen (Settings > About): first,
-    // so the header, the list and the footer draw over it.
-    forest = new ForestView();
+    // so the header, the list and the footer draw over it. Grown at each
+    // refresh; its tree count by the streak opens it on the whole screen.
+    forest = new ForestView(true);
     frame->addView(forest, 0);
-    forest->show(settings::forest());
+    forestIcon->setText(ICON_FOREST);
+    forestLabel->setTextColor(mutedColor());
+    forestBox->addGestureRecognizer(new brls::TapGestureRecognizer([this](brls::TapGestureStatus status, brls::Sound*) {
+        if (status.state == brls::GestureState::END)
+            openForest();
+    }));
     fitTable();
     // This is the root screen: B must not quit by accident (+ quits).
     frame->registerAction("", brls::BUTTON_B, [](brls::View*) { return true; }, true);
@@ -211,6 +222,10 @@ void DeckPickerActivity::onContentAvailable()
     }, true);
     frame->registerAction("ankinx/settings/title"_i18n, brls::BUTTON_BACK, [this](brls::View*) {
         this->openSettings();
+        return true;
+    }, true);
+    frame->registerAction("ankinx/forest/title"_i18n, brls::BUTTON_LB, [this](brls::View*) {
+        this->openForest();
         return true;
     }, true);
     app::registerQuit(frame, true);
@@ -258,7 +273,6 @@ void DeckPickerActivity::onResume()
     {
         // The account may have changed there.
         returningFromSettings = false;
-        forest->show(settings::forest());
         afterSync();
     }
     else
@@ -331,6 +345,7 @@ void DeckPickerActivity::refresh()
                 secsPerCard = pace;
                 studiedToday->setText(studied.empty() ? "ankinx/decks/none_studied"_i18n : studied);
                 updateStreak(streak, streakCapped);
+                growForest();
                 fitStatusLine();
                 updateSyncDot(pending);
                 updateDueLabel();
@@ -508,4 +523,44 @@ void DeckPickerActivity::showMessage(const std::string& text)
     message->setText(text);
     message->setVisibility(brls::Visibility::VISIBLE);
     decks->setVisibility(brls::Visibility::GONE);
+}
+
+// Memory Forest, if a scenery is chosen: grown from the collection (the
+// backend keeps it until the collection changes, so a refresh with nothing
+// new leaves the scene as it is), behind the list, with its tree count.
+void DeckPickerActivity::growForest()
+{
+    const forest::Scenery* scenery = forest::scenery(settings::forest());
+    forestShown = scenery != nullptr;
+    if (!scenery)
+    {
+        forestData.clear();
+        forest->show("");
+        forestBox->setVisibility(brls::Visibility::GONE);
+        return;
+    }
+    brls::async([this, scenery] {
+        try
+        {
+            std::string data = forest::grow(*scenery);
+            int trees        = forest::treeCount(data);
+            brls::sync([this, data, trees] {
+                forestData = data;
+                forest->show(data);
+                forestLabel->setText(brls::getStr(trees == 1 ? "ankinx/forest/trees_one" : "ankinx/forest/trees_other",
+                                                  std::to_string(trees)));
+                forestBox->setVisibility(brls::Visibility::VISIBLE);
+            });
+        }
+        catch (const anki::Error& e)
+        {
+            brls::Logger::error("forest: {}", e.what());
+        }
+    });
+}
+
+void DeckPickerActivity::openForest()
+{
+    if (!forestData.empty())
+        brls::Application::pushActivity(new ForestActivity(forestData, forest));
 }

@@ -1,0 +1,83 @@
+[
+ {
+  "key": "golden_lake",
+  "label": "Golden hour by the lake",
+  "environment": "natural",
+  "landscape": "lake",
+  "landmark": "none",
+  "weather": "clear",
+  "time": "golden_hour"
+ },
+ {
+  "key": "misty_valley",
+  "label": "Misty mountain valley",
+  "environment": "misty_valley",
+  "landscape": "mountains",
+  "landmark": "peak",
+  "weather": "fog",
+  "time": "dawn"
+ },
+ {
+  "key": "starry_night",
+  "label": "Starry night",
+  "environment": "starry_night",
+  "landscape": "lake",
+  "landmark": "none",
+  "weather": "clear",
+  "time": "night"
+ },
+ {
+  "key": "aurora",
+  "label": "Aurora night",
+  "environment": "aurora",
+  "landscape": "lake",
+  "landmark": "none",
+  "weather": "clear",
+  "time": "night"
+ },
+ {
+  "key": "lanterns",
+  "label": "Lanterns at night",
+  "environment": "lanterns",
+  "landscape": "lake",
+  "landmark": "moon_bridge",
+  "weather": "clear",
+  "time": "night"
+ },
+ {
+  "key": "frozen_market",
+  "label": "Frozen river market",
+  "environment": "frozen_market",
+  "landscape": "river",
+  "landmark": "none",
+  "weather": "snow",
+  "time": "dusk"
+ },
+ {
+  "key": "pumpkin_patch",
+  "label": "Witch across the moon",
+  "environment": "pumpkin_patch",
+  "landscape": "meadow",
+  "landmark": "none",
+  "weather": "clear",
+  "time": "dusk"
+ },
+ {
+  "key": "bamboo",
+  "label": "Rainy bamboo grove",
+  "environment": "bamboo",
+  "landscape": "river",
+  "landmark": "pagoda",
+  "weather": "rain",
+  "time": "day"
+ },
+ {
+  "key": "synthwave",
+  "label": "Synthwave",
+  "environment": "synthwave",
+  "landscape": "meadow",
+  "landmark": "none",
+  "weather": "clear",
+  "time": "dusk"
+ }
+]

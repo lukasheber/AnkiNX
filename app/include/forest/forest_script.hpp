@@ -27,6 +27,9 @@ class ForestScript
     // Something in the scene moves fast (rain, a strike): worth ~15 frames
     // a second rather than 10.
     bool busy();
+    // One of the runner's questions (app/forest/src/runner.js QUERIES): pick
+    // {x, y}, trees, mark {ago}. JSON in and out; "null" if it failed.
+    std::string query(const std::string& name, const std::string& args);
 
     // The last frame: premultiplied RGBA, width() x height().
     const uint8_t* pixels() const;

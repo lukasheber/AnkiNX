@@ -27,6 +27,8 @@ prost = "0.13"
 zip = { version = "4.1.0", default-features = false, features = ["deflate", "time"] }
 zstd = "0.13.3"
 regex = "1.11.1"
+# Memory Forest (src/forest.rs): its trees' seeds and the day's rolls, as the add-on hashes them.
+sha1 = "0.10"
 # Card maths (src/math.rs): LaTeX -> Typst (MiTeX) -> SVG.
 comemo = "0.5"
 mitex = { git = "https://github.com/mitex-rs/mitex", tag = "0.2.7" }

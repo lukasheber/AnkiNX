@@ -168,8 +168,20 @@ fn study_flow() {
     assert!(card["answer"].as_str().unwrap().contains("to speak"));
     let first_card = card["card_id"].as_i64().unwrap();
 
+    // Memory Forest: no study yet, no tree.
+    let look = json!({ "environment": "natural", "landscape": "lake", "landmark": "none",
+                       "weather": "clear", "time": "golden_hour" });
+    assert_eq!(ok("forest", look.clone())["stats"]["trees"], 0);
+
     ok("answer", json!({ "ease": 3 }));
     assert_eq!(error_kind("answer", json!({ "ease": 3 })), "no_card");
+    // A card learned today: a seedling, in the scenery asked for.
+    let forest = ok("forest", look.clone());
+    assert_eq!(forest["stats"]["trees"], 1);
+    assert_eq!(forest["trees"][0]["ago"], 0);
+    assert_eq!(forest["trees"][0]["stage"], 0);
+    assert_eq!(forest["mood"]["environment"], "natural");
+    assert_eq!(error_kind("forest", json!({})), "args");
     // Never synced: Anki's offline check can't tell, and reports no changes.
     assert_eq!(ok("status", json!({}))["sync_needed"], "none");
     let card = ok("next_card", json!({}));

@@ -52,6 +52,8 @@ class DeckPickerActivity : public brls::Activity
     void toggle(size_t index);
     // R: the deck overview (counts, description, options, custom study).
     void overview(size_t index);
+    // Memory Forest is behind the list.
+    bool forestOn() const { return forestShown; }
 
   private:
     void openCollection();
@@ -74,14 +76,23 @@ class DeckPickerActivity : public brls::Activity
     BRLS_BIND(brls::Label, streakIcon, "streakIcon");
     BRLS_BIND(brls::Label, streakLabel, "streakLabel");
     BRLS_BIND(brls::Box, columns, "columns");
+    BRLS_BIND(brls::Box, forestBox, "forestBox");
+    BRLS_BIND(brls::Label, forestIcon, "forestIcon");
+    BRLS_BIND(brls::Label, forestLabel, "forestLabel");
     // "N cards due", under the title in the header.
     brls::Label* dueLabel = nullptr;
     // Average seconds per review (last 30 days), for "~N min"; 0 = unknown.
     float secsPerCard = 0;
     // Dot on the header's sync button: changes not yet on AnkiWeb.
     brls::Box* syncDot = nullptr;
-    // Memory Forest behind the screen (view/forest_view.hpp).
+    // Memory Forest behind the screen (view/forest_view.hpp), when it is on:
+    // grown again from the collection at each refresh, and its data, which
+    // the full-screen forest (L, or a tap on the tree count) draws too.
     class ForestView* forest = nullptr;
+    std::string forestData;
+    bool forestShown = false;
+    void growForest();
+    void openForest();
     void updateSyncDot(bool pending);
 
     std::vector<DeckEntry> entries;

@@ -4,6 +4,7 @@
 #include "anki/api.hpp"
 #include "anki_switch_core.h"
 #include "app.hpp"
+#include "util/forest.hpp"
 #include "util/keyboard.hpp"
 #include "util/settings.hpp"
 #include "util/sync_flow.hpp"
@@ -490,28 +491,22 @@ brls::View* SettingsActivity::aboutTab()
                     });
     box->addView(themeCell);
 
-    // Memory Forest behind the deck list: off, or one of its sceneries
-    // (a sample forest for now; the names are Memory Forest's own).
-    static const char* SCENERIES[][2] = {
-        { "golden_lake", "Golden hour by the lake" }, { "misty_valley", "Misty mountain valley" },
-        { "starry_night", "Starry night" },           { "aurora", "Aurora night" },
-        { "lanterns", "Lanterns at night" },          { "frozen_market", "Frozen river market" },
-        { "pumpkin_patch", "Witch across the moon" }, { "bamboo", "Rainy bamboo grove" },
-        { "synthwave", "Synthwave" },
-    };
-    constexpr int SCENERY_COUNT = sizeof(SCENERIES) / sizeof(SCENERIES[0]);
+    // Memory Forest behind the deck list: off, or one of its sceneries (by
+    // their names in the add-on, which are English).
+    const auto& all                    = forest::sceneries();
     std::vector<std::string> sceneries = { "ankinx/settings/forest_off"_i18n };
     int forestIndex                    = 0;
-    for (int i = 0; i < SCENERY_COUNT; i++)
+    for (size_t i = 0; i < all.size(); i++)
     {
-        sceneries.push_back(SCENERIES[i][1]);
-        if (settings::forest() == SCENERIES[i][0])
-            forestIndex = i + 1;
+        sceneries.push_back(all[i].label);
+        if (settings::forest() == all[i].key)
+            forestIndex = (int)i + 1;
     }
     auto* forestCell = new brls::SelectorCell();
     forestCell->init("ankinx/settings/forest"_i18n, sceneries, forestIndex, [](int index) {
-        if (index >= 0 && index <= SCENERY_COUNT)
-            settings::setForest(index ? SCENERIES[index - 1][0] : "");
+        const auto& all = forest::sceneries();
+        if (index >= 0 && index <= (int)all.size())
+            settings::setForest(index ? all[index - 1].key : "");
     });
     box->addView(forestCell);
 

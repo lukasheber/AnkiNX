@@ -211,9 +211,59 @@ g.console = {
   log: (...a) => native.log(0, text(a)), info: (...a) => native.log(0, text(a)), debug: (...a) => native.log(0, text(a)),
   warn: (...a) => native.log(1, text(a)), error: (...a) => native.log(2, text(a)),
 };
+/* ---------- Intl, in English: QuickJS has none (the tooltips' dates and numbers) ---------- */
+if (typeof g.Intl === 'undefined') {
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+    'November', 'December'];
+  const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const english = locales => [].concat(locales || []).filter(l => /^en\b/i.test(l));
+  class DateTimeFormat {
+    constructor(_locale, opts) { this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return english(locales); }
+    // "Oct 17, 2026", "October 2026", "October", "Sunday"
+    format(date) {
+      const o = this.o, d = date instanceof Date ? date : new Date(date), utc = o.timeZone === 'UTC';
+      const get = k => (utc ? d['getUTC' + k]() : d['get' + k]());
+      const month = get('Month'), day = get('Date'), year = get('FullYear'), weekday = WEEKDAYS[get('Day')];
+      const m = o.month === 'long' ? MONTHS[month] : o.month === 'short' ? MONTHS[month].slice(0, 3)
+        : o.month ? String(month + 1) : '';
+      let s = m && o.day ? `${m} ${day}` : m || (o.day ? String(day) : '');
+      if (o.year) s = s ? (o.day ? `${s}, ${year}` : `${s} ${year}`) : String(year);
+      if (o.weekday) { const w = o.weekday === 'long' ? weekday : weekday.slice(0, 3); s = s ? `${w}, ${s}` : w; }
+      return s || d.toISOString().slice(0, 10);
+    }
+  }
+  class NumberFormat {
+    constructor(_locale, opts) { this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return english(locales); }
+    // "1,234", "1.5"
+    format(n) {
+      const o = this.o, digits = o.maximumFractionDigits;
+      const [whole, frac] = (digits != null ? Number(n).toFixed(Math.max(digits, o.minimumFractionDigits || 0))
+        : String(Math.round(Number(n) * 1000) / 1000)).split('.');
+      return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac ? '.' + frac : '');
+    }
+  }
+  class RelativeTimeFormat {
+    constructor(_locale, opts) { this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return english(locales); }
+    format(v, unit) {
+      if (unit === 'day' && this.o.numeric === 'auto' && Math.abs(v) <= 1) return ['yesterday', 'today', 'tomorrow'][v + 1];
+      const u = Math.abs(v) === 1 ? unit : unit + 's';
+      return v < 0 ? `${-v} ${u} ago` : `in ${v} ${u}`;
+    }
+  }
+  class PluralRules {
+    static supportedLocalesOf(locales) { return english(locales); }
+    select(n) { return n === 1 ? 'one' : 'other'; }
+  }
+  g.Intl = { DateTimeFormat, NumberFormat, RelativeTimeFormat, PluralRules };
+}
+
 Object.assign(g, { Path2D, ImageData, CanvasRenderingContext2D, HTMLCanvasElement });
 })();
 
+globalThis.__forestVisitors = {"rabbit": {"name": "A rabbit", "stayed": "Moved in when your forest reached 50 trees."}, "deer": {"name": "A deer", "stayed": "Moved in when you kept a 30-day streak."}, "fox": {"name": "A fox", "stayed": "Moved in when you passed 10,000 reviews."}, "owl": {"name": "An owl", "stayed": "Moved in when your first tree became ancient."}, "heron": {"name": "A heron", "stayed": "Moved in when a pond formed where you took a break."}, "stag": {"name": "A stag", "stayed": "Moved in when you kept a 100-day streak."}, "cabin": {"name": "A cabin", "stayed": "Built when your forest turned one year old."}, "bear": {"name": "A bear", "stayed": "Moved in when you kept a two-year streak."}, "squirrel": {"name": "A family of squirrels", "stayed": "Moved in when you knew 10,000 cards well."}, "eagle": {"name": "An eagle", "stayed": "Moved in when you knew 25,000 cards well."}};
 // ---- memory-forest/web/util.js
 /* Memory Forest — shared helpers: random numbers, colours, pixels and layers, text for the page,
  * the bridge back to Anki, and the stages a tree goes through. Loaded first: it makes
@@ -10563,10 +10613,14 @@ const { layer, animates } = AF.u;
 const { HORIZON, GROUND_BOTTOM } = AF.GEOM;
 const BASE_W = 320;  // (core.js: everything is sized against a canvas this wide)
 
-let env = null, canvas = null;
+let env = null, canvas = null, marked = null, lifted = null;
 
 function build(json, W, H) {
   const data = JSON.parse(json);
+  // (each animal's name and why it came, which the add-on's Python adds: app/forest/build.py)
+  const words = globalThis.__forestVisitors || {};
+  data.visitors = (data.visitors || []).map(v => Object.assign({}, words[v.key] || {}, v));
+  marked = null; lifted = null;
   AF.i18n.use(data.i18n);
   AF.LOOP = null;
   const engine = AF.engines.pixel, layout = AF.layout(data.trees);
@@ -10631,7 +10685,83 @@ function frame(t) {
   AF.events.run('front', g, env, t);
   if (env.fx) AF.fx.front(g, env, t);
   if (env.quantize) env.quantize(g, env.W, env.H);
+  drawMarker(g);
 }
 
-globalThis.__forest = { build, frame, busy: () => Boolean(env && AF.busy(env)) };
+/* ---------- picking (web/hover.js, without a pointer or a page) ---------- */
+
+// a tree's box, as hover.js boxOf has it
+function boxOf(p) {
+  const h = AF.STAGE_H[p.it.stage] * env.u * p.s, w = Math.max(h * 0.8, 4 * env.u);
+  return { x0: p.x - w / 2, x1: p.x + w / 2, y0: p.y - h, y1: p.y + env.u };
+}
+// a tooltip's HTML (AF.tips) as lines of text: the first is its title
+const lines = html => html.split('<br>').map(l => l.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&amp;/g, '&')).filter(Boolean);
+function described(hit) {
+  if (hit.visitor) return { kind: 'visitor', lines: lines(AF.tips.visitor(hit.visitor)) };
+  if (hit.deep) return { kind: 'deep', from: hit.deep.from_ago, to: hit.deep.to_ago, lines: lines(AF.tips.deep(hit.deep)) };
+  if (hit.pond) return { kind: 'pond', lines: lines(AF.tips.pond(hit.p.it)) };
+  const b = boxOf(hit.p);
+  return { kind: 'tree', ago: hit.p.it.ago, x: hit.p.x, top: b.y0, lines: lines(AF.tips.tree(hit.p.it, '')) };
+}
+/* What is at (x, y), in the canvas' pixels: an animal, a tree, a pond or the deep forest, with its
+ * tooltip; null for nothing */
+function pick(x, y) {
+  if (!env) return null;
+  const inBox = b => b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+  for (const b of env.visitorBoxes || []) if (inBox(b)) return described({ visitor: b.v });
+  for (let i = env.placed.length - 1; i >= 0; i--) {
+    const p = env.placed[i];
+    if (p.it.pond) {
+      if (!p.it.first) continue;
+      const b = AF.pondBox(env, p);
+      if (((x - b.cx) / (b.w / 2)) ** 2 + ((y - b.cy) / (b.h / 2)) ** 2 <= 1) return described({ p, pond: true });
+      continue;
+    }
+    if (inBox(boxOf(p))) return described({ p });
+  }
+  for (const b of (env.deep && env.deep.boxes) || []) if (inBox(b)) return described({ deep: env.deep.merged });
+  return null;
+}
+/* Every tree, for moving between them with the controller: its day and where it stands */
+function trees() {
+  return env ? env.placed.filter(p => !p.it.pond).map(p => ({ ago: p.it.ago, x: p.x, y: p.y })) : [];
+}
+/* The tree of `ago` lifted out of the forest with a marker over it (null: none), and what it says */
+function mark(ago) {
+  marked = ago; lifted = null;
+  const p = env && ago != null && env.placed.find(q => !q.it.pond && q.it.ago === ago);
+  return p ? described({ p }) : null;
+}
+// (hover.js drawMarker: the tree outlined, a little arrow over it)
+function drawMarker(g) {
+  const p = marked != null && env.placed.find(q => !q.it.pond && q.it.ago === marked);
+  if (!p) return;
+  if (!lifted) {
+    const { h, hzq } = AF.pixel.sizeOf(p, env), spr = AF.pixel.sprite(p.it, h, hzq, env);
+    const [cv, cg] = layer(spr.width + 2, spr.height + 2);
+    for (const [x, y] of [[0, 1], [2, 1], [1, 0], [1, 2]]) cg.drawImage(spr, x, y);
+    cg.globalCompositeOperation = 'source-in'; cg.fillStyle = '#fff8e0'; cg.fillRect(0, 0, cv.width, cv.height);
+    cg.globalCompositeOperation = 'source-over'; cg.drawImage(spr, 1, 1);
+    lifted = cv;
+  }
+  const cv = lifted, x = Math.round(p.x - (cv.width - 2) / 2) - 1, y = Math.round(p.y - (cv.height - 2) + 1) - 1;
+  g.save();
+  if (env.flipLight) { g.translate(x + cv.width, y); g.scale(-1, 1); g.drawImage(cv, 0, 0); } else g.drawImage(cv, x, y);
+  g.restore();
+  const mx = Math.round(p.x), my = Math.round(y - 3);
+  g.fillStyle = 'rgba(20,20,20,.7)'; g.fillRect(mx - 3, my - 1, 7, 1);
+  g.fillStyle = '#fff8e0';
+  for (let r = 0; r < 3; r++) g.fillRect(mx - (2 - r), my + r, 5 - 2 * r, 1);
+}
+
+/* The app's questions, by name, with JSON in and out (ForestScript::query) */
+const QUERIES = { pick: a => pick(a.x, a.y), trees: () => trees(), mark: a => mark(a.ago) };
+function query(name, args) {
+  const fn = QUERIES[name];
+  return JSON.stringify(fn ? fn(JSON.parse(args || '{}')) : null);
+}
+
+globalThis.__forest = { build, frame, query, busy: () => Boolean(env && AF.busy(env)) };
 })();

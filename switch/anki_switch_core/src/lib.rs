@@ -5,6 +5,7 @@
 //! replies with serialized messages. See `include/anki_switch_core.h`.
 
 mod api;
+pub mod forest;
 mod math;
 mod mhchem;
 mod occlusion;

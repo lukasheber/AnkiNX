@@ -1,5 +1,11 @@
 {
   "title": "AnkiNX",
+  "forest": {
+    "title": "A sua floresta",
+    "trees_one": "{} árvore",
+    "trees_other": "{} árvores",
+    "cards": "Ver os cartões"
+  },
   "decks": {
     "col_new": "Novos",
     "col_learn": "Aprender",

@@ -414,6 +414,24 @@ bool ForestScript::busy()
     return b;
 }
 
+std::string ForestScript::query(const std::string& name, const std::string& args)
+{
+    Native& s = *native;
+    if (JS_IsUndefined(s.canvas))
+        return "null";
+    JSValue argv[2] = { JS_NewStringLen(s.ctx, name.c_str(), name.size()),
+                        JS_NewStringLen(s.ctx, args.c_str(), args.size()) };
+    JSValue r       = JS_UNDEFINED;
+    bool ok         = callEntry(s, "query", 2, argv, &r, FRAME_BUDGET);
+    JS_FreeValue(s.ctx, argv[0]);
+    JS_FreeValue(s.ctx, argv[1]);
+    if (!ok)
+        return "null";
+    std::string out = str(s.ctx, r);
+    JS_FreeValue(s.ctx, r);
+    return out;
+}
+
 const uint8_t* ForestScript::pixels() const
 {
     PixelCanvas* c = canvasOf(native->ctx, native->canvas);

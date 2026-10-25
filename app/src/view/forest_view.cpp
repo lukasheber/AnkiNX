@@ -22,16 +22,13 @@ using Clock = std::chrono::steady_clock;
 namespace
 {
 
-// The scene's size: Memory Forest draws on a canvas 320 pixels across
-// (web/core.js BASE_W) and scales it up, here 4 times to the 1280 x 720 screen.
-constexpr int SCENE_W = 320, SCENE_H = 180;
 // ~15 frames a second while something moves fast, else 10 (web/core.js)
 constexpr auto BUSY_FRAME = std::chrono::milliseconds(66), CALM_FRAME = std::chrono::milliseconds(100);
 // Not drawn on screen for this long: another screen is on top, so wait.
 constexpr int64_t UNSEEN_MS = 500;
 // How often the frame times go to the log, and busy() is asked again.
 constexpr auto REPORT_EVERY = std::chrono::seconds(10), BUSY_EVERY = std::chrono::seconds(1);
-// The theme's background over the forest, so the deck list stays readable.
+// The theme's background over the forest behind the deck list.
 constexpr float DIM = 0.55f;
 // Frames in a row that throw before the forest gives up.
 constexpr int MAX_FAILURES = 5;
@@ -58,7 +55,7 @@ bool readFile(const std::string& path, std::string& out)
 
 struct ForestView::Worker
 {
-    std::string scenery;
+    std::string data;
     std::atomic<bool> stop{ false };
     std::atomic<int64_t> seen{ 0 }; // when the view last drew, nowMs()
     std::mutex lock;
@@ -66,6 +63,12 @@ struct ForestView::Worker
     std::vector<uint8_t> frame;     // the latest frame, under lock
     int width = 0, height = 0;
     bool fresh = false;
+    struct Request
+    {
+        std::string name, args;
+        std::function<void(const std::string&)> done;
+    };
+    std::vector<Request> requests; // under lock
 #ifdef __SWITCH__
     Thread thread;
 #else
@@ -74,17 +77,31 @@ struct ForestView::Worker
     bool started = false;
 
     void run();
+    void answer(ForestScript& forest);
     void start();
     void join();
 };
 
+void ForestView::Worker::answer(ForestScript& forest)
+{
+    std::vector<Request> now;
+    {
+        std::lock_guard<std::mutex> l(lock);
+        now.swap(requests);
+    }
+    for (auto& r : now)
+    {
+        std::string out = forest.query(r.name, r.args);
+        brls::sync([done = std::move(r.done), out] { done(out); });
+    }
+}
+
 void ForestView::Worker::run()
 {
-    std::string bundle, data;
-    if (!readFile(BRLS_ASSET("forest/forest.js"), bundle) ||
-        !readFile(std::string(BRLS_ASSET("forest/samples/")) + scenery + ".json", data))
+    std::string bundle;
+    if (!readFile(BRLS_ASSET("forest/forest.js"), bundle))
     {
-        brls::Logger::error("forest: no bundle or sample for {}", scenery);
+        brls::Logger::error("forest: no forest.js");
         return;
     }
     ForestScript::log = [](int level, const std::string& msg) {
@@ -102,8 +119,7 @@ void ForestView::Worker::run()
     double load = msSince(t0);
     t0          = Clock::now();
     bool ok     = !stop && forest->build(data, SCENE_W, SCENE_H);
-    brls::Logger::info("forest: {} loaded in {:.0f} ms, built in {:.0f} ms{}", scenery, load, msSince(t0),
-                       ok ? "" : " (failed)");
+    brls::Logger::info("forest: loaded in {:.0f} ms, built in {:.0f} ms{}", load, msSince(t0), ok ? "" : " (failed)");
 
     auto started = Clock::now(), reported = started, busyAsked = started;
     bool busy    = ok && forest->busy();
@@ -111,6 +127,7 @@ void ForestView::Worker::run()
     double total = 0, worst = 0;
     while (ok && !stop)
     {
+        answer(*forest);
         if (nowMs() - seen > UNSEEN_MS)
         {
             std::this_thread::sleep_for(CALM_FRAME);
@@ -206,8 +223,10 @@ void ForestView::Worker::join()
 }
 #endif
 
-ForestView::ForestView()
+ForestView::ForestView(bool dim)
+    : dim(dim)
 {
+    // behind the rest of its parent, covering all of it
     this->setFocusable(false);
     this->setPositionType(brls::PositionType::ABSOLUTE);
     this->setPositionTop(0);
@@ -218,16 +237,31 @@ ForestView::ForestView()
 
 ForestView::~ForestView()
 {
+    *alive = false;
     show("");
     if (image)
         nvgDeleteImage(brls::Application::getNVGContext(), image);
 }
 
-void ForestView::show(const std::string& key)
+void ForestView::share(const ForestView& other)
 {
-    if (key == scenery)
+    show("");
+    worker    = other.worker;
+    data      = other.data;
+    owner     = false;
+    readySent = false;
+}
+
+void ForestView::show(const std::string& next)
+{
+    if (next == data)
         return;
-    scenery = key;
+    data = next;
+    if (worker && !owner)
+    {
+        worker.reset();
+        owner = true;
+    }
     if (worker)
     {
         worker->stop = true;
@@ -239,12 +273,37 @@ void ForestView::show(const std::string& key)
         worker->join();
         worker.reset();
     }
-    if (key.empty())
+    readySent = false;
+    if (next.empty())
         return;
-    worker          = std::make_shared<Worker>();
-    worker->scenery = key;
-    worker->seen    = nowMs();
+    worker       = std::make_shared<Worker>();
+    worker->data = next;
+    worker->seen = nowMs();
     worker->start();
+}
+
+void ForestView::query(const std::string& name, const std::string& args, std::function<void(const std::string&)> done)
+{
+    if (!worker)
+        return;
+    std::weak_ptr<bool> token = alive;
+    std::lock_guard<std::mutex> l(worker->lock);
+    worker->requests.push_back({ name, args, [token, done = std::move(done)](const std::string& out) {
+                                     if (auto t = token.lock(); t && *t)
+                                         done(out);
+                                 } });
+}
+
+void ForestView::sceneToScreen(float sx, float sy, float& x, float& y) const
+{
+    x = sceneX + sx * sceneK;
+    y = sceneY + sy * sceneK;
+}
+
+void ForestView::screenToScene(float x, float y, float& sx, float& sy) const
+{
+    sx = (x - sceneX) / sceneK;
+    sy = (y - sceneY) / sceneK;
 }
 
 void ForestView::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
@@ -276,17 +335,31 @@ void ForestView::draw(NVGcontext* vg, float x, float y, float width, float heigh
     }
     if (!image)
         return;
-    // Scaled to cover the view, centred: whole pixels where the view allows.
-    float k  = std::max(width / imageW, height / imageH);
-    float dw = imageW * k, dh = imageH * k, dx = x + (width - dw) / 2, dy = y + (height - dh) / 2;
+    // Scaled to cover the view, centred.
+    sceneK   = std::max(width / imageW, height / imageH);
+    float dw = imageW * sceneK, dh = imageH * sceneK;
+    sceneX   = x + (width - dw) / 2;
+    sceneY   = y + (height - dh) / 2;
     nvgBeginPath(vg);
     nvgRect(vg, x, y, width, height);
-    nvgFillPaint(vg, nvgImagePattern(vg, dx, dy, dw, dh, 0, image, 1.0f));
+    nvgFillPaint(vg, nvgImagePattern(vg, sceneX, sceneY, dw, dh, 0, image, 1.0f));
     nvgFill(vg);
-    NVGcolor dim = ctx->theme["brls/background"];
-    dim.a        = DIM;
-    nvgBeginPath(vg);
-    nvgRect(vg, x, y, width, height);
-    nvgFillColor(vg, dim);
-    nvgFill(vg);
+    if (dim)
+    {
+        NVGcolor shade = ctx->theme["brls/background"];
+        shade.a        = DIM;
+        nvgBeginPath(vg);
+        nvgRect(vg, x, y, width, height);
+        nvgFillColor(vg, shade);
+        nvgFill(vg);
+    }
+    if (!readySent)
+    {
+        readySent = true;
+        if (onReady)
+            brls::sync([cb = onReady, token = std::weak_ptr<bool>(alive)] {
+                if (auto t = token.lock(); t && *t)
+                    cb();
+            });
+    }
 }
