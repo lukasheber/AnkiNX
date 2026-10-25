@@ -238,6 +238,11 @@ std::string grow(const Scenery& scenery)
     auto t0          = std::chrono::steady_clock::now();
     anki::json args  = scenery.look;
     args["nature"]   = settings::forestNature();
+    // what counts (Settings > Background)
+    args["excluded"]           = settings::forestExcluded();
+    args["ignore_before"]      = settings::forestStart();
+    args["keep_earlier_trees"] = settings::forestKeepEarlier();
+    args["keep_suspended"]     = settings::forestKeepSuspended();
     // (the heatmap's weeks start on Sunday, as the console's calendar does in English, Japanese
     // and Brazil's Portuguese; on Monday in Spanish)
     args["week_start"] = brls::Application::getLocale().rfind("es", 0) == 0 ? 1 : 0;

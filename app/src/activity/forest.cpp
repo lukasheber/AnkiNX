@@ -80,7 +80,8 @@ brls::View* ForestActivity::createContentView()
     caption->setPositionLeft(0);
     caption->setWidthPercentage(100);
     caption->setPadding(14, 40, 14, 40);
-    caption->setBackgroundColor(nvgRGBA(20, 20, 24, 170));
+    // (a light veil, as the headers over the forest behind the deck list have, just enough for the words)
+    caption->setBackgroundColor(nvgRGBA(20, 20, 24, 70));
     caption->setVisibility(brls::Visibility::GONE);
     journalLabel = new brls::Label();
     journalLabel->setFontSize(20);
@@ -137,9 +138,6 @@ void ForestActivity::ready()
         std::string numbers;
         for (const auto& item : c["items"])
             numbers += (numbers.empty() ? "" : "  ·  ") + item.value("text", "");
-        std::string credit = c.value("credit", "");
-        if (!credit.empty())
-            numbers += "  ·  " + credit;
         std::string journal = c.value("journal", "");
         journalLabel->setText(journal);
         journalLabel->setVisibility(journal.empty() ? brls::Visibility::GONE : brls::Visibility::VISIBLE);

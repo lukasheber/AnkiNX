@@ -44,7 +44,12 @@ in `forest-state.json` beside the collection, its live weather (`weather_probe <
 
 Not ported: zooming in among the trees (the add-on holds it back from release too), the heatmap's
 other views and its settings (By year, Streak, shading by time or pace, marking days), and the
-add-on's other settings (decks left out, a start date).
+streak's own options (counting it from the start date, showing the record): the add-on's defaults
+are used.
+
+What counts (decks left out, the start date, the trees from before it, suspended cards) is
+in Settings › Background and goes to the backend's `forest` call; `reference.py --exclude NAME
+--start YYYY-MM-DD --keep --no-suspended` checks it.
 
 `build_desktop/forest_bench resources/forest/forest.js ../forest/samples <out> [w h frames]` (from
 `app/`, after `build_desktop.sh`) builds every sample, times its frames and saves a PNG of each.

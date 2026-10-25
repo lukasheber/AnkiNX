@@ -85,6 +85,33 @@ void setForest(const std::string& scenery)
     save();
 }
 
+std::vector<int64_t> forestExcluded()
+{
+    std::vector<int64_t> out;
+    const anki::json& value = values().value("forest_excluded", anki::json::array());
+    if (value.is_array())
+        for (const auto& id : value)
+            if (id.is_number_integer())
+                out.push_back(id.get<int64_t>());
+    return out;
+}
+
+void setForestExcluded(const std::vector<int64_t>& decks)
+{
+    values()["forest_excluded"] = decks;
+    save();
+}
+
+std::string forestStart()
+{
+    anki::json value = values().value("forest_start", anki::json());
+    return value.is_string() ? value.get<std::string>() : "";
+}
+
+bool forestKeepEarlier() { return values().value("forest_keep_earlier", false); }
+
+bool forestKeepSuspended() { return values().value("forest_keep_suspended", true); }
+
 std::string forestCity()
 {
     anki::json value = values().value("forest_city", anki::json());

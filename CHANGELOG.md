@@ -28,6 +28,9 @@ Off by default: Settings › Background.
   Merciless (an asteroid after a day missed, played as in the add-on).
 - Sceneries: the add-on's nine, Surprise me daily, and the holidays' in
   their week. Live weather for your city, from MET Norway.
+- What counts: leave decks out of the forest (each with its subdecks),
+  start it on a chosen day, with or without the trees from before it, and
+  choose whether suspended cards keep their trees.
 - The streak opens the statistics, with the add-on's study heatmap first:
   your days studied, streaks and trophies, the cards due ahead; pick a day
   to see it, A opens its cards.

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "anki/api.hpp"
 
@@ -39,6 +41,15 @@ std::string forestNature();
 // The city whose live weather the forest shows (and whose sun sets its time
 // of day), or "" for the scenery's own weather and hour, the default.
 std::string forestCity();
+// What the forest counts (Memory Forest's Decks tab): the decks left out
+// (each with its subdecks); the day it starts ("" for your first day of
+// study) and whether the trees from before it stay; whether suspended cards
+// keep their trees (the default).
+std::vector<int64_t> forestExcluded();
+void setForestExcluded(const std::vector<int64_t>& decks);
+std::string forestStart();
+bool forestKeepEarlier();
+bool forestKeepSuspended();
 
 // Any other setting (null when unset), e.g. "controls" (util/controls.cpp).
 anki::json get(const std::string& key);

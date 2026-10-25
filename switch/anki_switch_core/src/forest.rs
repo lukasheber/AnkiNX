@@ -144,6 +144,102 @@ pub struct Options {
     pub settled: bool,
     /// The heatmap's weeks start on this day (Sunday 0, Monday 1).
     pub week_start: i64,
+    /// What counts (the add-on's Decks tab): decks left out, with their
+    /// subdecks (`excluded_decks`); the day the forest starts (`ignore_before`,
+    /// ISO) and whether the trees from before it stay (`keep_earlier_trees`);
+    /// whether suspended cards keep their trees (`keep_suspended`, the default).
+    pub excluded: Vec<i64>,
+    pub ignore_before: Option<String>,
+    pub keep_earlier_trees: bool,
+    pub keep_suspended: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            nature: "peaceful".into(),
+            settled: true,
+            week_start: 1,
+            excluded: vec![],
+            ignore_before: None,
+            keep_earlier_trees: false,
+            keep_suspended: true,
+        }
+    }
+}
+
+/// What the forest counts, as SQL and days (scope.py): every deck but those left out, from
+/// the start date if there is one.
+struct Scope {
+    /// Conditions to add to a query on cards (as c) and on the review log (study_log._filters).
+    in_decks: String,
+    only: String,
+    /// Whether any deck is left out.
+    excluding: bool,
+    /// When the forest's trees begin, in ms (trees_since): 0 for no start, or with the trees
+    /// from before it kept.
+    since_ms: i64,
+    /// The start date (since), as days ago and as written, whether or not its trees are kept.
+    start_ago: Option<i64>,
+    start: Option<String>,
+    /// The start date as days ago while the trees from before it are kept (counts_since): the
+    /// day the ponds, Nature and the animals count from.
+    counted: Option<i64>,
+    /// Suspended cards keep their trees.
+    suspended: bool,
+}
+
+/// Every deck left out of the forest, the ones chosen and all their subdecks
+/// (scope.excluded_decks), as Anki names them in the decks table.
+fn excluded_decks(col: &Collection, chosen: &[i64]) -> Result<Vec<i64>> {
+    if chosen.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut decks: Vec<(i64, String)> = Vec::new();
+    {
+        let mut st = col.storage.db().prepare("select id, name from decks")?;
+        let mut rows = st.query([])?;
+        while let Some(r) = rows.next()? {
+            decks.push((r.get(0)?, r.get(1)?));
+        }
+    }
+    let mut out = Vec::new();
+    for &id in chosen {
+        let Some((_, name)) = decks.iter().find(|(d, _)| *d == id) else { continue }; // (deleted since)
+        let under = format!("{name}\x1f");
+        out.extend(decks.iter().filter(|(_, n)| n == name || n.starts_with(&under)).map(|(d, _)| *d));
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+fn scope_of(col: &Collection, at: Moment, opts: &Options) -> Result<Scope> {
+    let out = excluded_decks(col, &opts.excluded)?;
+    let ids = out.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
+    // (a card borrowed by a filtered deck has its home deck in odid, which Anki's own deck: search follows)
+    let (in_decks, only) = if out.is_empty() {
+        (String::new(), String::new())
+    } else {
+        (
+            format!(" and coalesce(nullif(c.odid, 0), c.did) not in ({ids})"),
+            format!(" and cid not in (select id from cards c where coalesce(nullif(c.odid, 0), c.did) in ({ids}))"),
+        )
+    };
+    // the start date's first moment: never after Anki's today (scope.since, study_log.day_start)
+    let start = opts.ignore_before.as_deref().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+    let start_ago = start.map(|date| (day_date(0, at.cutoff) - date).num_days().max(0));
+    let since_secs = start_ago.map(|days| at.cutoff - (days + 1) * DAY_SECS);
+    Ok(Scope {
+        in_decks,
+        only,
+        excluding: !out.is_empty(),
+        since_ms: if opts.keep_earlier_trees { 0 } else { since_secs.map_or(0, |s| s * 1000) },
+        start_ago,
+        start: start.and(opts.ignore_before.clone()),
+        counted: if opts.keep_earlier_trees { start_ago } else { None },
+        suspended: opts.keep_suspended,
+    })
 }
 
 /// The page's data (web/core.js AF.mount's `data`) for the whole collection,
@@ -154,13 +250,22 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
     if !memory.is_object() {
         *memory = json!({});
     }
-    let rows = load_rows(col, at.cutoff)?;
-    let forest = build_forest(&rows, at);
+    let scope = scope_of(col, at, opts)?;
+    let rows = load_rows(col, at.cutoff, &scope)?;
+    let forest = build_forest(&rows, at, scope.counted);
     let level = nature_level(&opts.nature);
     let days = &rows.review_days;
     let date = |d: i64| iso(day_date(d, at.cutoff));
     let mut trees = forest.trees;
     let mut stats = forest.stats;
+    // Nature goes by every deck you study, whichever the forest leaves out, from the start
+    // date (events_state._nature_days): with neither, the forest's own days
+    let nature_days: HashSet<i64> = if !scope.excluding && scope.start_ago.is_none() {
+        days.clone()
+    } else {
+        let (all, _) = day_counts(col, at.cutoff, "", 0)?;
+        all.into_keys().filter(|&d| scope.start_ago.is_none_or(|s| d <= s)).collect()
+    };
 
     // Nature (events_state.apply)
     let mut extras = Map::new();
@@ -171,8 +276,8 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
     extras.insert("fire".into(), Value::Null);
     let mut struck = None;
     if level == "merciless" {
-        let held = held(days, opts.settled, memory, &date);
-        let out = merciless(&trees, days, &held);
+        let held = held(&nature_days, opts.settled, memory, &date);
+        let out = merciless(&trees, &nature_days, &held);
         if let (Some(&last), true) = (out.hits.last(), opts.settled) {
             remember_shown(memory, "strike", &date(last));
         }
@@ -212,7 +317,7 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
             extras.insert("doom".into(), json!({ "missed": 1, "grace": 1, "left": 0 }));
         }
     } else if level == "wild" {
-        let (burning, fire) = set_fire(&trees, days, Some(MAX_INDIVIDUAL_TREES));
+        let (burning, fire) = set_fire(&trees, &nature_days, Some(MAX_INDIVIDUAL_TREES));
         let kind = fire.as_ref().and_then(|f| {
             if f["smoke"].as_i64().unwrap_or(0) > 0 {
                 Some("smoke")
@@ -233,15 +338,24 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
     }
     // (the first tree standing: after an asteroid, the new forest's)
     let seed = trees.first().map_or(0, |t| t["seed"].as_i64().unwrap_or(0));
-    let key = struck.map_or_else(|| "all".to_string(), |s| s.to_string());
-    let visitors = animals(memory, &key, &stats, at.today);
+    // the animals: each forest there has been earns its own (one begun at a start date, or by an
+    // asteroid), going by what grew since its start date when the trees from before it are kept
+    let mut key = struck.map_or_else(|| "all".to_string(), |s| s.to_string());
+    if let Some(start) = &scope.start {
+        key = format!("from {start} {key}");
+    }
+    let animal_stats = match (&forest.counted, struck) {
+        (Some(counted), None) => counted,
+        _ => &stats,
+    };
+    let visitors = animals(memory, &key, animal_stats, at.today);
     let mut trees = mark_big_days(&trees);
     let mut stagnation = stagnation(&trees, days);
-    if stagnation > 0.0 && !has_new_cards(col)? {
+    if stagnation > 0.0 && !has_new_cards(col, &scope.in_decks)? {
         stagnation = 0.0; // every card learned: reviewing alone is what is left to do
     }
-    let mut backlog = backlog(col, memory, at)?;
-    let cured = load_cured(col, at.cutoff, CURED_DAYS)?;
+    let mut backlog = backlog(col, memory, at, &scope)?;
+    let cured = load_cured(col, at.cutoff, CURED_DAYS, &scope.in_decks)?;
     for t in trees.iter_mut() {
         if let Some(n) = cured.get(&ago(t)) {
             t.insert("cured".into(), json!(n));
@@ -256,7 +370,7 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
         backlog.insert("hell".into(), json!(0.0));
     }
     let today = day_date(0, at.cutoff);
-    let new_ancient = new_ancient_today(memory, &trees, today);
+    let new_ancient = new_ancient_today(memory, &trees, today, scope.start.as_deref());
 
     let anniversaries_all = anniversaries(&trees, today);
     let mut events = scene_events(&stats, today);
@@ -273,8 +387,8 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
         }),
     };
     // the study heatmap's (payload._calendar, for the whole collection, as the deck list has it)
-    let free = load_free_days(col, at.cutoff)?;
-    let calendar = calendar(col, at, &rows, &trees, &visitors, &free, opts.week_start)?;
+    let free = load_free_days(col, at.cutoff, &scope.only)?;
+    let calendar = calendar(col, at, &rows, &trees, &visitors, &free, opts.week_start, &scope)?;
     let all = trees.len();
     let (kept, merged) = merge_old(trees);
     let merged_count = all - kept.len();
@@ -283,8 +397,14 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
         .filter(|&&i| i >= merged_count)
         .map(|&i| i - merged_count)
         .collect();
-    // the page's streak: every day you studied, passing over days with nothing due
-    let (streak, longest) = streaks(days, &free);
+    // the page's streak: every day you studied in the decks it counts, passing over days with
+    // nothing due - your real one, which a start date leaves whole (payload._page_stats)
+    let streak_days: HashSet<i64> = if scope.since_ms == 0 {
+        days.clone()
+    } else {
+        day_counts(col, at.cutoff, &scope.only, 0)?.0.into_keys().collect()
+    };
+    let (streak, longest) = streaks(&streak_days, &free);
     let mut page_stats = stats;
     page_stats.insert("streak".into(), json!(streak));
     page_stats.insert("longest_streak".into(), json!(longest));
@@ -362,43 +482,61 @@ struct Rows {
     leeches: HashSet<i64>,
 }
 
-fn load_rows(col: &Collection, cutoff: i64) -> Result<Rows> {
+/// Each day's reviews and the seconds they took, as days ago, in the decks `only` lets through
+/// and from `since_ms` (0: all of them) (study_log.load_day_reviews and load_day_time).
+fn day_counts(col: &Collection, cutoff: i64, only: &str, since_ms: i64) -> Result<(HashMap<i64, i64>, HashMap<i64, i64>)> {
+    let since = if since_ms > 0 { format!(" and id >= {since_ms}") } else { String::new() };
+    let (mut reviews, mut time) = (HashMap::new(), HashMap::new());
+    let mut st = col.storage.db().prepare(&format!(
+        "select (?1 - 1 - id / 1000) / {DAY_SECS}, count(), sum(time) from revlog \
+         where ease > 0 and type in {STUDY_TYPES} and id < ?2{only}{since} group by 1"
+    ))?;
+    let mut rows = st.query([cutoff, cutoff * 1000])?;
+    while let Some(r) = rows.next()? {
+        let day: i64 = r.get(0)?;
+        reviews.insert(day, r.get::<_, i64>(1)?);
+        time.insert(day, r.get::<_, i64>(2)? / 1000);
+    }
+    Ok((reviews, time))
+}
+
+/// What the forest is grown from (study_log.load_rows): the cards it counts, each one's
+/// first and last review, each day's reviews, the lapses of the last week and the leeches.
+fn load_rows(col: &Collection, cutoff: i64, scope: &Scope) -> Result<Rows> {
     let db = col.storage.db();
+    let (in_decks, only) = (&scope.in_decks, &scope.only);
     let mut cards = Vec::new();
     {
-        let mut st = db.prepare("select c.id, c.type, c.queue, c.ivl, c.data from cards c where c.type != 0")?;
+        let suspended = if scope.suspended { "" } else { " and c.queue != -1" };
+        let mut st = db.prepare(&format!(
+            "select c.id, c.type, c.queue, c.ivl, c.data from cards c where c.type != 0{suspended}{in_decks}"
+        ))?;
         let mut rows = st.query([])?;
         while let Some(r) = rows.next()? {
             cards.push((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, Option<String>>(4)?.unwrap_or_default()));
         }
     }
-    let mut first_last = HashMap::new();
+    // (each card's whole history dates it: not from the start date)
+    let mut first_last: HashMap<i64, (i64, i64)> = HashMap::new();
     {
         let mut st = db.prepare(&format!(
-            "select cid, min(id), max(id) from revlog not indexed where ease > 0 and type in {STUDY_TYPES} group by cid"
+            "select cid, min(id), max(id) from revlog not indexed where ease > 0 and type in {STUDY_TYPES}{only} group by cid"
         ))?;
         let mut rows = st.query([])?;
         while let Some(r) = rows.next()? {
             first_last.insert(r.get(0)?, (r.get(1)?, r.get(2)?));
         }
     }
-    let (mut day_reviews, mut day_time) = (HashMap::new(), HashMap::new());
-    {
-        let mut st = db.prepare(&format!(
-            "select (?1 - 1 - id / 1000) / {DAY_SECS}, count(), sum(time) from revlog \
-             where ease > 0 and type in {STUDY_TYPES} and id < ?2 group by 1"
-        ))?;
-        let mut rows = st.query([cutoff, cutoff * 1000])?;
-        while let Some(r) = rows.next()? {
-            let day: i64 = r.get(0)?;
-            day_reviews.insert(day, r.get::<_, i64>(1)?);
-            day_time.insert(day, r.get::<_, i64>(2)? / 1000);
-        }
+    let (day_reviews, day_time) = day_counts(col, cutoff, only, scope.since_ms)?;
+    if scope.since_ms > 0 {
+        // nothing first studied before it: its tree would stand before the forest begins
+        cards.retain(|c| first_last.get(&c.0).map_or(c.0, |fl| fl.0) >= scope.since_ms);
     }
+    let after = if scope.since_ms > 0 { format!("{only} and id >= {}", scope.since_ms) } else { only.clone() };
     let lapse_since = (cutoff - LAPSE_WINDOW_DAYS * DAY_SECS) * 1000;
     let mut recent_lapses = HashSet::new();
     {
-        let mut st = db.prepare("select distinct cid from revlog where type = 1 and ease = 1 and id > ?1")?;
+        let mut st = db.prepare(&format!("select distinct cid from revlog where type = 1 and ease = 1 and id > ?1{after}"))?;
         let mut rows = st.query([lapse_since])?;
         while let Some(r) = rows.next()? {
             recent_lapses.insert(r.get(0)?);
@@ -408,7 +546,7 @@ fn load_rows(col: &Collection, cutoff: i64) -> Result<Rows> {
     let mut leeches = HashSet::new();
     {
         let mut st = db.prepare(&format!(
-            "select c.id from cards c join notes n on n.id = c.nid where lower(n.tags) like '% leech %' and c.ivl < {CURED_IVL}"
+            "select c.id from cards c join notes n on n.id = c.nid where lower(n.tags) like '% leech %' and c.ivl < {CURED_IVL}{in_decks}"
         ))?;
         let mut rows = st.query([])?;
         while let Some(r) = rows.next()? {
@@ -432,7 +570,7 @@ fn load_rows(col: &Collection, cutoff: i64) -> Result<Rows> {
 }
 
 /// The leeches cured within the last `days` days and still cured, by their tree's day.
-fn load_cured(col: &Collection, cutoff: i64, days: i64) -> Result<HashMap<i64, i64>> {
+fn load_cured(col: &Collection, cutoff: i64, days: i64, in_decks: &str) -> Result<HashMap<i64, i64>> {
     let db = col.storage.db();
     let since_ms = (cutoff - days * DAY_SECS) * 1000;
     let mut st = db.prepare(&format!(
@@ -440,7 +578,7 @@ fn load_cured(col: &Collection, cutoff: i64, days: i64) -> Result<HashMap<i64, i
          from cards c join notes n on n.id = c.nid \
          where lower(n.tags) like '% leech %' and c.queue != -1 and c.ivl >= {CURED_IVL} \
          and exists (select 1 from revlog r where r.cid = c.id and r.ivl >= {CURED_IVL} \
-         and r.lastIvl < {CURED_IVL} and r.id >= ?1)"
+         and r.lastIvl < {CURED_IVL} and r.id >= ?1){in_decks}"
     ))?;
     let mut out = HashMap::new();
     let mut rows = st.query([since_ms])?;
@@ -456,22 +594,22 @@ fn load_cured(col: &Collection, cutoff: i64, days: i64) -> Result<HashMap<i64, i
 
 /// The days with no review and nothing due, which a streak passes over
 /// (study_log.load_free_days, for the whole collection).
-fn load_free_days(col: &Collection, cutoff: i64) -> Result<HashSet<i64>> {
+fn load_free_days(col: &Collection, cutoff: i64, only: &str) -> Result<HashSet<i64>> {
     let db = col.storage.db();
     let day = format!("(({cutoff} - 1 - id / 1000) / {DAY_SECS})");
     let spans = format!(
         "select cid, {day} as d, case when ivl > 0 then {day} - ivl \
          when ivl < 0 then ({cutoff} - 1 - id / 1000 + ivl) / {DAY_SECS} end as due_on, \
-         lead({day}) over (partition by cid order by id) as next from revlog not indexed where id < {}",
+         lead({day}) over (partition by cid order by id) as next from revlog not indexed where id < {}{only}",
         cutoff * 1000
     );
     let oldest: Option<i64> =
-        db.query_row(&format!("select max({day}) from revlog where id < ?1"), [cutoff * 1000], |r| r.get(0))?;
+        db.query_row(&format!("select max({day}) from revlog where id < ?1{only}"), [cutoff * 1000], |r| r.get(0))?;
     let Some(oldest) = oldest else { return Ok(HashSet::new()) };
     let mut studied = HashSet::new();
     {
         let mut st = db.prepare(&format!(
-            "select distinct {day} from revlog where ease > 0 and type in {STUDY_TYPES} and id < ?1"
+            "select distinct {day} from revlog where ease > 0 and type in {STUDY_TYPES} and id < ?1{only}"
         ))?;
         let mut rows = st.query([cutoff * 1000])?;
         while let Some(r) = rows.next()? {
@@ -703,6 +841,9 @@ fn ponds(trees: &mut [Tree], breaks: &[(i64, i64)], cutoff: i64) {
 struct Forest {
     trees: Vec<Tree>,
     stats: Map<String, Value>,
+    /// With a start date whose earlier trees are kept: the stats of the forest grown since,
+    /// which its animals go by (forest_data.build_forest `counted`).
+    counted: Option<Map<String, Value>>,
 }
 
 #[derive(Default)]
@@ -715,7 +856,7 @@ struct Cohort {
     suspended: i64,
 }
 
-fn build_forest(rows: &Rows, at: Moment) -> Forest {
+fn build_forest(rows: &Rows, at: Moment, counts_from: Option<i64>) -> Forest {
     let mut cohorts: BTreeMap<i64, Cohort> = BTreeMap::new();
     for (cid, ctype, queue, ivl, data) in &rows.cards {
         let first_last = rows.first_last.get(cid);
@@ -785,12 +926,20 @@ fn build_forest(rows: &Rows, at: Moment) -> Forest {
         trees.push(t);
     }
     if let Some(oldest) = trees.first().map(ago) {
-        let b = breaks(&rows.review_days, oldest);
+        // (with a start date whose trees from before it are kept, only the breaks from then on)
+        let b = breaks(&rows.review_days, counts_from.map_or(oldest, |c| oldest.min(c)));
         ponds(&mut trees, &b, at.cutoff);
     }
     let (current, longest) = streaks(&rows.review_days, &HashSet::new());
     let stats = make_stats(&trees, current, longest, rows.total_reviews, rows.today_reviews);
-    Forest { trees, stats }
+    let counted = counts_from.map(|from| {
+        let since: Vec<Tree> = trees.iter().filter(|t| ago(t) <= from).cloned().collect();
+        let days: HashSet<i64> = rows.review_days.iter().filter(|&&d| d <= from).copied().collect();
+        let (current, longest) = streaks(&days, &HashSet::new());
+        let reviews = rows.day_reviews.iter().filter(|(&d, _)| d <= from).map(|(_, n)| n).sum();
+        make_stats(&since, current, longest, reviews, rows.today_reviews)
+    });
+    Forest { trees, stats, counted }
 }
 
 fn make_stats(trees: &[Tree], streak: i64, longest: i64, reviews: i64, today_reviews: i64) -> Map<String, Value> {
@@ -1180,20 +1329,24 @@ fn stagnation(trees: &[Tree], days: &HashSet<i64>) -> f64 {
 }
 
 /// Whether any new card is left to learn (suspended ones don't count).
-fn has_new_cards(col: &Collection) -> Result<bool> {
-    Ok(col
-        .storage
-        .db()
-        .query_row("select exists (select 1 from cards c where c.type = 0 and c.queue != -1)", [], |r| r.get(0))?)
+fn has_new_cards(col: &Collection, in_decks: &str) -> Result<bool> {
+    Ok(col.storage.db().query_row(
+        &format!("select exists (select 1 from cards c where c.type = 0 and c.queue != -1{in_decks})"),
+        [],
+        |r| r.get(0),
+    )?)
 }
 
 /// The overdue reviews, how deep in review hell they put you, and whether
 /// today is the day you cleared them (events_state._backlog).
-fn backlog(col: &Collection, memory: &mut Value, at: Moment) -> Result<Map<String, Value>> {
+fn backlog(col: &Collection, memory: &mut Value, at: Moment, scope: &Scope) -> Result<Map<String, Value>> {
     let db = col.storage.db();
+    let (in_decks, only) = (&scope.in_decks, &scope.only);
     let overdue: i64 = db.query_row(
-        "select count() from cards c where c.queue in (2, 3) \
-         and (case when c.odid != 0 and c.odue != 0 then c.odue else c.due end) < ?1",
+        &format!(
+            "select count() from cards c where c.queue in (2, 3) \
+             and (case when c.odid != 0 and c.odue != 0 then c.odue else c.due end) < ?1{in_decks}"
+        ),
         [at.today],
         |r| r.get(0),
     )?;
@@ -1201,7 +1354,7 @@ fn backlog(col: &Collection, memory: &mut Value, at: Moment) -> Result<Map<Strin
     {
         let mut st = db.prepare(&format!(
             "select (?1 - 1 - id / 1000) / {DAY_SECS}, count() from revlog \
-             where ease > 0 and type in {STUDY_TYPES} and id >= ?2 and id < ?3 group by 1"
+             where ease > 0 and type in {STUDY_TYPES} and id >= ?2 and id < ?3{only} group by 1"
         ))?;
         let from = (at.cutoff - (REVIEW_HELL_USUAL_DAYS + 1) * DAY_SECS) * 1000;
         let mut rows = st.query([at.cutoff, from, (at.cutoff - DAY_SECS) * 1000])?;
@@ -1308,33 +1461,48 @@ const CALENDAR_DUE_DAYS: usize = 800;
 /// days, the day each animal came, the forest's ponds and the days with nothing due.
 #[allow(clippy::too_many_arguments)]
 fn calendar(col: &Collection, at: Moment, rows: &Rows, trees: &[Tree], visitors: &[Value], free: &HashSet<i64>,
-            week_start: i64) -> Result<Value> {
-    let oldest = rows.day_reviews.keys().copied().max().unwrap_or(0);
-    let days: Vec<i64> = (0..=oldest).rev().map(|d| rows.day_reviews.get(&d).copied().unwrap_or(0)).collect();
-    let time: Vec<i64> = (0..=oldest).rev().map(|d| rows.day_time.get(&d).copied().unwrap_or(0)).collect();
+            week_start: i64, scope: &Scope) -> Result<Value> {
+    // the forest's own days, and how long they took; with a start date, your whole record all the
+    // same (the add-on's default: Heatmap tab, "Show the reviews from before it"), the day the
+    // forest began marked - or, its trees from before it kept, the day its ponds and animals
+    // count from, the animals from the trees and days since
+    let (mut day_reviews, mut day_time) = (rows.day_reviews.clone(), rows.day_time.clone());
+    let (mut own, mut animal_trees) = (rows.day_reviews.clone(), trees.to_vec());
+    let (mut forest_start, mut counts_from) = (Value::Null, Value::Null);
+    if let Some(counted) = scope.counted {
+        counts_from = json!(iso(day_date(counted, at.cutoff)));
+        own.retain(|&d, _| d <= counted);
+        animal_trees.retain(|t| ago(t) <= counted);
+    } else if let Some(start) = scope.start_ago {
+        forest_start = json!(iso(day_date(start, at.cutoff)));
+        (day_reviews, day_time) = day_counts(col, at.cutoff, &scope.only, 0)?;
+    }
+    let oldest = day_reviews.keys().copied().max().unwrap_or(0);
+    let days: Vec<i64> = (0..=oldest).rev().map(|d| day_reviews.get(&d).copied().unwrap_or(0)).collect();
+    let time: Vec<i64> = (0..=oldest).rev().map(|d| day_time.get(&d).copied().unwrap_or(0)).collect();
     let free_runs: Vec<[i64; 2]> = runs_of(free).into_iter().filter(|r| r[1] <= oldest).collect();
     Ok(json!({
         "view": "timeline", "shadeBy": "reviews", "weekStart": week_start,
         "start": iso(day_date(oldest, at.cutoff)), "days": days,
-        "due": load_due(col, at.today, CALENDAR_DUE_DAYS)?,
+        "due": load_due(col, at.today, CALENDAR_DUE_DAYS, &scope.in_decks)?,
         "planted": trees.iter().map(|t| json!([ago(t), t["n"]])).collect::<Vec<_>>(),
-        "animals": animal_days(visitors, trees, &rows.day_reviews, at.today),
+        "animals": animal_days(visitors, &animal_trees, &own, at.today),
         "time": time, "answerTime": [],
         "ponds": trees.iter().filter(|t| t.get("gap").is_some() && t.get("gap_from").is_some() && t.get("gap_to").is_some())
             .map(|t| json!([t["gap_from"], t["gap_to"]])).collect::<Vec<_>>(),
-        "forestStart": null, "hiddenBefore": null, "countsFrom": null, "streakFromStart": false,
+        "forestStart": forest_start, "hiddenBefore": null, "countsFrom": counts_from, "streakFromStart": false,
         "marks": [], "gone": [], "free": free_runs, "daysOff": [], "browse": true,
     }))
 }
 
 /// How many cards fall due on each of the `days` days from today (today first): overdue cards
 /// and cards in learning count as today's; suspended and buried ones nowhere (study_log.load_due).
-fn load_due(col: &Collection, today: i64, days: usize) -> Result<Vec<i64>> {
+fn load_due(col: &Collection, today: i64, days: usize, in_decks: &str) -> Result<Vec<i64>> {
     let mut out = vec![0i64; days];
-    let mut st = col.storage.db().prepare(
+    let mut st = col.storage.db().prepare(&format!(
         "select c.queue, case when c.odid != 0 and c.odue != 0 then c.odue else c.due end, count() \
-         from cards c where c.queue in (1, 2, 3) group by 1, 2",
-    )?;
+         from cards c where c.queue in (1, 2, 3){in_decks} group by 1, 2"
+    ))?;
     let mut rows = st.query([])?;
     while let Some(r) = rows.next()? {
         let (queue, due, n): (i64, i64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
@@ -1409,8 +1577,11 @@ fn animal_days(visitors: &[Value], trees: &[Tree], day_reviews: &HashMap<i64, i6
 /// Whether a tree turned ancient today: remembered in `memory`, so a tree is
 /// news once, and the first look takes in the ancient trees already there
 /// (payload._new_ancient_today, for the whole forest and no start date).
-fn new_ancient_today(memory: &mut Value, trees: &[Tree], today: NaiveDate) -> bool {
+fn new_ancient_today(memory: &mut Value, trees: &[Tree], today: NaiveDate, start: Option<&str>) -> bool {
     let today_iso = iso(today);
+    // (remembered for each start date, as the animals are: a forest begun on another day takes in
+    // the ancient trees it has without a word)
+    let key = start.map_or_else(|| "all".to_string(), |s| format!("from {s}"));
     let mut days: Vec<i64> =
         trees.iter().filter(|t| t["stage"].as_i64() == Some(ANCIENT)).filter_map(|t| t["day"].as_i64()).collect();
     days.sort();
@@ -1418,7 +1589,8 @@ fn new_ancient_today(memory: &mut Value, trees: &[Tree], today: NaiveDate) -> bo
         v.and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_i64).collect())
     };
     let every: Map<String, Value> = memory.get("ancient").and_then(|v| v.as_object().cloned()).unwrap_or_default();
-    let known = ints(every.get("all")).or_else(|| ints(memory.get("ancient_days")));
+    let legacy = if key == "all" { ints(memory.get("ancient_days")) } else { None };
+    let known = ints(every.get(&key)).or(legacy);
     let mut event = memory.get("ancient_event").and_then(Value::as_str) == Some(today_iso.as_str());
     let turned: Vec<i64> = match &known {
         None => vec![],
@@ -1448,7 +1620,7 @@ fn new_ancient_today(memory: &mut Value, trees: &[Tree], today: NaiveDate) -> bo
         let mut all: Vec<i64> = days.iter().copied().chain(known.unwrap_or_default()).collect();
         all.sort();
         all.dedup();
-        every_out.insert("all".into(), json!(all));
+        every_out.insert(key, json!(all));
         memory["ancient"] = Value::Object(every_out);
         if let Some(m) = memory.as_object_mut() {
             m.remove("ancient_days");

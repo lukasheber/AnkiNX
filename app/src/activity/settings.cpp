@@ -11,6 +11,9 @@
 #include "util/update.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <functional>
+#include <memory>
 
 using namespace brls::literals;
 
@@ -61,6 +64,83 @@ std::string layoutName(controls::Layout layout)
 {
     return layout == controls::Layout::OneJoyCon ? "ankinx/controls/layout_one_joycon"_i18n
                                                  : "ankinx/controls/layout_standard"_i18n;
+}
+
+// Memory Forest's decks, each in the forest or left out with its subdecks (the add-on's
+// Decks tab): a list of every deck, a switch each; `changed` runs after each change.
+void openForestDecks(std::function<void()> changed)
+{
+    struct Deck
+    {
+        int64_t id;
+        std::string name;
+        brls::BooleanCell* cell;
+    };
+    auto decks = std::make_shared<std::vector<Deck>>();
+    // a deck is in unless it, or a deck above it, is left out
+    auto out = [decks](const Deck& deck, const std::vector<int64_t>& excluded) {
+        for (const auto& other : *decks)
+            if (std::find(excluded.begin(), excluded.end(), other.id) != excluded.end() &&
+                (other.name == deck.name || deck.name.rfind(other.name + "::", 0) == 0))
+                return true;
+        return false;
+    };
+    try
+    {
+        anki::json names = anki::call("deck_names");
+        for (const auto& d : names["decks"])
+            decks->push_back({ d.value("id", (int64_t)0), d.value("name", ""), nullptr });
+    }
+    catch (const anki::Error& e)
+    {
+        brls::Application::notify(e.what());
+        return;
+    }
+    brls::ScrollingFrame* scroller = nullptr;
+    brls::Box* box                 = column(&scroller);
+    auto* note                     = new brls::Label();
+    note->setFontSize(16);
+    note->setMarginBottom(12);
+    note->setText("ankinx/settings/forest_decks_note"_i18n);
+    box->addView(note);
+    std::vector<int64_t> excluded = settings::forestExcluded();
+    for (size_t i = 0; i < decks->size(); i++)
+    {
+        Deck& deck   = (*decks)[i];
+        size_t level = 0, at = 0;
+        while ((at = deck.name.find("::", at)) != std::string::npos)
+            level++, at += 2;
+        size_t last = deck.name.rfind("::");
+        deck.cell   = new brls::BooleanCell();
+        deck.cell->setMarginLeft((float)level * 32);
+        deck.cell->init(last == std::string::npos ? deck.name : deck.name.substr(last + 2), !out(deck, excluded),
+                        [decks, out, i, changed](bool on) {
+                            std::vector<int64_t> now = settings::forestExcluded();
+                            const Deck& deck         = (*decks)[i];
+                            auto mine                = std::find(now.begin(), now.end(), deck.id);
+                            if (on && mine == now.end())
+                            {
+                                // (in again only with the deck above it: it is left out with it)
+                                deck.cell->setOn(false, false);
+                                brls::Application::notify("ankinx/settings/forest_decks_parent"_i18n);
+                                return;
+                            }
+                            if (on)
+                                now.erase(mine);
+                            else
+                                now.push_back(deck.id);
+                            settings::setForestExcluded(now);
+                            for (const auto& other : *decks)
+                                other.cell->setOn(!out(other, now), false);
+                            changed();
+                        });
+        box->addView(deck.cell);
+    }
+    // (pushed with its cells in it, so the first one has the focus)
+    auto* frame = new brls::AppletFrame(scroller);
+    frame->setTitle("ankinx/settings/forest_decks"_i18n);
+    app::hideStatus(frame);
+    brls::Application::pushActivity(new brls::Activity(frame));
 }
 
 } // namespace
@@ -407,6 +487,65 @@ brls::View* SettingsActivity::backgroundTab()
     weatherNote->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
     weatherNote->setText("ankinx/settings/weather_note"_i18n);
     box->addView(weatherNote);
+
+    // What counts (Memory Forest's Decks tab): the decks, the day it starts, suspended cards
+    box->addView(header("ankinx/settings/forest_counts"_i18n));
+    auto decksText = [] {
+        size_t out = settings::forestExcluded().size();
+        return out ? brls::getStr("ankinx/settings/forest_decks_out", std::to_string(out))
+                   : "ankinx/settings/forest_decks_all"_i18n;
+    };
+    auto* decks = detail("ankinx/settings/forest_decks"_i18n, decksText());
+    decks->registerClickAction([decks, decksText, token = alive](brls::View*) {
+        openForestDecks([decks, decksText, token] {
+            if (*token)
+                decks->setDetailText(decksText());
+        });
+        return true;
+    });
+    box->addView(decks);
+    auto startText = [] {
+        std::string start = settings::forestStart();
+        return start.empty() ? "ankinx/settings/forest_start_first"_i18n : start;
+    };
+    auto* start = detail("ankinx/settings/forest_start"_i18n, startText());
+    start->registerClickAction([start, startText, token = alive](brls::View*) {
+        keyboard::text("ankinx/settings/forest_start_prompt"_i18n, settings::forestStart(), 10,
+                       [start, startText, token](const std::string& text) {
+                           if (!*token)
+                               return;
+                           // a day as YYYY-MM-DD, or nothing for your first day of study
+                           int y = 0, m = 0, d = 0;
+                           char rest = 0;
+                           bool none = text.find_first_not_of(' ') == std::string::npos;
+                           bool day  = std::sscanf(text.c_str(), " %4d-%2d-%2d %c", &y, &m, &d, &rest) == 3 &&
+                                      forest::Date::fromOrdinal(forest::Date { y, m, d }.ordinal()) == forest::Date { y, m, d };
+                           if (!none && !day)
+                           {
+                               brls::Application::notify("ankinx/settings/forest_start_bad"_i18n);
+                               return;
+                           }
+                           settings::set("forest_start", none ? "" : forest::Date { y, m, d }.iso());
+                           start->setDetailText(startText());
+                       });
+        return true;
+    });
+    box->addView(start);
+    auto* keepEarlier = new brls::BooleanCell();
+    keepEarlier->init("ankinx/settings/forest_keep_earlier"_i18n, settings::forestKeepEarlier(),
+                      [](bool on) { settings::set("forest_keep_earlier", on); });
+    box->addView(keepEarlier);
+    auto* keepSuspended = new brls::BooleanCell();
+    keepSuspended->init("ankinx/settings/forest_keep_suspended"_i18n, settings::forestKeepSuspended(),
+                        [](bool on) { settings::set("forest_keep_suspended", on); });
+    box->addView(keepSuspended);
+    auto* countsNote = new brls::Label();
+    countsNote->setFontSize(16);
+    countsNote->setMarginTop(8);
+    countsNote->setMarginLeft(16);
+    countsNote->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+    countsNote->setText("ankinx/settings/forest_counts_note"_i18n);
+    box->addView(countsNote);
 
     auto* note = new brls::Label();
     note->setFontSize(16);

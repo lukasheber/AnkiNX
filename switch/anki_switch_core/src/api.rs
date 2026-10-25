@@ -359,6 +359,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "restore_backup" => state.restore_backup(&args),
         "check_database" => state.check_database(),
         "deck_tree" => state.deck_tree(),
+        "deck_names" => state.deck_names(),
         "set_collapsed" => state.set_collapsed(&args),
         "select_deck" => state.select_deck(&args),
         "deck_overview" => state.deck_overview(&args),
@@ -747,6 +748,15 @@ impl State {
             out.problems.join("\n")
         };
         Ok(json!({ "message": without_bidi_isolates(&message), "problems": out.problems.len() }))
+    }
+
+    /// `deck_names`: every deck, collapsed parents' subdecks too, by name
+    /// (`::` between levels): for choosing decks, as Memory Forest's do.
+    fn deck_names(&mut self) -> ApiResult {
+        let tr = self.tr.clone();
+        let mut names = self.col()?.get_all_deck_names(false).map_err(|e| ApiError::anki(e, &tr))?;
+        names.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+        Ok(json!({ "decks": names.into_iter().map(|(id, name)| json!({ "id": id.0, "name": name })).collect::<Vec<_>>() }))
     }
 
     fn deck_tree(&mut self) -> ApiResult {
@@ -1748,6 +1758,14 @@ impl State {
             // (until this session's sync has brought in what was studied elsewhere)
             settled: self.login.is_none() || self.synced,
             week_start: args.get("week_start").and_then(Value::as_i64).unwrap_or(1),
+            excluded: args
+                .get("excluded")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_i64).collect())
+                .unwrap_or_default(),
+            ignore_before: args.get("ignore_before").and_then(Value::as_str).filter(|d| !d.is_empty()).map(str::to_string),
+            keep_earlier_trees: args.get("keep_earlier_trees").and_then(Value::as_bool).unwrap_or(false),
+            keep_suspended: args.get("keep_suspended").and_then(Value::as_bool).unwrap_or(true),
         };
         let tr = self.tr.clone();
         let err = |e| ApiError::anki(e, &tr);
@@ -1755,10 +1773,14 @@ impl State {
         let at = crate::forest::now(col).map_err(err)?;
         // (worked out again only when something it is grown from changed)
         let key = format!(
-            "{} {} {}",
+            "{} {} {} {:?} {:?} {} {}",
             crate::forest::key(col, at, &look).map_err(err)?,
             opts.nature,
-            opts.settled
+            opts.settled,
+            opts.excluded,
+            opts.ignore_before,
+            opts.keep_earlier_trees,
+            opts.keep_suspended
         );
         if let Some((_, page)) = self.forest.as_ref().filter(|(k, _)| *k == key) {
             // (the sky moves on with the clock and the weather: the rest is the same)

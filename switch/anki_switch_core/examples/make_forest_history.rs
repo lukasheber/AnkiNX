@@ -1,6 +1,7 @@
 //! A collection with two years of made-up study history, for the forest
 //! (src/forest.rs): new cards most days, a break of a fortnight, reviews at
-//! growing intervals with some lapses, FSRS memory on half the cards, a few
+//! growing intervals with some lapses, FSRS memory on half the cards, a
+//! quarter of them in another deck (Languages::Spanish), a few
 //! suspended cards and leeches.
 //! Usage: cargo run --example make_forest_history -- <data dir> [days [away_from away_to]]
 //! (away_from to away_to: days ago with no study at all, besides the
@@ -44,6 +45,8 @@ fn main() {
         .unwrap();
     let cutoff_ms = col.timing_today().unwrap().next_day_at.0 * 1000;
     let deck = col.get_or_create_normal_deck("Forest").unwrap();
+    // (a quarter of the cards in another deck, under a parent: for leaving decks out)
+    let other = col.get_or_create_normal_deck("Languages::Spanish").unwrap();
     let basic = col.get_notetype_by_name("Basic").unwrap().unwrap();
     let mut rng = Rng(20261024);
 
@@ -58,7 +61,8 @@ fn main() {
             let mut note = basic.new_note();
             note.set_field(0, format!("day {ago} card {i}")).unwrap();
             note.set_field(1, "back").unwrap();
-            col.add_note(&mut note, deck.id).unwrap();
+            let into = if rng.next() < 0.25 { other.id } else { deck.id };
+            col.add_note(&mut note, into).unwrap();
             let cid = col.storage.all_card_ids_of_note_in_template_order(note.id).unwrap()[0];
             cards.push((cid.0, note.id.0, ago));
         }

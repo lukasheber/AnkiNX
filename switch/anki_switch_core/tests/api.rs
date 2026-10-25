@@ -182,6 +182,16 @@ fn study_flow() {
     assert_eq!(forest["trees"][0]["stage"], 0);
     assert_eq!(forest["mood"]["environment"], "natural");
     assert_eq!(error_kind("forest", json!({})), "args");
+    // Its deck left out (with its parent): no tree; the decks by their full names.
+    let names = ok("deck_names", json!({}));
+    assert_eq!(deck_id(&names, "Spanish::Verbs"), verbs);
+    let mut without = look.clone();
+    without["excluded"] = json!([spanish]);
+    assert_eq!(ok("forest", without.clone())["stats"]["trees"], 0);
+    // (a start date to come is today, as in the add-on)
+    without["excluded"] = json!([]);
+    without["ignore_before"] = json!("2999-01-01");
+    assert_eq!(ok("forest", without)["stats"]["trees"], 1);
     // Never synced: Anki's offline check can't tell, and reports no changes.
     assert_eq!(ok("status", json!({}))["sync_needed"], "none");
     let card = ok("next_card", json!({}));
