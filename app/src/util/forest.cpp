@@ -238,6 +238,9 @@ std::string grow(const Scenery& scenery)
     auto t0          = std::chrono::steady_clock::now();
     anki::json args  = scenery.look;
     args["nature"]   = settings::forestNature();
+    // (the heatmap's weeks start on Sunday, as the console's calendar does in English, Japanese
+    // and Brazil's Portuguese; on Monday in Spanish)
+    args["week_start"] = brls::Application::getLocale().rfind("es", 0) == 0 ? 1 : 0;
     std::string city = settings::forestCity();
     if (!city.empty())
     {
@@ -248,7 +251,17 @@ std::string grow(const Scenery& scenery)
             brls::Logger::warning("forest: no live weather: {}", weather["error"].get<std::string>());
         args["city"] = city;
     }
-    std::string out = anki::call("forest", args).dump();
+    anki::json data = anki::call("forest", args);
+    // the page's words in the app's language, where Memory Forest is translated into it
+    std::string locale = brls::Application::getLocale();
+    std::string lang   = locale.rfind("pt", 0) == 0 ? "pt-BR" : locale.rfind("es", 0) == 0 ? "es"
+                         : locale.rfind("ja", 0) == 0 ? "ja"
+                                                     : "en";
+    std::ifstream words(std::string(BRLS_ASSET("forest/i18n/")) + lang + ".json");
+    anki::json i18n = anki::json::parse(words, nullptr, false);
+    if (i18n.is_object())
+        data["i18n"] = i18n;
+    std::string out = data.dump();
     brls::Logger::info("forest: grown in {} ms ({}, {})",
                        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0)
                            .count(),

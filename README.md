@@ -230,6 +230,7 @@ must also offer its source code.
 | … css-select, css-what, domhandler, domutils, domelementtype, entities, nth-check | BSD-2-Clause |
 | lunasvg (SVG) | MIT |
 | HarfBuzz (text shaping) | Old MIT |
+| Memory Forest by Barak Levy (the forest and its heatmap: `app/resources/forest/forest.js` and the port in `switch/anki_switch_core/src/forest.rs`; `LICENSE-memory-forest.txt`) | MIT |
 | DejaVu Sans, Sans Mono and Serif fonts (`app/resources/card_fonts`) | Bitstream Vera licence; DejaVu changes public domain |
 | Noto Sans Arabic, Hebrew, Thai and Devanagari fonts (`app/resources/card_fonts`; `LICENSE-Noto.txt`) | SIL Open Font License 1.1 |
 | Material Icons font (`app/resources/material`) | Apache-2.0 |

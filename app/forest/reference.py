@@ -20,6 +20,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "library", "memory-forest"))
 
 import events  # noqa: E402
+import i18n  # noqa: E402
+import journal  # noqa: E402
 import forest_data  # noqa: E402
 import milestones  # noqa: E402
 import scene  # noqa: E402
@@ -55,8 +57,13 @@ def expected(db: DB, cutoff: int, today: int, now: float, nature: str) -> dict:
         if out["latest"]:
             latest = out["latest"]
             extras["craters"] = [dict(c, date=date(c["ago"])) for c in out["craters"]]
+            # (on a first look nothing has been seen: a strike that is news is fresh, with the forest it took)
+            news = latest["ago"] <= events.STRIKE_NEWS_DAYS
             extras["strike"] = {"date": date(latest["ago"]), "lost": latest["lost"], "seen": date(latest["ago"]),
-                                "fresh": False, "news": latest["ago"] <= events.STRIKE_NEWS_DAYS, "told": False}
+                                "fresh": news, "news": news, "told": news}
+            if news:
+                took = forest_data.merge_old({"trees": latest["before"]})
+                extras["strike"].update(before=took["trees"], merged=took.get("merged"))
         if out["hits"]:
             hit = out["hits"][-1]
             reviews = sum(n for d, n in forest["day_reviews"].items() if d < hit)
@@ -87,7 +94,26 @@ def expected(db: DB, cutoff: int, today: int, now: float, nature: str) -> dict:
     for older, newer in study_log.load_free_days(db, cutoff, None):
         free |= set(range(older, newer + 1))
     streak, longest = forest_data._streaks(set(rows.day_reviews), frozenset(free))
-    return dict(extras, **{
+    # the journal under a clear night's sky and under any other (payload.payload: the news, or the
+    # forest's own line)
+    evs = scene.events(forest["stats"], anki_today)
+    lines = {}
+    for sky, mood in (("starry", {"time": "night", "weather": "clear"}), ("plain", {"time": "day", "weather": "clear"})):
+        lines[sky] = news_line(extras, backlog) or journal.journal(
+            dict(forest, trees=trees, visitors=visitors), mood, anki_today, ann_all, evs, stagnation)
+    # the study heatmap's data (payload._calendar, whole collection, no start date)
+    oldest = max(rows.day_reviews, default=0)
+    calendar = {
+        "start": study_log.day_date(oldest, cutoff).isoformat(),
+        "days": [rows.day_reviews.get(a, 0) for a in range(oldest, -1, -1)],
+        "time": [rows.day_time.get(a, 0) for a in range(oldest, -1, -1)],
+        "due": study_log.load_due(db, today, 800),
+        "planted": [[t["ago"], t["n"]] for t in trees],
+        "animals": milestones.animal_days(visitors, trees, rows.day_reviews, today),
+        "ponds": [[t["gap_from"], t["gap_to"]] for t in trees if t.get("gap") and t.get("gap_from") and t.get("gap_to")],
+        "free": [r for r in study_log.load_free_days(db, cutoff, None) if r[1] <= oldest],
+    }
+    return dict(extras, journalText=lines, calendar=calendar, **{
         "trees": [{k: v for k, v in t.items() if k not in PAGE_LEAVES_OUT} for t in merged["trees"]],
         "stats": dict(forest["stats"], streak=streak, longest_streak=longest, streak_week=7),
         "visitors": visitors,
@@ -98,6 +124,34 @@ def expected(db: DB, cutoff: int, today: int, now: float, nature: str) -> dict:
         "stagnation": stagnation,
         "backlog": backlog,
     })
+
+
+def news_line(extras: dict, backlog: dict) -> str:
+    """events_state.news_line (which imports aqt): an asteroid's strike, a fire, a backlog cleared."""
+    strike, fire = extras.get("strike"), extras.get("fire")
+    if strike and strike["news"] and strike.get("told"):
+        return i18n.tn("events.an_asteroid_took_your_forest_of", strike["lost"], trees=strike["lost"])
+    if fire:
+        if fire.get("smoke"):
+            return i18n.t("events.smoke_is_rising_from_your_forest")
+        if fire["out"]:
+            return i18n.t("events.the_last_of_the_fire_is")
+        if fire["news"]:
+            return i18n.tn("events.a_fire_broke_out_while_you", fire["trees"], trees=fire["trees"], days=events.FIRE_HEAL_DAYS)
+    if backlog["cleared"]:
+        return i18n.t("events.you_cleared_your_overdue_reviews" if events.calm(extras["nature"])
+                      else "events.you_cleared_your_overdue_reviews_the")
+    return ""
+
+
+def written(entry) -> str:
+    """The port's journal line (id, n, values) as the add-on writes it."""
+    if not entry:
+        return ""
+    values = {k: v for k, v in entry["values"].items() if k != "dates"}
+    for k in entry["values"].get("dates", []):
+        values[k] = journal._fmt_date(values[k])
+    return i18n.tn(entry["id"], entry["n"], **values) if entry["n"] is not None else i18n.t(entry["id"], **values)
 
 
 def differences(want, got, path="") -> list:
@@ -127,7 +181,10 @@ def main() -> None:
     nature = sys.argv[3] if len(sys.argv) > 3 else "peaceful"
     want = expected(db, at["cutoff"], at["today"], at["now"], nature)
     got = {k: page.get(k) for k in want}
+    got["journalText"] = {sky: written(e) for sky, e in (page.get("journalLines") or {}).items()}
+    got["calendar"] = {k: (page.get("calendar") or {}).get(k) for k in want["calendar"]}
     diffs = differences(want, got)
+    print("journal:", want["journalText"])
     s = want["stats"]
     print(f"{s['trees']} trees ({len(want['trees'])} drawn), {s['cards']} cards, streak {s['streak']} "
           f"(longest {s['longest_streak']}), {s['ponds']} ponds, visitors {[v['key'] for v in want['visitors']]}, "

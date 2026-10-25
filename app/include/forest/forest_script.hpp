@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 // Memory Forest's scenes (app/forest), run in QuickJS: resources/forest/
 // forest.js holds the add-on's scene scripts behind a small browser layer
@@ -22,8 +23,13 @@ class ForestScript
     // The forest's data, as the add-on's page gets it (JSON), drawn on a
     // canvas width x height pixels.
     bool build(const std::string& data, int width, int height);
+    // The forest's data only, without a scene (what the heatmap needs).
+    bool load(const std::string& data);
     // The forest at `seconds` (any steady clock).
     bool frame(double seconds);
+    // The pixels of one of the runner's canvases by name (runner.js
+    // `canvases`: "heatmap", "heatmapAbove"): premultiplied RGBA.
+    bool canvasPixels(const std::string& name, std::vector<uint8_t>& out, int& width, int& height);
     // Something in the scene moves fast (rain, a strike): worth ~15 frames
     // a second rather than 10.
     bool busy();
@@ -43,6 +49,10 @@ class ForestScript
     void cancel();
 
     static std::function<void(int level, const std::string&)> log;
+    // What the scenes tell the app (runner.js native.event): "strikeSeen",
+    // with the strike's key, once the asteroid's strike has played. Called on
+    // this object's thread, during build() or frame().
+    std::function<void(const std::string& name, const std::string& value)> onEvent;
 
     struct Native;
 

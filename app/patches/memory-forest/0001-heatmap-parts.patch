@@ -1,0 +1,21 @@
+Expose the heatmap's parts (history, windowOf, paint, sceneOf...) on AF.heatmapParts,
+for AnkiNX to draw the study heatmap on its Statistics screen: the add-on's own heatmap
+is laid out by its page (AF.calendar), which the app has none of.
+
+--- a/web/calendar.js
++++ b/web/calendar.js
+@@ -2430,4 +2430,14 @@
+   // (closed as the focus leaves it, not as it moves from the name to an icon or ×)
+   pin.addEventListener('focusout', e => { if (!pin.contains(e.relatedTarget)) closePin(true); });
+ };
++
++// AnkiNX: the heatmap's parts, for the app to draw it on a screen of its own: the days and
++// streaks (history), a view's days (windowOf), the tiles, brackets, trophies and animals
++// (paint) and the scene they take their colours from (sceneOf); `setup` as AF.calendar sets
++// the week's first day and the tiles' size from the calendar's data (app/forest/src/runner.js)
++AF.heatmapParts = {
++  setup: cal => { weekStart = cal.weekStart == null ? 1 : cal.weekStart; CELL = cellOf(cal); BIGGER = biggerOf(cal); },
++  history, windowOf, paint, sceneOf, countFor, utc, iso, lasted, cell: () => CELL,
++  TILE, ROWS, TOP, BRACKET, DAY_MS, SHOWN_STREAK,
++};
+ })();

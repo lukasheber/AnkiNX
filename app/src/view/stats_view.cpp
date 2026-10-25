@@ -1,5 +1,8 @@
 #include "view/stats_view.hpp"
 
+#include "activity/browser.hpp"
+#include "view/forest_heatmap.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -65,46 +68,99 @@ StatsView::StatsView()
         switchPanel(1);
         return true;
     });
-    // Tapping a tab opens it.
+    // On Memory Forest's heatmap: the D-pad picks a day, A opens its cards.
+    auto arrow = [this](brls::ControllerButton button, int dx, int dy) {
+        this->registerAction("", button, [this, dx, dy](brls::View*) {
+            if (current() != Panel::Forest || !forest)
+                return false;
+            forest->move(dx, dy);
+            return true;
+        }, true, true);
+    };
+    arrow(brls::BUTTON_LEFT, -1, 0);
+    arrow(brls::BUTTON_RIGHT, 1, 0);
+    arrow(brls::BUTTON_UP, 0, -1);
+    arrow(brls::BUTTON_DOWN, 0, 1);
+    this->registerAction("ankinx/stats/see_cards"_i18n, brls::BUTTON_A, [this](brls::View*) {
+        std::string search = current() == Panel::Forest && forest ? forest->search() : "";
+        if (search.empty())
+            return false;
+        brls::Application::pushActivity(new BrowserActivity(search));
+        return true;
+    });
+    // Tapping a tab opens it; on Memory Forest's heatmap, a day picks it.
     this->addGestureRecognizer(new brls::TapGestureRecognizer([this](brls::TapGestureStatus status, brls::Sound*) {
         if (status.state != brls::GestureState::END)
             return;
         float localY = status.position.y - this->getY();
         if (localY > 56)
+        {
+            if (current() == Panel::Forest && forest)
+                forest->tap(status.position.x, status.position.y);
             return;
-        int tab = (int)((status.position.x - this->getX()) / (this->getWidth() / PANELS));
-        panel   = std::clamp(tab, 0, PANELS - 1);
+        }
+        int count = (int)panels.size();
+        int tab   = (int)((status.position.x - this->getX()) / (this->getWidth() / count));
+        panel     = std::clamp(tab, 0, count - 1);
     }));
 }
 
+StatsView::~StatsView() = default;
+
 void StatsView::setData(anki::json value) { data = std::move(value); }
 
-void StatsView::switchPanel(int delta) { panel = (panel + delta + PANELS) % PANELS; }
+void StatsView::setForestHeatmap(ForestHeatmap* heatmap)
+{
+    forest.reset(heatmap);
+    panels = { Panel::Forest, Panel::Today, Panel::Forecast, Panel::Retention };
+    panel  = 0;
+}
+
+void StatsView::switchPanel(int delta)
+{
+    int count = (int)panels.size();
+    panel     = (panel + delta + count) % count;
+}
 
 void StatsView::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style, brls::FrameContext*)
 {
     drawTabs(vg, x, y, width);
+    float top = y + 80, h = height - 90, left = x + 40, w = width - 80;
+    if (current() == Panel::Forest)
+    {
+        if (forest)
+            forest->draw(vg, left, top, w, h);
+        return;
+    }
     if (data.is_null())
         return;
-    float top = y + 80, h = height - 90, left = x + 40, w = width - 80;
-    switch (panel)
+    switch (current())
     {
-        case 0: drawToday(vg, left, top, w, h); break;
-        case 1: drawForecast(vg, left, top, w, h); break;
-        case 2: drawHeatmap(vg, left, top, w, h); break;
+        case Panel::Today: drawToday(vg, left, top, w, h); break;
+        case Panel::Forecast: drawForecast(vg, left, top, w, h); break;
+        case Panel::Heatmap: drawHeatmap(vg, left, top, w, h); break;
         default: drawRetention(vg, left, top, w, h); break;
     }
 }
 
 void StatsView::drawTabs(NVGcontext* vg, float x, float y, float width)
 {
-    const char* names[PANELS] = { "today", "forecast", "heatmap", "retention" };
-    float tabWidth = width / PANELS;
-    for (int i = 0; i < PANELS; i++)
+    auto nameOf = [](Panel p) {
+        switch (p)
+        {
+            case Panel::Today: return "today";
+            case Panel::Forecast: return "forecast";
+            case Panel::Retention: return "retention";
+            default: return "heatmap";
+        }
+    };
+    int count      = (int)panels.size();
+    float tabWidth = width / count;
+    for (int i = 0; i < count; i++)
     {
         float cx    = x + tabWidth * (i + 0.5f);
         bool active = i == panel;
-        text(vg, cx, y + 16, t(names[i]), 22, active ? BLUE : dimColor(), NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+        text(vg, cx, y + 16, t(nameOf(panels[i])), 22, active ? BLUE : dimColor(), NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
         if (active)
         {
             nvgBeginPath(vg);

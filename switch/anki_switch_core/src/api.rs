@@ -384,6 +384,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
         "forest" => state.forest(&args),
+        "forest_seen" => state.forest_seen(&args),
         _ => Err(ApiError::new("unknown_command", format!("unknown command: {cmd}"))),
     }
 }
@@ -1746,6 +1747,7 @@ impl State {
             nature: args.get("nature").and_then(Value::as_str).unwrap_or("peaceful").into(),
             // (until this session's sync has brought in what was studied elsewhere)
             settled: self.login.is_none() || self.synced,
+            week_start: args.get("week_start").and_then(Value::as_i64).unwrap_or(1),
         };
         let tr = self.tr.clone();
         let err = |e| ApiError::anki(e, &tr);
@@ -1764,19 +1766,41 @@ impl State {
             page["mood"] = crate::forest::mood(&look, at.now);
             return Ok(page);
         }
-        let path = self.base.join(FOREST_STATE_FILE);
-        let before: Value = std::fs::read(&path)
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_else(|| json!({}));
+        let before = self.forest_memory();
         let mut memory = before.clone();
         let page = crate::forest::page(self.col()?, at, &look, &opts, &mut memory).map_err(err)?;
         if memory != before {
-            std::fs::write(&path, serde_json::to_vec_pretty(&memory).unwrap())
-                .map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))?;
+            self.save_forest_memory(&memory)?;
         }
         self.forest = Some((key, page.clone()));
         Ok(page)
+    }
+
+    /// `forest_seen {key}`: the asteroid's strike of `key` (the page's
+    /// `strike.seen`) has played on the forest, and isn't played again.
+    fn forest_seen(&mut self, args: &Value) -> ApiResult {
+        let key = str_arg(args, "key")?.to_string();
+        let tr = self.tr.clone();
+        let today = self.col()?.timing_today().map_err(|e| ApiError::anki(e, &tr))?.days_elapsed as i64;
+        let mut memory = self.forest_memory();
+        crate::forest::mark_strike_seen(&mut memory, &key, today);
+        self.save_forest_memory(&memory)?;
+        self.forest = None; // (the page said it was fresh)
+        Ok(json!({}))
+    }
+
+    /// What Memory Forest remembers between days (FOREST_STATE_FILE).
+    fn forest_memory(&self) -> Value {
+        std::fs::read(self.base.join(FOREST_STATE_FILE))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_else(|| json!({}))
+    }
+
+    fn save_forest_memory(&self, memory: &Value) -> std::result::Result<(), ApiError> {
+        let path = self.base.join(FOREST_STATE_FILE);
+        std::fs::write(&path, serde_json::to_vec_pretty(memory).unwrap())
+            .map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))
     }
 
     fn media_sync_status(&mut self) -> ApiResult {

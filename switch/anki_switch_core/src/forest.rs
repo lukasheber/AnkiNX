@@ -142,6 +142,8 @@ pub struct Options {
     /// looks missed, so no strike, fire, smoke or doom that hasn't shown yet
     /// comes (events_state.settled).
     pub settled: bool,
+    /// The heatmap's weeks start on this day (Sunday 0, Monday 1).
+    pub week_start: i64,
 }
 
 /// The page's data (web/core.js AF.mount's `data`) for the whole collection,
@@ -181,13 +183,21 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
                 .map(|c| json!({ "ago": c.ago, "lost": c.lost, "streak": c.streak, "date": date(c.ago) }))
                 .collect();
             extras.insert("craters".into(), json!(craters));
-            // (never `fresh`: the strike plays over the add-on's page, which there isn't)
+            // it plays by itself once, while it is news and hasn't been seen (`fresh`: with the
+            // forest it took); the journal tells it until it has, and for the rest of that day
+            // (events_state.strike_payload)
             let news = latest.ago <= STRIKE_NEWS_DAYS;
-            extras.insert(
-                "strike".into(),
-                json!({ "date": date(latest.ago), "lost": latest.lost, "seen": date(latest.ago),
-                        "fresh": false, "news": news, "told": false }),
-            );
+            let seen_key = date(latest.ago);
+            let fresh = news && !strike_seen(memory, &seen_key);
+            let told = news && (fresh || memory["strike_seen_day"].as_i64() == Some(at.today));
+            let mut strike = json!({ "date": date(latest.ago), "lost": latest.lost, "seen": seen_key,
+                                     "fresh": fresh, "news": news, "told": told });
+            if fresh {
+                let (before, merged) = merge_old(latest.before.clone());
+                strike["before"] = json!(before);
+                strike["merged"] = merged;
+            }
+            extras.insert("strike".into(), strike);
         }
         if let Some(&hit) = out.hits.last() {
             // the forest now: only what grew since, its streak, reviews and animals counted from there
@@ -249,6 +259,22 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
     let new_ancient = new_ancient_today(memory, &trees, today);
 
     let anniversaries_all = anniversaries(&trees, today);
+    let mut events = scene_events(&stats, today);
+    if new_ancient {
+        events.push("new_ancient");
+    }
+    // the journal: today's news, else the forest's own line - which, for the night sky's
+    // events, depends on the sky the page draws (a clear night or not): one for each
+    let journal_lines = match news_line(&extras, &backlog) {
+        Some(news) => json!({ "starry": news, "plain": news }),
+        None => json!({
+            "starry": journal(&stats, &visitors, &events, &trees, &anniversaries_all, stagnation, today, true),
+            "plain": journal(&stats, &visitors, &events, &trees, &anniversaries_all, stagnation, today, false),
+        }),
+    };
+    // the study heatmap's (payload._calendar, for the whole collection, as the deck list has it)
+    let free = load_free_days(col, at.cutoff)?;
+    let calendar = calendar(col, at, &rows, &trees, &visitors, &free, opts.week_start)?;
     let all = trees.len();
     let (kept, merged) = merge_old(trees);
     let merged_count = all - kept.len();
@@ -257,12 +283,7 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
         .filter(|&&i| i >= merged_count)
         .map(|&i| i - merged_count)
         .collect();
-    let mut events = scene_events(&stats, today);
-    if new_ancient {
-        events.push("new_ancient");
-    }
     // the page's streak: every day you studied, passing over days with nothing due
-    let free = load_free_days(col, at.cutoff)?;
     let (streak, longest) = streaks(days, &free);
     let mut page_stats = stats;
     page_stats.insert("streak".into(), json!(streak));
@@ -292,6 +313,8 @@ pub fn page(col: &mut Collection, at: Moment, look: &Look, opts: &Options, memor
         "tooltips": true,
         "stagnation": stagnation,
         "backlog": backlog,
+        "journalLines": journal_lines,
+        "calendar": calendar,
     });
     out.as_object_mut().unwrap().extend(extras);
     Ok(out)
@@ -333,6 +356,7 @@ struct Rows {
     recent_lapses: HashSet<i64>,
     review_days: HashSet<i64>,
     day_reviews: HashMap<i64, i64>, // days ago -> reviews that day
+    day_time: HashMap<i64, i64>,    // days ago -> seconds those reviews took
     total_reviews: i64,
     today_reviews: i64,
     leeches: HashSet<i64>,
@@ -358,15 +382,17 @@ fn load_rows(col: &Collection, cutoff: i64) -> Result<Rows> {
             first_last.insert(r.get(0)?, (r.get(1)?, r.get(2)?));
         }
     }
-    let mut day_reviews: HashMap<i64, i64> = HashMap::new();
+    let (mut day_reviews, mut day_time) = (HashMap::new(), HashMap::new());
     {
         let mut st = db.prepare(&format!(
-            "select (?1 - 1 - id / 1000) / {DAY_SECS}, count() from revlog \
+            "select (?1 - 1 - id / 1000) / {DAY_SECS}, count(), sum(time) from revlog \
              where ease > 0 and type in {STUDY_TYPES} and id < ?2 group by 1"
         ))?;
         let mut rows = st.query([cutoff, cutoff * 1000])?;
         while let Some(r) = rows.next()? {
-            day_reviews.insert(r.get(0)?, r.get(1)?);
+            let day: i64 = r.get(0)?;
+            day_reviews.insert(day, r.get::<_, i64>(1)?);
+            day_time.insert(day, r.get::<_, i64>(2)? / 1000);
         }
     }
     let lapse_since = (cutoff - LAPSE_WINDOW_DAYS * DAY_SECS) * 1000;
@@ -400,6 +426,7 @@ fn load_rows(col: &Collection, cutoff: i64) -> Result<Rows> {
         today_reviews: day_reviews.get(&0).copied().unwrap_or(0),
         review_days: day_reviews.keys().copied().collect(),
         day_reviews,
+        day_time,
         leeches,
     })
 }
@@ -866,6 +893,23 @@ fn last_shown(memory: &Value, kind: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Whether the strike of `key` (its ISO date) has played: it, or a later one.
+fn strike_seen(memory: &Value, key: &str) -> bool {
+    memory["strike_seen"].as_str().is_some_and(|seen| key <= seen)
+}
+
+/// The strike of `key` has played (the app's page has shown it): it plays
+/// once, and every strike before it with it (events_state.mark_seen).
+pub fn mark_strike_seen(memory: &mut Value, key: &str, today: i64) {
+    if !memory.is_object() {
+        *memory = json!({});
+    }
+    if !strike_seen(memory, key) {
+        memory["strike_seen"] = json!(key);
+    }
+    memory["strike_seen_day"] = json!(today);
+}
+
 fn remember_shown(memory: &mut Value, kind: &str, day: &str) {
     if memory.get("shown").and_then(|s| s.get(kind)).and_then(Value::as_str) == Some(day) {
         return;
@@ -941,6 +985,8 @@ struct Crater {
     ago: i64,
     lost: usize,
     streak: i64,
+    /// The trees it took (the latest strike's only, to play it).
+    before: Vec<Tree>,
 }
 
 struct Strikes {
@@ -959,14 +1005,16 @@ fn merciless(trees: &[Tree], days: &HashSet<i64>, held: &HashSet<i64>) -> Strike
     // (events._wipe)
     let (mut craters, mut latest, mut prev): (Vec<Crater>, Option<Crater>, Option<i64>) = (vec![], None, None);
     for &hit in &hits {
-        let lost = trees.iter().filter(|t| ago(t) >= hit && prev.is_none_or(|p| ago(t) < p)).count();
+        let before: Vec<Tree> =
+            trees.iter().filter(|t| ago(t) >= hit && prev.is_none_or(|p| ago(t) < p)).cloned().collect();
+        let lost = before.len();
         prev = Some(hit);
         if lost > 0 {
             let streak = streak_before(days, hit);
             if hit <= CRATER_GONE_DAYS {
-                craters.push(Crater { ago: hit, lost, streak });
+                craters.push(Crater { ago: hit, lost, streak, before: vec![] });
             }
-            latest = Some(Crater { ago: hit, lost, streak });
+            latest = Some(Crater { ago: hit, lost, streak, before });
         }
     }
     let mut kept: Vec<Tree> = trees.iter().filter(|t| hits.last().is_none_or(|&h| ago(t) < h)).cloned().collect();
@@ -1250,6 +1298,114 @@ fn animals(memory: &mut Value, key: &str, stats: &Map<String, Value>, today: i64
         .collect()
 }
 
+// ---------- the study heatmap (payload._calendar, study_log, milestones.animal_days) ----------
+
+// How many days ahead the heatmap counts the cards due (payload.CALENDAR_DUE_DAYS).
+const CALENDAR_DUE_DAYS: usize = 800;
+
+/// What the heatmap is drawn from (web/calendar.js `cal`): each day's reviews and the time they
+/// took from the first day studied to today, the cards due on each day from today on, the trees'
+/// days, the day each animal came, the forest's ponds and the days with nothing due.
+#[allow(clippy::too_many_arguments)]
+fn calendar(col: &Collection, at: Moment, rows: &Rows, trees: &[Tree], visitors: &[Value], free: &HashSet<i64>,
+            week_start: i64) -> Result<Value> {
+    let oldest = rows.day_reviews.keys().copied().max().unwrap_or(0);
+    let days: Vec<i64> = (0..=oldest).rev().map(|d| rows.day_reviews.get(&d).copied().unwrap_or(0)).collect();
+    let time: Vec<i64> = (0..=oldest).rev().map(|d| rows.day_time.get(&d).copied().unwrap_or(0)).collect();
+    let free_runs: Vec<[i64; 2]> = runs_of(free).into_iter().filter(|r| r[1] <= oldest).collect();
+    Ok(json!({
+        "view": "timeline", "shadeBy": "reviews", "weekStart": week_start,
+        "start": iso(day_date(oldest, at.cutoff)), "days": days,
+        "due": load_due(col, at.today, CALENDAR_DUE_DAYS)?,
+        "planted": trees.iter().map(|t| json!([ago(t), t["n"]])).collect::<Vec<_>>(),
+        "animals": animal_days(visitors, trees, &rows.day_reviews, at.today),
+        "time": time, "answerTime": [],
+        "ponds": trees.iter().filter(|t| t.get("gap").is_some() && t.get("gap_from").is_some() && t.get("gap_to").is_some())
+            .map(|t| json!([t["gap_from"], t["gap_to"]])).collect::<Vec<_>>(),
+        "forestStart": null, "hiddenBefore": null, "countsFrom": null, "streakFromStart": false,
+        "marks": [], "gone": [], "free": free_runs, "daysOff": [], "browse": true,
+    }))
+}
+
+/// How many cards fall due on each of the `days` days from today (today first): overdue cards
+/// and cards in learning count as today's; suspended and buried ones nowhere (study_log.load_due).
+fn load_due(col: &Collection, today: i64, days: usize) -> Result<Vec<i64>> {
+    let mut out = vec![0i64; days];
+    let mut st = col.storage.db().prepare(
+        "select c.queue, case when c.odid != 0 and c.odue != 0 then c.odue else c.due end, count() \
+         from cards c where c.queue in (1, 2, 3) group by 1, 2",
+    )?;
+    let mut rows = st.query([])?;
+    while let Some(r) = rows.next()? {
+        let (queue, due, n): (i64, i64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
+        let ahead = if queue == 1 { 0 } else { (due - today).max(0) };
+        if (ahead as usize) < days {
+            out[ahead as usize] += n;
+        }
+    }
+    Ok(out)
+}
+
+/// Days (as `ago`) in [older, newer] runs, oldest first (study_log.load_free_days' runs).
+fn runs_of(days: &HashSet<i64>) -> Vec<[i64; 2]> {
+    let mut sorted: Vec<i64> = days.iter().copied().collect();
+    sorted.sort();
+    let mut runs: Vec<[i64; 2]> = Vec::new();
+    for d in sorted {
+        match runs.last_mut() {
+            Some(r) if r[0] == d - 1 => r[0] = d,
+            _ => runs.push([d, d]),
+        }
+    }
+    runs.reverse();
+    runs
+}
+
+/// When each animal in the forest came, as days ago: from the history where its milestone can
+/// be dated (the day a streak reached its length, the 50th tree, the 10,000th review, the first
+/// pond, the forest's first birthday), else the day the forest saw it come (milestones.animal_days).
+fn animal_days(visitors: &[Value], trees: &[Tree], day_reviews: &HashMap<i64, i64>, today: i64) -> Vec<Value> {
+    let mut studied: Vec<i64> = day_reviews.iter().filter(|(_, &n)| n > 0).map(|(&d, _)| d).collect();
+    studied.sort_by(|a, b| b.cmp(a)); // oldest first
+    let (mut streak_at, mut run, mut last): (HashMap<i64, i64>, i64, Option<i64>) = (HashMap::new(), 0, None);
+    for &d in &studied {
+        run = if last.is_some_and(|l| l - d == 1) { run + 1 } else { 1 };
+        last = Some(d);
+        streak_at.entry(run).or_insert(d);
+    }
+    let mut all: Vec<i64> = day_reviews.keys().copied().collect();
+    all.sort_by(|a, b| b.cmp(a));
+    let (mut total, mut passed) = (0, None);
+    for d in all {
+        total += day_reviews[&d];
+        if passed.is_none() && total >= FOX_REVIEWS {
+            passed = Some(d);
+        }
+    }
+    let first_pond = trees.iter().find(|t| t.get("gap").is_some()).map(ago);
+    let birthday = trees.first().map_or(-1, |t| ago(t) - CABIN_AGE_DAYS);
+    let found = |key: &str| -> Option<i64> {
+        match key {
+            "deer" => streak_at.get(&DEER_STREAK).copied(),
+            "stag" => streak_at.get(&STAG_STREAK).copied(),
+            "bear" => streak_at.get(&BEAR_STREAK).copied(),
+            "rabbit" => trees.get(RABBIT_TREES as usize - 1).map(ago),
+            "fox" => passed,
+            "heron" => first_pond,
+            "cabin" => (birthday >= 0).then_some(birthday),
+            _ => None,
+        }
+    };
+    visitors
+        .iter()
+        .filter_map(|v| {
+            let key = v["key"].as_str()?;
+            let d = found(key).or_else(|| v["day"].as_i64().map(|day| today - day))?;
+            (d >= 0).then(|| json!({ "key": key, "ago": d }))
+        })
+        .collect()
+}
+
 /// Whether a tree turned ancient today: remembered in `memory`, so a tree is
 /// news once, and the first look takes in the ancient trees already there
 /// (payload._new_ancient_today, for the whole forest and no start date).
@@ -1399,6 +1555,126 @@ pub fn mood(look: &Look, now_ts: f64) -> Value {
         mood["city"] = json!(look.city);
     }
     mood
+}
+
+// ---------- the journal (journal.py, events_state.news_line) ----------
+
+// Counts worth remarking on, on the day they are reached.
+const TREE_MILESTONES: [i64; 10] = [1, 10, 25, 50, 100, 250, 500, 1000, 2000, 5000];
+const STREAK_MILESTONES: [i64; 9] = [7, 30, 50, 100, 200, 365, 500, 730, 1000];
+// The journal's line on the day each animal comes (milestones.ARRIVED).
+const ARRIVED: [(&str, &str); 10] = [
+    ("rabbit", "visitor.a_rabbit_wandered_in_your_forest"),
+    ("deer", "visitor.a_deer_wandered_in_you_kept"),
+    ("fox", "visitor.a_fox_wandered_in_you_passed"),
+    ("owl", "visitor.an_owl_wandered_in_your_first"),
+    ("heron", "visitor.a_heron_wandered_in_a_pond"),
+    ("stag", "visitor.a_stag_wandered_in_you_kept"),
+    ("cabin", "visitor.a_little_cabin_now_stands_at"),
+    ("bear", "visitor.a_bear_wandered_in_you_kept"),
+    ("squirrel", "visitor.a_family_of_squirrels_wandered_in"),
+    ("eagle", "visitor.an_eagle_wandered_in_you_knew"),
+];
+
+/// A line of the add-on's, by its id, for the page to write in its
+/// language: `n` for a plural, `values` its placeholders (those in `dates`
+/// are ISO dates, to write as dates).
+fn line(id: &str, n: Option<i64>, values: Value) -> Value {
+    json!({ "id": id, "n": n, "values": values })
+}
+
+/// What the events brought today, if anything: an asteroid's strike, a fire,
+/// or a backlog cleared (events_state.news_line).
+fn news_line(extras: &Map<String, Value>, backlog: &Map<String, Value>) -> Option<Value> {
+    let strike = &extras["strike"];
+    if strike["news"] == true && strike["told"] == true {
+        let lost = strike["lost"].as_i64().unwrap_or(0);
+        return Some(line("events.an_asteroid_took_your_forest_of", Some(lost), json!({ "trees": lost })));
+    }
+    let fire = &extras["fire"];
+    if fire.is_object() {
+        if fire["smoke"].as_i64().unwrap_or(0) > 0 {
+            return Some(line("events.smoke_is_rising_from_your_forest", None, json!({})));
+        }
+        if fire["out"] == true {
+            return Some(line("events.the_last_of_the_fire_is", None, json!({})));
+        }
+        if fire["news"] == true {
+            let n = fire["trees"].as_i64().unwrap_or(0);
+            return Some(line("events.a_fire_broke_out_while_you", Some(n), json!({ "trees": n, "days": FIRE_HEAL_DAYS })));
+        }
+    }
+    if backlog["cleared"] == true {
+        let id = if extras["nature"] == "peaceful" {
+            "events.you_cleared_your_overdue_reviews"
+        } else {
+            "events.you_cleared_your_overdue_reviews_the"
+        };
+        return Some(line(id, None, json!({})));
+    }
+    None
+}
+
+/// The one line under the forest, on the days there is something to say
+/// (journal.journal): an animal arrived, a tree turned ancient, an
+/// anniversary came round, a milestone was passed, or the grass stands tall.
+/// `starry`: a clear night, when the night sky's events show.
+#[allow(clippy::too_many_arguments)]
+fn journal(stats: &Map<String, Value>, visitors: &[Value], events: &[&str], trees: &[Tree], anniversaries: &[usize],
+           stagnation: f64, today: NaiveDate, starry: bool) -> Option<Value> {
+    if trees.is_empty() {
+        return Some(line("journal.study_some_new_cards_and_your", None, json!({})));
+    }
+    for v in visitors {
+        if v["new"] == true {
+            if let Some((_, id)) = ARRIVED.iter().find(|(k, _)| v["key"] == *k) {
+                return Some(line(id, None, json!({})));
+            }
+        }
+    }
+    if events.contains(&"harvest_moon") && starry {
+        return Some(line("journal.a_harvest_moon_rises_over_your", None, json!({})));
+    }
+    if events.contains(&"meteor_shower") && starry {
+        return Some(line("journal.meteors_are_falling_tonight", None, json!({})));
+    }
+    if events.contains(&"new_ancient") {
+        let id = if starry { "journal.one_of_your_trees_became_ancient_2" } else { "journal.one_of_your_trees_became_ancient" };
+        return Some(line(id, None, json!({})));
+    }
+    if let Some(&i) = anniversaries.first() {
+        let date = trees[i]["date"].as_str().unwrap_or("");
+        let years = today.year() as i64 - date.get(..4).and_then(|y| y.parse::<i64>().ok()).unwrap_or(today.year() as i64);
+        let values = json!({ "date": date, "dates": ["date"] });
+        return Some(if years == 1 {
+            line("journal.the_tree_you_planted_on_date_2", None, values)
+        } else {
+            line("journal.the_tree_you_planted_on_date", Some(years), values)
+        });
+    }
+    let int = |k: &str| stats.get(k).and_then(Value::as_i64).unwrap_or(0);
+    if stats.get("planted_today") == Some(&json!(true)) {
+        let (count, cards, streak) = (int("trees"), int("today_cards"), int("streak"));
+        if TREE_MILESTONES.contains(&count) {
+            return Some(if count == 1 {
+                line("journal.your_first_tree_it_holds_n", Some(cards), json!({ "cards": cards }))
+            } else {
+                line("journal.your_count_th_tree_planted_today", Some(cards), json!({ "count": count, "cards": cards }))
+            });
+        }
+        if STREAK_MILESTONES.contains(&streak) {
+            return Some(line("journal.days_days_in_a_row_the", Some(streak), json!({ "days": streak })));
+        }
+    }
+    if stagnation > 0.0 {
+        let weeks = trees.last().map_or(0, ago) / 7;
+        return Some(if weeks < 2 {
+            line("journal.the_grass_is_growing_tall_no_2", None, json!({}))
+        } else {
+            line("journal.the_grass_is_growing_tall_no", Some(weeks), json!({}))
+        });
+    }
+    None
 }
 
 /// Night-sky events tied to your study (they only show on clear nights).

@@ -10,7 +10,7 @@ use anki_switch_core::forest;
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("usage: forest_dump <collection.anki2> [nature]");
-    let opts = forest::Options { nature: args.next().unwrap_or_else(|| "peaceful".into()), settled: true };
+    let opts = forest::Options { nature: args.next().unwrap_or_else(|| "peaceful".into()), settled: true, week_start: 1 };
     let mut memory = serde_json::json!({});
     let mut col = CollectionBuilder::new(path).build().unwrap();
     let at = forest::now(&mut col).unwrap();

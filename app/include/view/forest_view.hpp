@@ -31,6 +31,8 @@ class ForestView : public brls::View
     void query(const std::string& name, const std::string& args, std::function<void(const std::string&)> done);
     // Called once the scene is on screen.
     std::function<void()> onReady;
+    // What the scene tells the app (ForestScript::onEvent), on the UI thread.
+    std::function<void(const std::string& name, const std::string& value)> onEvent;
 
     // The canvas the scene is drawn on, and where it is on screen (it covers
     // the view, centred, cut at the edges if their shapes differ).

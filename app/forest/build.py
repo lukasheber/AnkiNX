@@ -4,7 +4,8 @@
 
 writes app/resources/forest/forest.js (src/shim.js, the add-on's scripts from
 app/library/memory-forest/web in the order its catalog.py loads them, then src/runner.js),
-app/resources/forest/presets.json (its sceneries, which the app offers) and
+app/resources/forest/presets.json (its sceneries, which the app offers),
+app/resources/forest/i18n/<lang>.json (the page's words in each language the app speaks) and
 app/forest/samples/<preset>.json (the add-on's made-up test forest in each of them, as
 its render checks draw it, for forest_bench). Run it after fetching a new pin of the add-on
 (tools/fetch_frontend_deps.sh) or changing src/; the outputs are committed.
@@ -27,13 +28,14 @@ sys.path.insert(0, ADDON)
 import catalog  # noqa: E402
 import fake_forest  # noqa: E402
 import forest_data  # noqa: E402
+import i18n  # noqa: E402
 import milestones  # noqa: E402
 import presets  # noqa: E402
 import scene  # noqa: E402
 
-# The add-on's page, not its scenes: the heatmap draws under the forest, and the runner has no
-# pointer, caption or zoom (they only define functions, but the heatmap is a sixth of the size).
-LEFT_OUT = ("calendar.js", "heatmap/")
+# What the add-on loads that the runner doesn't use: nothing now (the heatmap is drawn through its
+# parts, app/patches/memory-forest; the pointer, caption and zoom only define functions).
+LEFT_OUT = ()
 # The sample forests: this many days of trees, on this day at noon (the render checks' day)
 SAMPLE_TREES = 300
 SAMPLE_NOW = dt.datetime(2026, 9, 19, 12)
@@ -48,10 +50,36 @@ def scripts() -> list:
 
 
 def visitor_text() -> dict:
-    """Each animal's name and why it came, in English: the add-on's Python sends them to its page
-    (milestones.for_page), the Rust port doesn't."""
-    en = json.load(open(os.path.join(ADDON, "locales", "en.json"), encoding="utf-8"))
-    return {k: {"name": en[milestones.NAMES[k]], "stayed": en[milestones.STAYED[k]]} for k in milestones.NAMES}
+    """The ids of each animal's name and why it came: the add-on's Python writes them for its page
+    (milestones.for_page), the runner does it here, in the page's language."""
+    return {k: {"name": milestones.NAMES[k], "stayed": milestones.STAYED[k], "came": milestones.CAME[k]} for k in milestones.NAMES}
+
+
+# The languages the app speaks that the add-on is translated into (en-US, es, pt-BR, ja; the app's
+# es-419 and pt take es and pt-BR), and the words its Python writes that the page now writes: the
+# journal, the events' lines and the animals' names
+LANGUAGES = ("en", "es", "pt-BR", "ja")
+PYTHON_WORDS = ("journal.", "events.", "visitor.")
+
+
+def page_words(tag: str) -> dict:
+    """What a page in this language is sent (data.i18n: i18n.page_strings), with the words of the
+    add-on's Python the runner writes."""
+    i18n.set_override(tag)
+    out = i18n.page_strings()
+    table = i18n.table()
+    out["strings"] = {**{k: v for k, v in table.items() if k.startswith(PYTHON_WORDS)}, **out["strings"]}
+    return out
+
+
+def heatmap_looks() -> dict:
+    """Each environment's heatmap look with the add-on's default settings (heatmap_look.page_look):
+    its colours and tiles, which the runner draws the heatmap with. heatmap_look only imports as
+    part of the add-on, inside Anki: as the add-on's own tests reach it, through their stand-in
+    Anki (tests/fake_anki.py)."""
+    sys.path.insert(0, os.path.join(ADDON, "tests"))
+    from fake_anki import addon
+    return {env: addon.heatmap_look.page_look({}, {"special": env}) for env in catalog.entries("envs")}
 
 
 def preset_list() -> list:
@@ -74,6 +102,7 @@ def bundle() -> str:
              " (https://github.com/baraklevy20/memory-forest, MIT). Do not edit."]
     parts.append(open(os.path.join(HERE, "src", "shim.js"), encoding="utf-8").read())
     parts.append(f"globalThis.__forestVisitors = {json.dumps(visitor_text(), ensure_ascii=False)};")
+    parts.append(f"globalThis.__heatmapLooks = {json.dumps(heatmap_looks())};")
     for rel in scripts():
         parts.append(f"// ---- memory-forest/web/{rel}")
         parts.append(open(os.path.join(WEB, rel), encoding="utf-8").read())
@@ -97,6 +126,11 @@ def main() -> None:
     with open(os.path.join(ADDON, "LICENSE"), encoding="utf-8") as src, \
             open(os.path.join(OUT, "LICENSE-memory-forest.txt"), "w", encoding="utf-8", newline="\n") as fh:
         fh.write(src.read())
+    os.makedirs(os.path.join(OUT, "i18n"), exist_ok=True)
+    for tag in LANGUAGES:
+        with open(os.path.join(OUT, "i18n", f"{tag}.json"), "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(page_words(tag), fh, ensure_ascii=False, separators=(",", ":"))
+    i18n.set_override(None)
     with open(os.path.join(OUT, "presets.json"), "w", encoding="utf-8", newline="\n") as fh:
         json.dump(preset_list(), fh, indent=1)
     keys = []

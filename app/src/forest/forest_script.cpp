@@ -275,7 +275,21 @@ struct ForestScript::Native
     Clock::time_point deadline;
     std::atomic<bool> cancelled{ false };
     std::string error;
+    ForestScript* owner = nullptr; // (for onEvent)
 };
+
+namespace
+{
+
+JSValue nEvent(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
+{
+    auto* s = (ForestScript::Native*)JS_GetContextOpaque(ctx);
+    if (s && s->owner && s->owner->onEvent && argc > 0)
+        s->owner->onEvent(str(ctx, argv[0]), argc > 1 ? str(ctx, argv[1]) : std::string());
+    return JS_UNDEFINED;
+}
+
+} // namespace
 
 namespace
 {
@@ -323,6 +337,8 @@ ForestScript::ForestScript(const std::string& bundle) : native(new Native)
     def.finalizer  = finalizeCanvas;
     JS_NewClass(s.rt, canvasClass, &def);
     s.ctx = JS_NewContext(s.rt);
+    s.owner = this;
+    JS_SetContextOpaque(s.ctx, &s);
 
     struct
     {
@@ -347,6 +363,7 @@ ForestScript::ForestScript(const std::string& bundle) : native(new Native)
     JSValue bridge = JS_NewObject(s.ctx);
     JS_SetPropertyStr(s.ctx, bridge, "log", JS_NewCFunction(s.ctx, nLog, "log", 2));
     JS_SetPropertyStr(s.ctx, bridge, "now", JS_NewCFunction(s.ctx, nNow, "now", 0));
+    JS_SetPropertyStr(s.ctx, bridge, "event", JS_NewCFunction(s.ctx, nEvent, "event", 2));
     JS_SetPropertyStr(s.ctx, global, "__native", bridge);
 
     s.deadline = Clock::now() + BUILD_BUDGET;
@@ -392,6 +409,36 @@ bool ForestScript::build(const std::string& data, int width, int height)
     return ok;
 }
 
+bool ForestScript::load(const std::string& data)
+{
+    Native& s = *native;
+    if (!JS_IsObject(s.entry))
+        return false;
+    JSValue arg = JS_NewStringLen(s.ctx, data.c_str(), data.size());
+    bool ok     = callEntry(s, "load", 1, &arg, nullptr, BUILD_BUDGET);
+    JS_FreeValue(s.ctx, arg);
+    return ok;
+}
+
+bool ForestScript::canvasPixels(const std::string& name, std::vector<uint8_t>& out, int& width, int& height)
+{
+    Native& s         = *native;
+    JSValue canvases  = JS_GetPropertyStr(s.ctx, s.entry, "canvases");
+    JSValue element   = JS_GetPropertyStr(s.ctx, canvases, name.c_str());
+    JSValue handle    = JS_GetPropertyStr(s.ctx, element, "_n");
+    PixelCanvas* c    = canvasOf(s.ctx, handle);
+    if (c)
+    {
+        width  = c->width();
+        height = c->height();
+        out.assign(c->data(), c->data() + (size_t)width * height * 4);
+    }
+    JS_FreeValue(s.ctx, handle);
+    JS_FreeValue(s.ctx, element);
+    JS_FreeValue(s.ctx, canvases);
+    return c != nullptr;
+}
+
 bool ForestScript::frame(double seconds)
 {
     Native& s = *native;
@@ -417,7 +464,7 @@ bool ForestScript::busy()
 std::string ForestScript::query(const std::string& name, const std::string& args)
 {
     Native& s = *native;
-    if (JS_IsUndefined(s.canvas))
+    if (!JS_IsObject(s.entry)) // (a scene need not be built: the heatmap only loads the data)
         return "null";
     JSValue argv[2] = { JS_NewStringLen(s.ctx, name.c_str(), name.size()),
                         JS_NewStringLen(s.ctx, args.c_str(), args.size()) };

@@ -6,6 +6,7 @@
 #include "anki/api.hpp"
 #include "app.hpp"
 #include "activity/settings.hpp"
+#include "activity/stats.hpp"
 #include "util/forest.hpp"
 #include "util/settings.hpp"
 #include "util/sync_flow.hpp"
@@ -204,12 +205,33 @@ void DeckPickerActivity::onContentAvailable()
     // so the header, the list and the footer draw over it. Grown at each
     // refresh; its tree count by the streak opens it on the whole screen.
     forest = new ForestView(true);
+    // (the asteroid's strike plays once: then the backend hears it was seen)
+    forest->onEvent = [](const std::string& name, const std::string& key) {
+        if (name != "strikeSeen")
+            return;
+        brls::Logger::info("forest: the strike of {} has played", key);
+        brls::async([key] {
+            try
+            {
+                anki::call("forest_seen", { { "key", key } });
+            }
+            catch (const anki::Error& e)
+            {
+                brls::Logger::error("forest: {}", e.what());
+            }
+        });
+    };
     frame->addView(forest, 0);
     forestIcon->setText(ICON_FOREST);
     forestLabel->setTextColor(mutedColor());
     forestBox->addGestureRecognizer(new brls::TapGestureRecognizer([this](brls::TapGestureStatus status, brls::Sound*) {
         if (status.state == brls::GestureState::END)
             openForest();
+    }));
+    // The streak opens the statistics, Memory Forest's heatmap first.
+    streakBox->addGestureRecognizer(new brls::TapGestureRecognizer([this](brls::TapGestureStatus status, brls::Sound*) {
+        if (status.state == brls::GestureState::END)
+            brls::Application::pushActivity(new StatsActivity(0, "ankinx/stats/all_decks"_i18n, forestData));
     }));
     fitTable();
     // This is the root screen: B must not quit by accident (+ quits).

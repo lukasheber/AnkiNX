@@ -72,6 +72,27 @@ brls::View* ForestActivity::createContentView()
     tip->setVisibility(brls::Visibility::GONE);
     root->addView(tip);
 
+    // the line under the add-on's forest, across its top here: the journal (on the days
+    // there is something to say) and the numbers
+    caption = new brls::Box(brls::Axis::COLUMN);
+    caption->setPositionType(brls::PositionType::ABSOLUTE);
+    caption->setPositionTop(0);
+    caption->setPositionLeft(0);
+    caption->setWidthPercentage(100);
+    caption->setPadding(14, 40, 14, 40);
+    caption->setBackgroundColor(nvgRGBA(20, 20, 24, 170));
+    caption->setVisibility(brls::Visibility::GONE);
+    journalLabel = new brls::Label();
+    journalLabel->setFontSize(20);
+    journalLabel->setTextColor(nvgRGB(255, 248, 224));
+    journalLabel->setMarginBottom(4);
+    caption->addView(journalLabel);
+    numbersLabel = new brls::Label();
+    numbersLabel->setFontSize(17);
+    numbersLabel->setTextColor(nvgRGB(220, 220, 220));
+    caption->addView(numbersLabel);
+    root->addView(caption);
+
     auto* hints = new brls::Hints();
     hints->setPositionType(brls::PositionType::ABSOLUTE);
     hints->setPositionBottom(0);
@@ -109,6 +130,22 @@ brls::View* ForestActivity::createContentView()
 // newest one.
 void ForestActivity::ready()
 {
+    forest->query("caption", "{}", [this](const std::string& answer) {
+        anki::json c = anki::json::parse(answer, nullptr, false);
+        if (!c.is_object())
+            return;
+        std::string numbers;
+        for (const auto& item : c["items"])
+            numbers += (numbers.empty() ? "" : "  ·  ") + item.value("text", "");
+        std::string credit = c.value("credit", "");
+        if (!credit.empty())
+            numbers += "  ·  " + credit;
+        std::string journal = c.value("journal", "");
+        journalLabel->setText(journal);
+        journalLabel->setVisibility(journal.empty() ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+        numbersLabel->setText(numbers);
+        caption->setVisibility(numbers.empty() && journal.empty() ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    });
     forest->query("trees", "{}", [this](const std::string& answer) {
         anki::json list = anki::json::parse(answer, nullptr, false);
         trees.clear();
@@ -230,7 +267,9 @@ void ForestActivity::showTip(const std::string& answer)
     }
     float screenW = brls::Application::contentWidth, screenH = brls::Application::contentHeight;
     x = std::clamp(x - TIP_W / 2, TIP_MARGIN, screenW - TIP_W - TIP_MARGIN);
-    y = std::clamp(y, TIP_MARGIN, screenH - height - TIP_MARGIN);
+    // (below the caption across the top)
+    float top = caption && caption->getVisibility() == brls::Visibility::VISIBLE ? caption->getHeight() + TIP_MARGIN : TIP_MARGIN;
+    y         = std::clamp(y, top, std::max(top, screenH - height - TIP_MARGIN));
     tip->setPositionLeft(x);
     tip->setPositionTop(y);
     tip->setVisibility(brls::Visibility::VISIBLE);

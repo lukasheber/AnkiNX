@@ -192,9 +192,16 @@ g.document = {
 };
 g.getComputedStyle = () => ({ backgroundColor: '', getPropertyValue: () => '' });
 g.performance = { now: native.now };
-// (the runner draws each frame itself: nothing in a scene waits on a timer or a refresh)
-g.requestAnimationFrame = () => 0;
-g.cancelAnimationFrame = () => {};
+// (the runner draws each frame itself: nothing in a scene waits on a timer. What asks for the next
+// refresh - the asteroid's strike playing - runs at the runner's next frame: g.__animationFrames)
+let frameQueue = [], nextFrame = 1;
+g.requestAnimationFrame = cb => { frameQueue.push([nextFrame, cb]); return nextFrame++; };
+g.cancelAnimationFrame = id => { frameQueue = frameQueue.filter(([n]) => n !== id); };
+g.__animationFrames = now => {
+  const due = frameQueue;
+  frameQueue = [];
+  for (const [, cb] of due) cb(now);
+};
 g.requestIdleCallback = () => 0;
 g.setTimeout = () => 0;
 g.clearTimeout = () => {};
@@ -210,50 +217,88 @@ g.console = {
   log: (...a) => native.log(0, text(a)), info: (...a) => native.log(0, text(a)), debug: (...a) => native.log(0, text(a)),
   warn: (...a) => native.log(1, text(a)), error: (...a) => native.log(2, text(a)),
 };
-/* ---------- Intl, in English: QuickJS has none (the tooltips' dates and numbers) ---------- */
+/* ---------- Intl: QuickJS has none (the tooltips' dates and numbers) ----------
+ * The languages the app speaks, as Chromium's Intl writes them: English, Spanish, Portuguese
+ * (Brazil's) and Japanese, with what the scenes ask of it. */
 if (typeof g.Intl === 'undefined') {
-  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
-    'November', 'December'];
-  const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const english = locales => [].concat(locales || []).filter(l => /^en\b/i.test(l));
+  const LANGS = {
+    en: {
+      months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+      short: m => m.slice(0, 3),
+      weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+      // "Oct 17, 2026", "October 2026"
+      dmy: (d, m, y) => `${m} ${d}, ${y}`, my: (m, y) => `${m} ${y}`, dm: (d, m) => `${m} ${d}`,
+      group: ',', decimal: '.', minGroup: 4, near: ['yesterday', 'today', 'tomorrow'],
+      ago: (n, u) => `${n} ${u}${n === 1 ? '' : 's'} ago`, in: (n, u) => `in ${n} ${u}${n === 1 ? '' : 's'}`,
+    },
+    es: {
+      months: ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'],
+      short: m => (m === 'septiembre' ? 'sept' : m.slice(0, 3)),
+      weekdays: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
+      // "17 oct 2026", "octubre de 2026"
+      dmy: (d, m, y) => `${d} ${m} ${y}`, my: (m, y) => `${m} de ${y}`, dm: (d, m) => `${d} ${m}`,
+      group: '.', decimal: ',', minGroup: 5, near: ['ayer', 'hoy', 'mañana'],
+      ago: n => `hace ${n} ${n === 1 ? 'día' : 'días'}`, in: n => `dentro de ${n} ${n === 1 ? 'día' : 'días'}`,
+    },
+    pt: {
+      months: ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'],
+      short: m => m.slice(0, 3) + '.',
+      weekdays: ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'],
+      // "17 de out. de 2026", "outubro de 2026"
+      dmy: (d, m, y) => `${d} de ${m} de ${y}`, my: (m, y) => `${m} de ${y}`, dm: (d, m) => `${d} de ${m}`,
+      group: '.', decimal: ',', minGroup: 4, near: ['ontem', 'hoje', 'amanhã'],
+      ago: n => `há ${n} ${n === 1 ? 'dia' : 'dias'}`, in: n => `em ${n} ${n === 1 ? 'dia' : 'dias'}`,
+    },
+    ja: {
+      months: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+      short: m => m,
+      weekdays: ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'],
+      // "2026年10月17日", "2026年10月"
+      dmy: (d, m, y) => `${y}年${m}${d}日`, my: (m, y) => `${y}年${m}`, dm: (d, m) => `${m}${d}日`,
+      group: ',', decimal: '.', minGroup: 4, near: ['昨日', '今日', '明日'],
+      ago: n => `${n} 日前`, in: n => `${n} 日後`,
+    },
+  };
+  const langOf = locale => LANGS[String([].concat(locale || 'en')[0]).split('-')[0].toLowerCase()] || LANGS.en;
+  const supported = locales => [].concat(locales || []).filter(l => LANGS[String(l).split('-')[0].toLowerCase()]);
   class DateTimeFormat {
-    constructor(_locale, opts) { this.o = opts || {}; }
-    static supportedLocalesOf(locales) { return english(locales); }
-    // "Oct 17, 2026", "October 2026", "October", "Sunday"
+    constructor(locale, opts) { this.L = langOf(locale); this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return supported(locales); }
     format(date) {
-      const o = this.o, d = date instanceof Date ? date : new Date(date), utc = o.timeZone === 'UTC';
+      const L = this.L, o = this.o, d = date instanceof Date ? date : new Date(date), utc = o.timeZone === 'UTC';
       const get = k => (utc ? d['getUTC' + k]() : d['get' + k]());
-      const month = get('Month'), day = get('Date'), year = get('FullYear'), weekday = WEEKDAYS[get('Day')];
-      const m = o.month === 'long' ? MONTHS[month] : o.month === 'short' ? MONTHS[month].slice(0, 3)
+      const month = get('Month'), day = get('Date'), year = get('FullYear'), weekday = L.weekdays[get('Day')];
+      const m = o.month === 'long' ? L.months[month] : o.month === 'short' ? L.short(L.months[month])
         : o.month ? String(month + 1) : '';
-      let s = m && o.day ? `${m} ${day}` : m || (o.day ? String(day) : '');
-      if (o.year) s = s ? (o.day ? `${s}, ${year}` : `${s} ${year}`) : String(year);
+      let s = m && o.day && o.year ? L.dmy(day, m, year) : m && o.year ? L.my(m, year) : m && o.day ? L.dm(day, m)
+        : m || (o.day ? String(day) : o.year ? String(year) : '');
       if (o.weekday) { const w = o.weekday === 'long' ? weekday : weekday.slice(0, 3); s = s ? `${w}, ${s}` : w; }
       return s || d.toISOString().slice(0, 10);
     }
   }
   class NumberFormat {
-    constructor(_locale, opts) { this.o = opts || {}; }
-    static supportedLocalesOf(locales) { return english(locales); }
-    // "1,234", "1.5"
+    constructor(locale, opts) { this.L = langOf(locale); this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return supported(locales); }
+    // "1,234", "1.5"; "12.345", "1,5"
     format(n) {
-      const o = this.o, digits = o.maximumFractionDigits;
+      const L = this.L, o = this.o, digits = o.maximumFractionDigits;
       const [whole, frac] = (digits != null ? Number(n).toFixed(Math.max(digits, o.minimumFractionDigits || 0))
         : String(Math.round(Number(n) * 1000) / 1000)).split('.');
-      return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac ? '.' + frac : '');
+      const sign = whole.startsWith('-') ? '-' : '', w = whole.replace('-', '');
+      const grouped = w.length >= L.minGroup ? w.replace(/\B(?=(\d{3})+(?!\d))/g, L.group) : w;
+      return sign + grouped + (frac ? L.decimal + frac : '');
     }
   }
   class RelativeTimeFormat {
-    constructor(_locale, opts) { this.o = opts || {}; }
-    static supportedLocalesOf(locales) { return english(locales); }
+    constructor(locale, opts) { this.L = langOf(locale); this.o = opts || {}; }
+    static supportedLocalesOf(locales) { return supported(locales); }
     format(v, unit) {
-      if (unit === 'day' && this.o.numeric === 'auto' && Math.abs(v) <= 1) return ['yesterday', 'today', 'tomorrow'][v + 1];
-      const u = Math.abs(v) === 1 ? unit : unit + 's';
-      return v < 0 ? `${-v} ${u} ago` : `in ${v} ${u}`;
+      if (this.o.numeric === 'auto' && Math.abs(v) <= 1) return this.L.near[v + 1];
+      return v < 0 ? this.L.ago(-v, unit) : this.L.in(v, unit);
     }
   }
   class PluralRules {
-    static supportedLocalesOf(locales) { return english(locales); }
+    static supportedLocalesOf(locales) { return supported(locales); }
     select(n) { return n === 1 ? 'one' : 'other'; }
   }
   g.Intl = { DateTimeFormat, NumberFormat, RelativeTimeFormat, PluralRules };

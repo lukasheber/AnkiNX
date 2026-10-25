@@ -47,6 +47,10 @@ class ForestActivity : public brls::Activity
     const ForestView* running = nullptr;
     ForestView* forest     = nullptr;
     brls::Box* tip         = nullptr;
+    // across the top: the journal and the numbers (the add-on's caption)
+    brls::Box* caption        = nullptr;
+    brls::Label* journalLabel = nullptr;
+    brls::Label* numbersLabel = nullptr;
     std::vector<Tree> trees;
     Picked picked;
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);

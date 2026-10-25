@@ -8,6 +8,30 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## Unreleased (forest branch)
+
+Memory Forest, the Anki add-on by Barak Levy (MIT), comes to the Switch: a
+pixel-art forest that grows from your study history, behind the deck list.
+Off by default: Settings › Background.
+
+- One tree for each day you learned new cards, grown as you come to
+  remember them; ponds where you were away, animals as you reach
+  milestones, flowers on big days, songbirds for cured leeches. Worked out
+  from your collection exactly as the add-on does (checked against its own
+  code on two years of made-up study).
+- The tree count by your streak (or L) opens the forest on the whole
+  screen: pick a tree with the D-pad or a tap to see its day, its cards and
+  how well you remember them; A opens them in the browser. The add-on's
+  journal and numbers run across the top, in your language where the
+  add-on is translated into it.
+- Nature: Peaceful, Wild (smoke, then a fire after days away) or
+  Merciless (an asteroid after a day missed, played as in the add-on).
+- Sceneries: the add-on's nine, Surprise me daily, and the holidays' in
+  their week. Live weather for your city, from MET Norway.
+- The streak opens the statistics, with the add-on's study heatmap first:
+  your days studied, streaks and trophies, the cards due ahead; pick a day
+  to see it, A opens its cards.
+
 ## 0.6.0 (2026-10-24)
 
 More cards look as they do in Anki: grid layouts, canvas drawings and text

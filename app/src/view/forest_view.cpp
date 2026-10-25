@@ -10,12 +10,7 @@
 #include <vector>
 
 #include "forest/forest_script.hpp"
-
-#ifdef __SWITCH__
-#include <switch.h>
-#else
-#include <pthread.h>
-#endif
+#include "forest/forest_thread.hpp"
 
 using Clock = std::chrono::steady_clock;
 
@@ -32,8 +27,6 @@ constexpr auto REPORT_EVERY = std::chrono::seconds(10), BUSY_EVERY = std::chrono
 constexpr float DIM = 0.4f;
 // Frames in a row that throw before the forest gives up.
 constexpr int MAX_FAILURES = 5;
-// QuickJS needs room for the scenes' recursion (forest_script.cpp STACK_LIMIT).
-constexpr size_t STACK_SIZE = 1u << 20;
 
 int64_t nowMs()
 {
@@ -69,17 +62,12 @@ struct ForestView::Worker
         std::function<void(const std::string&)> done;
     };
     std::vector<Request> requests; // under lock
-#ifdef __SWITCH__
-    Thread thread;
-#else
-    pthread_t thread;
-#endif
-    bool started = false;
+    // the view's onEvent, called on the UI thread
+    std::function<void(const std::string&, const std::string&)> onEvent;
+    ForestThread thread;
 
     void run();
     void answer(ForestScript& forest);
-    void start();
-    void join();
 };
 
 void ForestView::Worker::answer(ForestScript& forest)
@@ -112,6 +100,10 @@ void ForestView::Worker::run()
     };
     auto t0 = Clock::now();
     auto* forest = new ForestScript(bundle);
+    forest->onEvent = [this](const std::string& name, const std::string& value) {
+        if (onEvent)
+            brls::sync([cb = onEvent, name, value] { cb(name, value); });
+    };
     {
         std::lock_guard<std::mutex> l(lock);
         script = forest;
@@ -178,50 +170,6 @@ void ForestView::Worker::run()
     delete forest;
 }
 
-#ifdef __SWITCH__
-void ForestView::Worker::start()
-{
-    // On core 2: the UI's is 0, and newlib threads start on the process' default core.
-    auto entry = [](void* arg) { ((Worker*)arg)->run(); };
-    if (R_SUCCEEDED(threadCreate(&thread, entry, this, nullptr, STACK_SIZE, 0x2C, 2)) &&
-        R_SUCCEEDED(threadStart(&thread)))
-        started = true;
-    else
-        brls::Logger::error("forest: no thread");
-}
-
-void ForestView::Worker::join()
-{
-    if (!started)
-        return;
-    threadWaitForExit(&thread);
-    threadClose(&thread);
-    started = false;
-}
-#else
-void ForestView::Worker::start()
-{
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr, STACK_SIZE);
-    auto entry = [](void* arg) -> void* {
-        ((Worker*)arg)->run();
-        return nullptr;
-    };
-    started = pthread_create(&thread, &attr, entry, this) == 0;
-    pthread_attr_destroy(&attr);
-    if (!started)
-        brls::Logger::error("forest: no thread");
-}
-
-void ForestView::Worker::join()
-{
-    if (!started)
-        return;
-    pthread_join(thread, nullptr);
-    started = false;
-}
-#endif
 
 ForestView::ForestView(bool dim)
     : dim(dim)
@@ -270,7 +218,7 @@ void ForestView::show(const std::string& next)
             if (worker->script)
                 worker->script->cancel();
         }
-        worker->join();
+        worker->thread.join();
         worker.reset();
     }
     readySent = false;
@@ -278,8 +226,15 @@ void ForestView::show(const std::string& next)
         return;
     worker       = std::make_shared<Worker>();
     worker->data = next;
+    if (onEvent)
+        worker->onEvent = [token = std::weak_ptr<bool>(alive), cb = onEvent](const std::string& name, const std::string& value) {
+            if (auto t = token.lock(); t && *t)
+                cb(name, value);
+        };
     worker->seen = nowMs();
-    worker->start();
+    Worker* w = worker.get();
+    if (!worker->thread.start([w] { w->run(); }))
+        brls::Logger::error("forest: no thread");
 }
 
 void ForestView::query(const std::string& name, const std::string& args, std::function<void(const std::string&)> done)
