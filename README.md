@@ -71,6 +71,12 @@ computer and the other way round.
       Backups you can restore on the console, Anki's Check Database, light and dark themes, four languages (English, Portuguese, Spanish, Japanese) and updates from inside the app.
     </td>
   </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <h3>🌲 Memory Forest (optional)</h3>
+      A pixel-art forest behind your deck list that grows as you study: a tree for each day you learn new cards, ponds for the days you were away, animals for milestones, live weather for your city and a study heatmap. A port of the Memory Forest add-on by Barak Levy.
+    </td>
+  </tr>
 </table>
 
 ## Screenshots
@@ -149,6 +155,7 @@ on both between copies.
 | **R** | Deck overview: custom study, options, browse, statistics |
 | **Y** | Expand or collapse subdecks |
 | **X** | Sync |
+| **L** | Memory Forest, full screen (when turned on) |
 | **−** / **+** | Settings / Exit |
 
 | While reviewing | |

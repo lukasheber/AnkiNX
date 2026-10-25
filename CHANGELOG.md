@@ -8,32 +8,36 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
-## Unreleased (forest branch)
+## 0.7.0 (2026-10-25)
 
-Memory Forest, the Anki add-on by Barak Levy (MIT), comes to the Switch: a
-pixel-art forest that grows from your study history, behind the deck list.
-Off by default: Settings › Background.
+Introducing Memory Forest: an optional pixel-art forest behind your deck
+list that grows as you study. It is a port of the Memory Forest add-on for
+Anki by Barak Levy.
 
-- One tree for each day you learned new cards, grown as you come to
-  remember them; ponds where you were away, animals as you reach
-  milestones, flowers on big days, songbirds for cured leeches. Worked out
-  from your collection exactly as the add-on does (checked against its own
-  code on two years of made-up study).
-- The tree count by your streak (or L) opens the forest on the whole
-  screen: pick a tree with the D-pad or a tap to see its day, its cards and
-  how well you remember them; A opens them in the browser. The add-on's
-  journal and numbers run across the top, in your language where the
-  add-on is translated into it.
-- Nature: Peaceful, Wild (smoke, then a fire after days away) or
-  Merciless (an asteroid after a day missed, played as in the add-on).
-- Sceneries: the add-on's nine, Surprise me daily, and the holidays' in
-  their week. Live weather for your city, from MET Norway.
-- What counts: leave decks out of the forest (each with its subdecks),
-  start it on a chosen day, with or without the trees from before it, and
-  choose whether suspended cards keep their trees.
-- The streak opens the statistics, with the add-on's study heatmap first:
-  your days studied, streaks and trophies, the cards due ahead; pick a day
-  to see it, A opens its cards.
+### Memory Forest
+
+Off by default: turn it on in **Settings › Background**.
+
+- **A tree for each day you learn new cards.** Trees grow as you remember
+  their cards. Ponds mark the days you were away, and animals arrive as you
+  reach milestones.
+- **Explore the forest.** Tap the tree count next to your streak, or press
+  **L**, to see it full screen. Select a tree to see its day and how well
+  you remember its cards, then press **A** to open them.
+- **Sceneries.** Choose one of seven, or let AnkiNX pick a new one each
+  day. Halloween and Christmas sceneries appear in their week.
+- **Live weather.** Optionally show the current weather and time of day in
+  your city.
+- **Nature.** Choose what missed days do to your forest: nothing
+  (Peaceful), smoke and fire (Wild) or an asteroid strike (Merciless).
+- **What counts.** Leave decks out of the forest, or start it from a chosen
+  date.
+
+### Statistics
+
+- Tap your streak to open the statistics for all your decks, starting with
+  a study heatmap. Select a day to see what you studied, then press **A** to
+  open those cards.
 
 ## 0.6.0 (2026-10-24)
 
