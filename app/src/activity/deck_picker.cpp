@@ -200,7 +200,7 @@ void DeckPickerActivity::onContentAvailable()
     studiedToday->setTextColor(mutedColor());
     streakLabel->setTextColor(mutedColor());
     streakIcon->setText(ICON_STREAK);
-    // The forest behind it all, if one is chosen (Settings > About): first,
+    // The forest behind it all, if one is chosen (Settings > Background): first,
     // so the header, the list and the footer draw over it. Grown at each
     // refresh; its tree count by the streak opens it on the whole screen.
     forest = new ForestView(true);

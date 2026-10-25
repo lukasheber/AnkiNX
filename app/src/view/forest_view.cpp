@@ -29,7 +29,7 @@ constexpr int64_t UNSEEN_MS = 500;
 // How often the frame times go to the log, and busy() is asked again.
 constexpr auto REPORT_EVERY = std::chrono::seconds(10), BUSY_EVERY = std::chrono::seconds(1);
 // The theme's background over the forest behind the deck list.
-constexpr float DIM = 0.55f;
+constexpr float DIM = 0.4f;
 // Frames in a row that throw before the forest gives up.
 constexpr int MAX_FAILURES = 5;
 // QuickJS needs room for the scenes' recursion (forest_script.cpp STACK_LIMIT).

@@ -74,6 +74,7 @@ void SettingsActivity::onContentAvailable()
     tabs->addTab("ankinx/settings/tab_account"_i18n, [this] { return accountTab(); });
     tabs->addTab("ankinx/settings/tab_controls"_i18n, [this] { return controlsTab(); });
     tabs->addTab("ankinx/settings/tab_study"_i18n, [this] { return studyTab(); });
+    tabs->addTab("ankinx/settings/tab_background"_i18n, [this] { return backgroundTab(); });
     tabs->addTab("ankinx/stats/title"_i18n, [this] { return statsTab(); });
     tabs->addTab("ankinx/settings/tab_collection"_i18n, [this] { return collectionTab(); });
     tabs->addTab("ankinx/settings/tab_about"_i18n, [this] { return aboutTab(); });
@@ -324,6 +325,39 @@ brls::View* SettingsActivity::studyTab()
     return scroller;
 }
 
+// What is behind the deck list: Memory Forest, off or in one of its sceneries
+// (by their names in the add-on, which are English).
+brls::View* SettingsActivity::backgroundTab()
+{
+    brls::ScrollingFrame* scroller;
+    brls::Box* box = column(&scroller);
+    box->addView(header("ankinx/settings/forest_header"_i18n));
+    const auto& all                    = forest::sceneries();
+    std::vector<std::string> sceneries = { "ankinx/settings/forest_off"_i18n };
+    int forestIndex                    = 0;
+    for (size_t i = 0; i < all.size(); i++)
+    {
+        sceneries.push_back(all[i].label);
+        if (settings::forest() == all[i].key)
+            forestIndex = (int)i + 1;
+    }
+    auto* forestCell = new brls::SelectorCell();
+    forestCell->init("ankinx/settings/forest"_i18n, sceneries, forestIndex, [](int index) {
+        const auto& all = forest::sceneries();
+        if (index >= 0 && index <= (int)all.size())
+            settings::setForest(index ? all[index - 1].key : "");
+    });
+    box->addView(forestCell);
+
+    auto* note = new brls::Label();
+    note->setFontSize(16);
+    note->setMarginTop(16);
+    note->setTextColor(brls::Application::getTheme()["brls/text"]);
+    note->setText("ankinx/settings/forest_note"_i18n);
+    box->addView(note);
+    return scroller;
+}
+
 // Statistics for the whole collection (each deck's are on its overview, R).
 brls::View* SettingsActivity::statsTab()
 {
@@ -490,25 +524,6 @@ brls::View* SettingsActivity::aboutTab()
                             settings::setTheme(THEMES[index]);
                     });
     box->addView(themeCell);
-
-    // Memory Forest behind the deck list: off, or one of its sceneries (by
-    // their names in the add-on, which are English).
-    const auto& all                    = forest::sceneries();
-    std::vector<std::string> sceneries = { "ankinx/settings/forest_off"_i18n };
-    int forestIndex                    = 0;
-    for (size_t i = 0; i < all.size(); i++)
-    {
-        sceneries.push_back(all[i].label);
-        if (settings::forest() == all[i].key)
-            forestIndex = (int)i + 1;
-    }
-    auto* forestCell = new brls::SelectorCell();
-    forestCell->init("ankinx/settings/forest"_i18n, sceneries, forestIndex, [](int index) {
-        const auto& all = forest::sceneries();
-        if (index >= 0 && index <= (int)all.size())
-            settings::setForest(index ? all[index - 1].key : "");
-    });
-    box->addView(forestCell);
 
     box->addView(detail("ankinx/settings/version"_i18n, ANKINX_VERSION));
 

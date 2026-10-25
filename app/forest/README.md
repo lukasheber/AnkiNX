@@ -3,7 +3,7 @@
 [Memory Forest](https://github.com/baraklevy20/memory-forest) (MIT), an Anki add-on by
 Barak Levy, grows a pixel-art forest from your study history: one tree per day of new cards, grown
 by how well you remember them. AnkiNX draws it behind the deck list and on its own screen
-(**Settings › About › Forest behind the decks**, off by default). The tree count by the streak, or
+(**Settings › Background**, off by default). The tree count by the streak, or
 **L**, opens it on the whole screen, where each tree says its day and how well its cards are
 remembered, and **A** opens them in the browser.
 

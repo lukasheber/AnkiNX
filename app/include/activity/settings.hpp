@@ -23,6 +23,7 @@ class SettingsActivity : public brls::Activity
     brls::View* accountTab();
     brls::View* controlsTab();
     brls::View* studyTab();
+    brls::View* backgroundTab();
     brls::View* statsTab();
     brls::View* collectionTab();
     brls::View* aboutTab();

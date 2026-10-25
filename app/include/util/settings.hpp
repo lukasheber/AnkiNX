@@ -28,8 +28,8 @@ std::string theme();
 void setTheme(const std::string& value);
 void applyTheme();
 
-// Memory Forest behind the deck list (Settings > About): a sample scenery's
-// key (resources/forest/samples), or "" for none, the default.
+// Memory Forest behind the deck list (Settings > Background): a scenery's
+// key (resources/forest/presets.json), or "" for none, the default.
 std::string forest();
 void setForest(const std::string& scenery);
 
