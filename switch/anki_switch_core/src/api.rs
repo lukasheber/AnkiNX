@@ -52,6 +52,9 @@ const CRASH_LOG: &str = "crash.log";
 const MATH_CACHE: &str = "cache/math";
 const MAX_BACKUPS: usize = 10;
 const BACKUP_INTERVAL_SECS: u64 = 30 * 60;
+/// The empty undo step a study session starts with (`select_deck`): `undo`
+/// stops there.
+const SESSION_START: &str = "AnkiNX study session";
 
 /// Saved AnkiWeb login (the password itself is never stored).
 #[derive(Serialize, Deserialize, Default, Clone)]
@@ -1163,13 +1166,15 @@ impl State {
         }))
     }
 
+    /// `select_deck {deck_id}`: study a deck. It becomes the current deck, and
+    /// a study session starts: `undo` goes no further back than this.
     fn select_deck(&mut self, args: &Value) -> ApiResult {
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
         self.shown = None;
-        self.col()?
-            .set_current_deck(did)
-            .map_err(|e| ApiError::anki(e, &tr))?;
+        let col = self.col()?;
+        col.set_current_deck(did).map_err(|e| ApiError::anki(e, &tr))?;
+        col.add_custom_undo_step(SESSION_START.into());
         Ok(json!({}))
     }
 
@@ -1514,12 +1519,17 @@ impl State {
         }))
     }
 
+    /// `undo`: undo the last change of this study session, if any. What came
+    /// before it (choosing the deck, another deck's reviews) is not undone: the
+    /// reviewer would carry on in that deck.
     fn undo(&mut self) -> ApiResult {
         let tr = self.tr.clone();
         self.shown = None;
         let col = self.col()?;
-        if col.can_undo().is_none() {
-            return Ok(json!({ "undone": false }));
+        match col.can_undo() {
+            None => return Ok(json!({ "undone": false })),
+            Some(Op::Custom(name)) if name == SESSION_START => return Ok(json!({ "undone": false })),
+            Some(_) => {}
         }
         col.undo().map_err(|e| ApiError::anki(e, &tr))?;
         Ok(json!({ "undone": true }))

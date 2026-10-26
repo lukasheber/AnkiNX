@@ -249,6 +249,23 @@ fn study_flow() {
     assert_eq!((answered["leech"].clone(), answered["suspended"].clone()), (json!(false), json!(false)));
     assert_eq!(ok("undo", json!({}))["undone"], true);
 
+    // Undo stays in the study session: another deck studied, its undo stops at its start (the
+    // deck chosen stays chosen: the reviewer would carry on in this one, with its reviews).
+    let default = deck_id(&ok("deck_names", json!({})), "Default");
+    ok("select_deck", json!({ "deck_id": default }));
+    assert_eq!(ok("undo", json!({}))["undone"], false);
+    assert_eq!(ok("next_card", json!({}))["done"], true, "still in Default");
+    // Back in this deck, a new session: its card answered and undone, then no further.
+    ok("select_deck", json!({ "deck_id": verbs }));
+    ok("next_card", json!({}));
+    ok("answer", json!({ "ease": 3 }));
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+    assert_eq!(ok("undo", json!({}))["undone"], false);
+    assert_eq!(ok("next_card", json!({}))["counts"]["new"], 3);
+    // (redo still has what was undone)
+    assert_eq!(ok("redo", json!({}))["redone"], true);
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+
     // Finish the deck: Easy graduates new cards out of today's queue.
     let mut answered = 0;
     loop {

@@ -8,6 +8,14 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## Unreleased
+
+### Fixed
+
+- **Undo stays in your study session.** Pressing undo repeatedly no longer
+  goes back into a deck you studied earlier, which could open one of its
+  cards in the middle of your current deck.
+
 ## 0.7.0 (2026-10-25)
 
 Introducing Memory Forest: an optional pixel-art forest behind your deck
