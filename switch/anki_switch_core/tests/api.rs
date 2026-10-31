@@ -324,6 +324,9 @@ fn study_flow() {
         assert_eq!(stats["cards"]["new"], 0);
         let studied = stats["studied_today"].as_str().unwrap();
         assert!(studied.contains('3') && !studied.contains(['\u{2068}', '\u{2069}']), "{stats}");
+        // A heatmap day's cards, as Anki's calendar searches them.
+        let today = format!("{} \"prop:rated=0\"", stats["search"].as_str().unwrap());
+        assert_eq!(ok("browse", json!({ "search": today }))["total"], 3, "{stats}");
     }
     let decks = ok("deck_tree", json!({}));
     assert_eq!(decks["decks"][1]["new"], 0);

@@ -21,6 +21,10 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ### Fixed
 
+- **See the day's cards in a deck's statistics.** On a deck's heatmap,
+  the D-pad (or a tap) now picks a day, shows its date and reviews, and A
+  opens that day's cards in the browser, as clicking a day in Anki desktop
+  does. Elsewhere A is greyed out instead of doing nothing.
 - **Undo stays in your study session.** Pressing undo repeatedly no longer
   goes back into a deck you studied earlier, which could open one of its
   cards in the middle of your current deck.

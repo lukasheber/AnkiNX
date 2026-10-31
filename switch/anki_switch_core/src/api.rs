@@ -1026,7 +1026,8 @@ impl State {
     /// `stats {deck_id?}`: what the statistics screen draws, for one deck
     /// (with its subdecks) or the whole collection: today, a 31-day forecast
     /// (overdue cards counted today), reviews per day over 26 weeks, true
-    /// retention, and card counts. From rslib's graph data.
+    /// retention, and card counts. From rslib's graph data, with the search
+    /// it was made from (for a heatmap day's cards, as Anki's calendar).
     fn stats(&mut self, args: &Value) -> ApiResult {
         use anki::services::StatsService;
         let tr = self.tr.clone();
@@ -1044,7 +1045,7 @@ impl State {
         };
         const HEATMAP_DAYS: i32 = 26 * 7;
         let g = col
-            .graphs(anki_proto::stats::GraphsRequest { search, days: HEATMAP_DAYS as u32 })
+            .graphs(anki_proto::stats::GraphsRequest { search: search.clone(), days: HEATMAP_DAYS as u32 })
             .map_err(err)?;
         // Without the bidi isolation marks Fluent puts around numbers.
         let studied_today = without_bidi_isolates(&col.studied_today().map_err(err)?);
@@ -1071,6 +1072,7 @@ impl State {
         };
         let counts = g.card_counts.unwrap_or_default().excluding_inactive.unwrap_or_default();
         Ok(json!({
+            "search": search,
             "studied_today": studied_today,
             "today": {
                 "answers": today.answer_count,

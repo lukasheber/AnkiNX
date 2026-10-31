@@ -68,12 +68,16 @@ StatsView::StatsView()
         switchPanel(1);
         return true;
     });
-    // On Memory Forest's heatmap: the D-pad picks a day, A opens its cards.
+    // On a heatmap (Memory Forest's or the plain one): the D-pad picks a day,
+    // A opens its cards.
     auto arrow = [this](brls::ControllerButton button, int dx, int dy) {
         this->registerAction("", button, [this, dx, dy](brls::View*) {
-            if (current() != Panel::Forest || !forest)
+            if (current() == Panel::Forest && forest)
+                forest->move(dx, dy);
+            else if (current() == Panel::Heatmap)
+                chooseDay(chosenDay + dx * 7 + dy);
+            else
                 return false;
-            forest->move(dx, dy);
             return true;
         }, true, true);
     };
@@ -82,13 +86,15 @@ StatsView::StatsView()
     arrow(brls::BUTTON_UP, 0, -1);
     arrow(brls::BUTTON_DOWN, 0, 1);
     this->registerAction("ankinx/stats/see_cards"_i18n, brls::BUTTON_A, [this](brls::View*) {
-        std::string search = current() == Panel::Forest && forest ? forest->search() : "";
+        std::string search = current() == Panel::Forest && forest ? forest->search()
+                             : current() == Panel::Heatmap        ? daySearch()
+                                                                  : "";
         if (search.empty())
             return false;
         brls::Application::pushActivity(new BrowserActivity(search));
         return true;
     });
-    // Tapping a tab opens it; on Memory Forest's heatmap, a day picks it.
+    // Tapping a tab opens it; on a heatmap, a day picks it.
     this->addGestureRecognizer(new brls::TapGestureRecognizer([this](brls::TapGestureStatus status, brls::Sound*) {
         if (status.state != brls::GestureState::END)
             return;
@@ -97,29 +103,86 @@ StatsView::StatsView()
         {
             if (current() == Panel::Forest && forest)
                 forest->tap(status.position.x, status.position.y);
+            else if (current() == Panel::Heatmap)
+                tapDay(status.position.x, status.position.y);
             return;
         }
         int count = (int)panels.size();
         int tab   = (int)((status.position.x - this->getX()) / (this->getWidth() / count));
         panel     = std::clamp(tab, 0, count - 1);
+        updateHints();
     }));
+    updateHints();
 }
 
 StatsView::~StatsView() = default;
 
-void StatsView::setData(anki::json value) { data = std::move(value); }
+void StatsView::setData(anki::json value)
+{
+    data = std::move(value);
+    updateHints();
+}
 
 void StatsView::setForestHeatmap(ForestHeatmap* heatmap)
 {
     forest.reset(heatmap);
     panels = { Panel::Forest, Panel::Today, Panel::Forecast, Panel::Retention };
     panel  = 0;
+    updateHints();
 }
 
 void StatsView::switchPanel(int delta)
 {
     int count = (int)panels.size();
     panel     = (panel + delta + count) % count;
+    updateHints();
+}
+
+void StatsView::chooseDay(int day)
+{
+    int days  = data.is_object() ? (int)data["heatmap"].size() : 0;
+    chosenDay = std::clamp(day, std::min(0, 1 - days), 0);
+    updateHints();
+}
+
+void StatsView::tapDay(float x, float y)
+{
+    if (heatmapCell <= 0 || x < heatmapLeft || y < heatmapTop)
+        return;
+    int column = (int)((x - heatmapLeft) / heatmapCell), row = (int)((y - heatmapTop) / heatmapCell);
+    int days   = data.is_object() ? (int)data["heatmap"].size() : 0;
+    int index  = column * 7 + row - heatmapFirst;
+    if (row < 7 && index >= 0 && index < days)
+        chooseDay(index - (days - 1));
+}
+
+unsigned StatsView::reviewsOn(int day) const
+{
+    if (!data.is_object())
+        return 0;
+    const anki::json& days = data["heatmap"];
+    int index              = (int)days.size() - 1 + day;
+    return index >= 0 && index < (int)days.size() ? days[index].get<unsigned>() : 0;
+}
+
+// As Anki's calendar: the deck's search and the day's answers, for a day
+// with some.
+std::string StatsView::daySearch() const
+{
+    if (!reviewsOn(chosenDay))
+        return "";
+    std::string search = data.value("search", "");
+    return (search.empty() ? "" : search + " ") + "\"prop:rated=" + std::to_string(chosenDay) + "\"";
+}
+
+// A is greyed out where there are no cards to open (Memory Forest's day
+// comes later, from its thread: there A just does nothing for a day without).
+void StatsView::updateHints()
+{
+    bool available = current() == Panel::Forest ? forest != nullptr
+                     : current() == Panel::Heatmap ? !daySearch().empty()
+                                                   : false;
+    this->setActionAvailable(brls::BUTTON_A, available);
 }
 
 void StatsView::draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style, brls::FrameContext*)
@@ -272,14 +335,20 @@ void StatsView::drawHeatmap(NVGcontext* vg, float x, float y, float width, float
                   total / (double)days.size());
     text(vg, x + width / 2, y, summary, 22, textColor(), NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 
-    // Weeks as columns, weekdays as rows (Sunday on top), today last.
+    // Weeks as columns, weekdays as rows (Sunday on top), today last; the
+    // chosen day outlined, with its date and reviews under it.
     std::time_t now = std::time(nullptr);
     int todayWeekday = std::localtime(&now)->tm_wday;
     int first        = ((todayWeekday - (int)(days.size() - 1)) % 7 + 7) % 7; // weekday of the oldest day
     int columns      = (first + (int)days.size() + 6) / 7;
-    float cell       = std::min((width - 60) / columns, (height - 90) / 7);
+    float cell       = std::min((width - 60) / columns, (height - 130) / 7);
     float gridLeft   = x + (width - cell * columns) / 2;
     float gridTop    = y + 60;
+    heatmapLeft      = gridLeft;
+    heatmapTop       = gridTop;
+    heatmapCell      = cell;
+    heatmapFirst     = first;
+    int chosen       = (int)days.size() - 1 + chosenDay;
     NVGcolor empty   = dark() ? nvgRGB(60, 60, 60) : nvgRGB(225, 225, 225);
     for (size_t i = 0; i < days.size(); i++)
     {
@@ -296,13 +365,19 @@ void StatsView::drawHeatmap(NVGcontext* vg, float x, float y, float width, float
         nvgRoundedRect(vg, cx + 2, cy + 2, cell - 4, cell - 4, 3);
         nvgFillColor(vg, color);
         nvgFill(vg);
-        if (i + 1 == days.size())
+        if ((int)i == chosen)
         {
             nvgStrokeColor(vg, BLUE);
             nvgStrokeWidth(vg, 2);
             nvgStroke(vg);
         }
     }
+    std::time_t day = now + (std::time_t)chosenDay * 86400;
+    char date[32];
+    std::strftime(date, sizeof date, "%Y-%m-%d", std::localtime(&day));
+    std::string tip = (chosenDay == 0 ? t("today") + "  " : "") + date + "   ·   " + t("reviews") + ": " +
+                      std::to_string(reviewsOn(chosenDay));
+    text(vg, x + width / 2, gridTop + 7 * cell + 14, tip, 20, textColor(), NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
 }
 
 void StatsView::drawRetention(NVGcontext* vg, float x, float y, float width, float)
