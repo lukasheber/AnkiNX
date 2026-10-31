@@ -97,6 +97,7 @@
     "advance_on": "Avance automático activado",
     "advance_off": "Avance automático desactivado",
     "advance_show_reminder": "Es hora de mostrar la respuesta",
+    "scheduling_failed": "La planificación personalizada falló en esta tarjeta: se aplican los intervalos de Anki. Los detalles están en el registro.",
     "advance_answer_reminder": "Es hora de responder"
   },
   "overview": {
@@ -143,6 +144,10 @@
     "interval_modifier": "Modificador de intervalo",
     "hard_interval": "Intervalo difícil",
     "new_interval": "Nuevo intervalo",
+    "custom_scheduling": "Planificación personalizada (todos los mazos)",
+    "custom_scheduling_note": "Se configura en las opciones de mazo de Anki para escritorio. AnkiNX ejecuta este JavaScript al estudiar, como Anki.",
+    "custom_scheduling_off_confirm": "¿Desactivar la planificación personalizada? Se borrará el código de tu colección, en todos los mazos y, al sincronizar, en tus otros dispositivos, como hace el botón de restablecer de Anki para escritorio. Para volver a usarlo, pégalo de nuevo en Anki para escritorio.",
+    "custom_scheduling_off": "Desactivar",
     "timer": "Temporizador",
     "show_timer": "Mostrar temporizador de respuesta",
     "stop_timer": "Detener el temporizador al responder",

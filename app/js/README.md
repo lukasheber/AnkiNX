@@ -32,6 +32,7 @@ bash app/test_scripts.sh  # host tests: app/tests/script_test.cpp
 | `serialize.js` | The body as HTML for litehtml, with node serials and control state; a canvas becomes an `<img>` of its SVG |
 | `layout.js` | `getComputedStyle`, `offset*`, `client*`, `getBoundingClientRect` from litehtml's layout (`CardView::measure`) |
 | `jquery.js` | jQuery 3.7.1 (Anki's version) as `$`/`jQuery`, set up on first use |
+| `scheduling.js` | Custom scheduling: Anki's `ts/reviewer/answering.ts` (`anki.mutateNextCardStates`), with protobuf-es 1.10's JSON reading and writing for the scheduling states |
 | `reviewer.js` | Anki's `ts/reviewer/index.ts`: `_showQuestion`, `_showAnswer`, hooks, `pycmd`; the app's entry points (`__ankinx`) |
 
 ## Fixing linkedom

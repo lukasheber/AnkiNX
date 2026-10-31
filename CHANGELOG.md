@@ -10,6 +10,15 @@ build, then commit and tag (`git tag v0.2.0`).
 
 ## Unreleased
 
+### Studying
+
+- **Custom scheduling.** The JavaScript in your deck options (set in Anki
+  desktop under **Advanced › Custom scheduling**) now runs when you study,
+  as it does in Anki and AnkiDroid, so your answer buttons and intervals
+  follow it on the Switch too. **Deck options › Advanced** shows whether
+  your collection has some, and can turn it off (this deletes the code, as
+  the reset button in Anki desktop does).
+
 ### Fixed
 
 - **Undo stays in your study session.** Pressing undo repeatedly no longer

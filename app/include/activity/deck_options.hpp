@@ -13,8 +13,9 @@
 
 // A deck's options (Y on the deck overview), as Anki's deck options screen:
 // daily limits, steps, lapses, burying, audio, timer, auto advance, FSRS or
-// SM-2 values. Changes
-// apply at once to the deck's preset (shared presets say so at the top).
+// SM-2 values, and whether there is custom scheduling (which can be turned
+// off here). Changes apply at once to the deck's preset (shared presets say
+// so at the top).
 class DeckOptionsActivity : public brls::Activity
 {
   public:
@@ -32,7 +33,8 @@ class DeckOptionsActivity : public brls::Activity
     void refresh(const anki::json& options);
     // FSRS shows desired retention; SM-2 shows ease and multipliers.
     void showSchedulerRows();
-    // Send `values` (and/or fsrs) to the backend, then show what was saved.
+    // Send `values` (and/or fsrs, custom_scheduling) to the backend, then show
+    // what was saved.
     void apply(anki::json args);
 
     // Rows.
@@ -52,6 +54,10 @@ class DeckOptionsActivity : public brls::Activity
     std::map<std::string, std::pair<brls::SelectorCell*, std::vector<std::string>>> choices;
     brls::BooleanCell* fsrsCell = nullptr;
     std::vector<brls::View*> fsrsRows, sm2Rows;
+    // Whether the collection has custom scheduling code (written in Anki
+    // desktop; selecting the row offers to delete it).
+    bool customScheduling = false;
+    brls::DetailCell* customSchedulingCell = nullptr;
     bool built = false;
     brls::AppletFrame* frame = nullptr;
     brls::ScrollingFrame* scroller = nullptr;

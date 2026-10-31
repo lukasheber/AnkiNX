@@ -6,6 +6,7 @@ use std::ffi::CStr;
 use std::ffi::CString;
 
 use anki::collection::CollectionBuilder;
+use anki::config::StringKey;
 use anki_switch_core::ankinx_call;
 use anki_switch_core::ankinx_free;
 use serde_json::json;
@@ -105,6 +106,7 @@ fn study_flow() {
     let options = ok("deck_options", json!({ "deck_id": verbs }));
     assert_eq!(options["preset"], "Default");
     assert_eq!(options["fsrs"], false);
+    assert_eq!(options["custom_scheduling"], false);
     let values = &options["values"];
     assert_eq!(values["new_per_day"], 20);
     assert_eq!(values["learn_steps"], "1m 10m");
@@ -167,6 +169,12 @@ fn study_flow() {
     assert_eq!(card["question_av"][0], json!({ "kind": "sound", "file": "hablar.mp3" }));
     assert!(card["answer"].as_str().unwrap().contains("to speak"));
     let first_card = card["card_id"].as_i64().unwrap();
+    // No custom scheduling code; the states it would run on, as Anki's page has them.
+    assert_eq!(card["custom_scheduling"], "");
+    let states = &card["scheduling"]["states"];
+    assert_eq!(states["current"]["customData"], "", "{states}");
+    assert_eq!(states["again"]["normal"]["learning"]["scheduledSecs"], 60, "{states}");
+    assert_eq!(card["scheduling"]["context"]["deckName"], "Spanish::Verbs");
 
     // Memory Forest: no study yet, no tree.
     let look = json!({ "environment": "natural", "landscape": "lake", "landmark": "none",
@@ -486,5 +494,87 @@ fn study_flow() {
     let html = card["question"].as_str().unwrap();
     assert!(html.contains("#ankinx-io\""), "{html}");
     assert!(!html.contains("<canvas"), "{html}");
+    ok("shutdown", json!({}));
+
+    // Custom scheduling, set on a computer (deck options > Advanced): the
+    // code comes with each card, and the card is answered with the states
+    // the app's page hands back, custom data included.
+    let custom = dir.path().join("custom");
+    std::fs::create_dir_all(&custom).unwrap();
+    let code = "states.hard.normal.learning.scheduledSecs = 123 * 60;";
+    {
+        let mut col = CollectionBuilder::new(custom.join("collection.anki2"))
+            .set_media_paths(custom.join("collection.media"), custom.join("collection.mdb"))
+            .build()
+            .unwrap();
+        let deck = col.get_or_create_normal_deck("Scheduled").unwrap();
+        let basic = col.get_notetype_by_name("Basic").unwrap().unwrap();
+        let mut note = basic.new_note();
+        note.set_field(0, "uno").unwrap();
+        note.set_field(1, "one").unwrap();
+        col.add_note(&mut note, deck.id).unwrap();
+        col.set_config_string(StringKey::CardStateCustomizer, code, false).unwrap();
+        col.close(None).unwrap();
+    }
+    ok("init", json!({ "base_dir": custom, "langs": ["en"] }));
+    ok("open", json!({}));
+    let scheduled = deck_id(&ok("deck_tree", json!({})), "Scheduled");
+    assert_eq!(ok("deck_options", json!({ "deck_id": scheduled }))["custom_scheduling"], true);
+    ok("select_deck", json!({ "deck_id": scheduled }));
+    let card = ok("next_card", json!({}));
+    assert_eq!(card["custom_scheduling"], code);
+    let context = &card["scheduling"]["context"];
+    assert_eq!(context["deckName"], "Scheduled");
+    assert!(context["seed"].as_str().is_some_and(|s| s.parse::<u64>().is_ok()), "{context}");
+    let cid = card["card_id"].clone();
+    // Good, with custom data for it (as packCustomData leaves it).
+    let mut states = card["scheduling"]["states"].clone();
+    states["good"]["customData"] = json!(r#"{"n":1}"#);
+    let set = ok("set_scheduling_states", json!({ "card_id": cid, "states": states }));
+    assert_eq!(set["buttons"], card["buttons"], "unchanged intervals, same labels");
+    ok("answer", json!({ "ease": 3 }));
+    // Due again within the learn-ahead time: the same card, with that data.
+    let card = ok("next_card", json!({}));
+    assert_eq!(card["card_id"], cid);
+    let mut states = card["scheduling"]["states"].clone();
+    assert_eq!(states["current"]["customData"], r#"{"n":1}"#);
+    assert_eq!(error_kind("set_scheduling_states", json!({ "card_id": 1, "states": states })), "no_card");
+    let bogus = json!({ "card_id": cid, "states": { "hard": { "normal": { "learning": { "scheduledSecs": -5 } } } } });
+    assert_eq!(error_kind("set_scheduling_states", bogus), "args");
+    // Custom data over Anki's limit: answering with it fails, as in Anki.
+    states["easy"]["customData"] = json!(format!(r#"{{"x":"{}"}}"#, "y".repeat(100)));
+    ok("set_scheduling_states", json!({ "card_id": cid, "states": states }));
+    assert_eq!(error_kind("answer", json!({ "ease": 4 })), "backend");
+    // Answered without the code having run: the card keeps its custom data.
+    ok("next_card", json!({}));
+    ok("answer", json!({ "ease": 1 }));
+    let card = ok("next_card", json!({}));
+    assert_eq!(card["card_id"], cid);
+    let mut states = card["scheduling"]["states"].clone();
+    assert_eq!(states["current"]["customData"], r#"{"n":1}"#);
+    // What the code does to Hard: a 123-minute step, its label, its due time.
+    states["hard"]["normal"]["learning"]["scheduledSecs"] = json!(123 * 60);
+    let set = ok("set_scheduling_states", json!({ "card_id": cid, "states": states }));
+    let hard = set["buttons"][1].as_str().unwrap();
+    assert!(hard != card["buttons"][1] && hard.contains('h'), "{set}");
+    ok("answer", json!({ "ease": 2 }));
+    let done = ok("next_card", json!({}));
+    assert_eq!(done["done"], true);
+    // Due in 123 minutes (plus Anki's learning fuzz, up to 5), shown from
+    // when it comes within the learn-ahead limit (20 minutes).
+    let wait = done["congrats"]["secs_until_next_learn"].as_i64().unwrap();
+    assert!(((123 - 20) * 60..=(123 + 5 - 20) * 60).contains(&wait), "{done}");
+    // Turned off from deck options: FSRS doesn't do it (as in Anki), and the
+    // code can only be removed here (undoably), not written.
+    ok("set_deck_options", json!({ "deck_id": scheduled, "fsrs": true }));
+    assert_eq!(ok("deck_options", json!({ "deck_id": scheduled }))["custom_scheduling"], true);
+    let on = json!({ "deck_id": scheduled, "custom_scheduling": true });
+    assert_eq!(error_kind("set_deck_options", on), "args");
+    ok("set_deck_options", json!({ "deck_id": scheduled, "custom_scheduling": false }));
+    let options = ok("deck_options", json!({ "deck_id": scheduled }));
+    assert_eq!((&options["custom_scheduling"], &options["fsrs"]), (&json!(false), &json!(true)));
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+    assert_eq!(ok("deck_options", json!({ "deck_id": scheduled }))["custom_scheduling"], true);
+    ok("set_deck_options", json!({ "deck_id": scheduled, "custom_scheduling": false }));
     ok("shutdown", json!({}));
 }

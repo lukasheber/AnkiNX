@@ -64,7 +64,7 @@ computer and the other way round.
   <tr>
     <td valign="top">
       <h3>🧠 Anki's scheduler</h3>
-      The same answer buttons and intervals as Anki, with undo and redo, flags, marks, burying, suspending, due dates, card info and leech handling.
+      The same answer buttons and intervals as Anki, your custom scheduling code included, with undo and redo, flags, marks, burying, suspending, due dates, card info and leech handling.
     </td>
     <td valign="top">
       <h3>🛟 Safe and up to date</h3>

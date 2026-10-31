@@ -268,6 +268,22 @@ NATIVE(nScrollTo)
     return JS_UNDEFINED;
 }
 
+// The shown card's scheduling states and context (JSON), or null.
+NATIVE(nSchedulingStates)
+{
+    auto& s          = self(ctx);
+    std::string json = s.host.schedulingStates ? s.host.schedulingStates() : std::string();
+    return json.empty() ? JS_NULL : JS_NewStringLen(ctx, json.data(), json.size());
+}
+
+NATIVE(nSetSchedulingStates)
+{
+    auto& s = self(ctx);
+    if (s.host.setSchedulingStates)
+        s.host.setSchedulingStates(argStr(ctx, argc, argv, 0), argStr(ctx, argc, argv, 1));
+    return JS_UNDEFINED;
+}
+
 int interrupt(JSRuntime*, void* opaque)
 {
     return Clock::now() > ((CardScript::Native*)opaque)->deadline ? 1 : 0;
@@ -347,6 +363,7 @@ CardScript::CardScript(const std::string& runtime, std::string mediaDir, Host ho
         { "readMediaBytes", nReadMediaBytes, 1 }, { "storage", nStorage, 4 },
         { "command", nCommand, 1 },   { "measure", nMeasure, 3 },
         { "viewport", nViewport, 0 }, { "scrollTo", nScrollTo, 1 },
+        { "schedulingStates", nSchedulingStates, 0 }, { "setSchedulingStates", nSetSchedulingStates, 2 },
     };
     for (const auto& f : functions)
         JS_SetPropertyStr(s.ctx, bridge, f.name, JS_NewCFunction(s.ctx, f.fn, f.name, f.length));
@@ -440,6 +457,35 @@ void CardScript::show(bool answer, const std::string& html, const std::string& b
               { JS_NewBool(s.ctx, answer), JS_NewStringLen(s.ctx, html.data(), html.size()), JS_NewString(s.ctx, ""),
                 JS_NewStringLen(s.ctx, bodyClass.data(), bodyClass.size()) });
     settle();
+}
+
+void CardScript::place(const std::string& html, const std::string& bodyClass)
+{
+    Native& s = *native;
+    begin(s);
+    callEntry(s, "place",
+              { JS_NewStringLen(s.ctx, html.data(), html.size()), JS_NewStringLen(s.ctx, bodyClass.data(), bodyClass.size()) });
+    settle();
+}
+
+bool CardScript::mutateStates(const std::string& key, const std::string& code)
+{
+    Native& s = *native;
+    begin(s);
+    // RUN_STATE_MUTATION in Anki's qt/aqt/reviewer.py: the code on lines of its
+    // own, so a comment on its last line doesn't swallow what follows.
+    std::string run = "anki.mutateNextCardStates('" + key + "', async (states, customData, ctx) => {\n" + code +
+                      "\n}).finally(() => bridgeCommand('statesMutated'));";
+    JSValue r    = JS_Eval(s.ctx, run.c_str(), run.size(), "custom scheduling", JS_EVAL_TYPE_GLOBAL);
+    bool started = !JS_IsException(r);
+    if (!started)
+    {
+        s.error = exceptionText(s.ctx);
+        log(2, "custom scheduling: " + s.error);
+    }
+    JS_FreeValue(s.ctx, r);
+    settle();
+    return started;
 }
 
 std::string CardScript::serialize()

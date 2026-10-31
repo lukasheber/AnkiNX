@@ -14,6 +14,7 @@ import { document, setReadyState } from "./dom.js";
 import { activity, clearListeners, dispatchEvent, Event, InputEvent, KeyboardEvent, MouseEvent, PointerEvent, Touch, TouchEvent, touchList } from "./events.js";
 import { autofocus, focusFromPointer, formOwner, inputType } from "./forms.js";
 import { domVersion } from "./layout.js";
+import { mutateNextCardStates } from "./scheduling.js";
 import { extraCss, nodeBySerial, serialOf, serializeBody } from "./serialize.js";
 import { nextTimer, runTimers } from "./timers.js";
 
@@ -198,10 +199,11 @@ function bridgeCommand(cmd, callback) {
     return pycmd(cmd, callback);
 }
 
-// Anki's own image occlusion is drawn by the app (CardView); templates still
-// call these. MathJax is typeset before scripts run.
+// Custom scheduling as in Anki (scheduling.js). Anki's own image occlusion is
+// drawn by the app (CardView); templates still call these. MathJax is typeset
+// before scripts run.
 const anki = globalThis.anki || {};
-anki.mutateNextCardStates = async () => {};
+anki.mutateNextCardStates = mutateNextCardStates;
 anki.imageOcclusion = { setup() {}, drawShape() {} };
 anki.setupImageCloze = anki.imageOcclusion.setup; // deprecated
 const MathJax = {
@@ -252,6 +254,14 @@ function show(answer, html, otherSide, bodyClass) {
     setReadyState("loading");
     if (answer) _showAnswer(html, bodyClass);
     else _showQuestion(html, otherSide, bodyClass);
+}
+
+// A side put in #qa as it is, nothing in it run (as markup set with
+// innerHTML): the page the collection's custom scheduling code runs on,
+// where it may read the question.
+function place(html, bodyClass) {
+    document.body.className = bodyClass;
+    document.getElementById("qa").innerHTML = html;
 }
 
 function bodyClass() {
@@ -340,6 +350,6 @@ function key(type, keyName, code, keyCode) {
 }
 
 Object.defineProperty(globalThis, "__ankinx", {
-    value: { show, html: serializeBody, bodyClass, extraCss, tap, typed, key, nextTimer, runTimers },
+    value: { show, place, html: serializeBody, bodyClass, extraCss, tap, typed, key, nextTimer, runTimers },
     enumerable: false,
 });

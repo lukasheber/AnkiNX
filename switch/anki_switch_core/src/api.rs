@@ -3,7 +3,8 @@
 //! The frontend sends `(command, json args)` and gets back `{"ok": ...}` or
 //! `{"error": "...", "kind": "..."}`. This layer owns the [Collection] and
 //! mirrors what Anki's own backend does (backend/sync.rs, the reviewer), so the
-//! C++ side never handles protobuf, scheduling states or sync details.
+//! C++ side never handles protobuf or sync details. Scheduling states reach it
+//! only as JSON, for the collection's custom scheduling code (scheduling.rs).
 
 use std::io::Write;
 use std::path::Path;
@@ -14,6 +15,7 @@ use std::time::Instant;
 
 use anki::card_rendering::extract_av_tags;
 use anki::collection::CollectionBuilder;
+use anki::config::StringKey;
 use anki::decks::tree::DeckCollapseScope;
 use anki::error::SyncErrorKind;
 use anki::prelude::*;
@@ -78,7 +80,11 @@ impl SavedLogin {
 /// The card currently on screen, and what answering it will do.
 struct Shown {
     card_id: CardId,
+    /// As Anki worked them out, or as the collection's custom scheduling
+    /// code left them (`set_scheduling_states`).
     states: SchedulingStates,
+    /// Each answer's custom data from the custom scheduling code.
+    custom_data: crate::scheduling::CustomData,
     shown_at: Instant,
     /// Set when the card asks for a typed answer ({{type:Field}}).
     typing: Option<Typing>,
@@ -374,6 +380,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "custom_study_defaults" => state.custom_study_defaults(&args),
         "custom_study" => state.custom_study(&args),
         "next_card" => state.next_card(&args),
+        "set_scheduling_states" => state.set_scheduling_states(&args),
         "answer" => state.answer(&args),
         "type_answer" => state.type_answer(&args),
         "undo" => state.undo(),
@@ -882,7 +889,8 @@ impl State {
 
     /// `deck_options {deck_id}`: the deck's preset, as Anki's deck options
     /// screen shows it (its commonly changed part): preset name, how many
-    /// decks use it, whether FSRS is on (collection-wide), and the values.
+    /// decks use it, whether FSRS is on and whether there is custom
+    /// scheduling code (both collection-wide), and the values.
     fn deck_options(&mut self, args: &Value) -> ApiResult {
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
@@ -893,13 +901,17 @@ impl State {
             "preset": config.name,
             "deck_count": use_count,
             "fsrs": info.fsrs,
+            "custom_scheduling": !info.card_state_customizer.is_empty(),
             "values": deck_option_values(&inner),
         }))
     }
 
-    /// `set_deck_options {deck_id, values?, fsrs?}`: change some values of the
-    /// deck's preset (the keys `deck_options` returns) and/or turn FSRS on or
-    /// off, through Anki's own update (undoable, FSRS memory states updated).
+    /// `set_deck_options {deck_id, values?, fsrs?, custom_scheduling?}`:
+    /// change some values of the deck's preset (the keys `deck_options`
+    /// returns), turn FSRS on or off and/or turn custom scheduling off
+    /// (`false` deletes the code, as the reset button in Anki's deck options
+    /// does; it is written in Anki desktop, so it can't be turned on here),
+    /// through Anki's own update (undoable, FSRS memory states updated).
     fn set_deck_options(&mut self, args: &Value) -> ApiResult {
         use anki::deckconfig::UpdateDeckConfigsRequest;
         use anki_proto::deck_config::UpdateDeckConfigsMode;
@@ -916,13 +928,18 @@ impl State {
             }
         }
         let fsrs = args.get("fsrs").and_then(Value::as_bool).unwrap_or(info.fsrs);
+        let card_state_customizer = match args.get("custom_scheduling") {
+            None => info.card_state_customizer.clone(),
+            Some(Value::Bool(false)) => String::new(),
+            Some(_) => return Err(ApiError::new("args", "custom scheduling can only be turned off")),
+        };
         let current = info.current_deck.clone().unwrap_or_default();
         col.update_deck_configs(UpdateDeckConfigsRequest {
             target_deck_id: did,
             configs: vec![config],
             removed_config_ids: vec![],
             mode: UpdateDeckConfigsMode::Normal,
-            card_state_customizer: info.card_state_customizer.clone(),
+            card_state_customizer,
             limits: current.limits.unwrap_or_default(),
             new_cards_ignore_review_limit: info.new_cards_ignore_review_limit,
             apply_all_parent_limits: info.apply_all_parent_limits,
@@ -1281,6 +1298,13 @@ impl State {
             .iter()
             .map(|label| without_bidi_isolates(label))
             .collect();
+        // Custom scheduling (scheduling.rs): the collection's code, and the
+        // states and context it runs on, as Anki's reviewer page gets them.
+        let custom_scheduling = col.get_config_string(StringKey::CardStateCustomizer);
+        let scheduling = json!({
+            "states": crate::scheduling::states_json(&card.states, &proto_card.custom_data),
+            "context": crate::scheduling::context_json(&card.context),
+        });
 
         let mut body_class = format!("card card{}", ord + 1);
         if night {
@@ -1291,6 +1315,7 @@ impl State {
         self.shown = Some(Shown {
             card_id,
             states: card.states,
+            custom_data: Default::default(),
             shown_at: Instant::now(),
             typing,
             answer,
@@ -1326,6 +1351,11 @@ impl State {
             "answer_av": av_json(&a_av),
             // Interval labels for Again, Hard, Good, Easy.
             "buttons": buttons,
+            // Deck options > Advanced > Custom scheduling (JavaScript, for
+            // every deck), or "". The app's page runs it on `scheduling`
+            // and hands the result to `set_scheduling_states`.
+            "custom_scheduling": custom_scheduling,
+            "scheduling": scheduling,
         }))
     }
 
@@ -1348,13 +1378,41 @@ impl State {
         Ok(json!({ "answer": html? }))
     }
 
+    /// `set_scheduling_states {card_id, states}`: the shown card's states as
+    /// the collection's custom scheduling code left them (next_card's
+    /// "scheduling" states, changed by the app's page; see scheduling.rs).
+    /// Answering uses them, with each answer's custom data, as in Anki's
+    /// reviewer (set_scheduling_states). Returns the buttons' new labels.
+    fn set_scheduling_states(&mut self, args: &Value) -> ApiResult {
+        let card_id = CardId(i64_arg(args, "card_id")?);
+        let (states, custom_data) =
+            crate::scheduling::read_states(args.get("states").unwrap_or(&Value::Null))
+                .map_err(|e| ApiError::new("args", e))?;
+        if self.shown.as_ref().map(|shown| shown.card_id) != Some(card_id) {
+            return Err(ApiError::new("no_card", "the card is no longer shown"));
+        }
+        let tr = self.tr.clone();
+        let buttons: Vec<String> = self
+            .col()?
+            .describe_next_states(&states)
+            .map_err(|e| ApiError::anki(e, &tr))?
+            .iter()
+            .map(|label| without_bidi_isolates(label))
+            .collect();
+        if let Some(shown) = self.shown.as_mut() {
+            shown.states = states;
+            shown.custom_data = custom_data;
+        }
+        Ok(json!({ "buttons": buttons }))
+    }
+
     /// `answer {ease: 1..4}` for the card returned by the last `next_card`.
     fn answer(&mut self, args: &Value) -> ApiResult {
-        let rating = match i64_arg(args, "ease")? {
-            1 => Rating::Again,
-            2 => Rating::Hard,
-            3 => Rating::Good,
-            4 => Rating::Easy,
+        let (rating, button) = match i64_arg(args, "ease")? {
+            1 => (Rating::Again, 0),
+            2 => (Rating::Hard, 1),
+            3 => (Rating::Good, 2),
+            4 => (Rating::Easy, 3),
             other => return Err(ApiError::new("args", format!("invalid ease {other}"))),
         };
         let shown = self
@@ -1375,7 +1433,8 @@ impl State {
             rating,
             answered_at: TimestampMillis::now(),
             milliseconds_taken: shown.shown_at.elapsed().as_millis().min(u32::MAX as u128) as u32,
-            custom_data: None,
+            // Set by custom scheduling code; None keeps the card's.
+            custom_data: shown.custom_data[button].clone(),
             from_queue: true,
         };
         let tr = self.tr.clone();

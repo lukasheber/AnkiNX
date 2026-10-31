@@ -97,6 +97,7 @@
     "advance_on": "Auto advance on",
     "advance_off": "Auto advance off",
     "advance_show_reminder": "Time to show the answer",
+    "scheduling_failed": "Custom scheduling failed on this card, so Anki's own intervals apply. The log has the details.",
     "advance_answer_reminder": "Time to answer"
   },
   "overview": {
@@ -143,6 +144,10 @@
     "interval_modifier": "Interval modifier",
     "hard_interval": "Hard interval",
     "new_interval": "New interval",
+    "custom_scheduling": "Custom scheduling (all decks)",
+    "custom_scheduling_note": "Set in Anki desktop's deck options. AnkiNX runs this JavaScript when you study, as Anki does.",
+    "custom_scheduling_off_confirm": "Turn off custom scheduling? This deletes the code from your collection, for every deck and, after you sync, on your other devices, as the reset button in Anki desktop does. To use it again, paste it back in Anki desktop.",
+    "custom_scheduling_off": "Turn off",
     "timer": "Timer",
     "show_timer": "Show answer timer",
     "stop_timer": "Stop timer on answer",

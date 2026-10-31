@@ -466,6 +466,7 @@ void ReviewerActivity::showQuestion()
         playAudio(card["question_av"]);
     startTimer();
     scheduleAdvance();
+    runCustomScheduling();
 }
 
 // Flag and mark of the shown card, in the header and as the flag bar.
@@ -781,6 +782,15 @@ std::unique_ptr<CardScript> ReviewerActivity::makeScript()
         return CardScript::Viewport { cardView->cssWidth(), cardView->cssHeight(), cardView->cssScroll(), cardView->pixelRatio() };
     };
     host.scrollTo = [this](float y) { cardView->scrollToCss(y); };
+    // Custom scheduling: the shown card's states, and those its code hands back.
+    host.schedulingStates = [this] {
+        auto it = card.find("scheduling");
+        return it != card.end() && it->is_object() ? it->dump() : std::string();
+    };
+    host.setSchedulingStates = [this](const std::string& key, const std::string& states) {
+        if (!schedulingDone && key == schedulingKey)
+            mutatedStates = states;
+    };
     auto start = std::chrono::steady_clock::now();
     auto page  = std::make_unique<CardScript>(runtime, mediaDir, std::move(host));
     auto ms    = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
@@ -882,6 +892,96 @@ void ReviewerActivity::scheduleTimers()
     });
 }
 
+// Custom scheduling (deck options > Advanced > Custom scheduling, for every
+// deck), as Anki's reviewer runs it when a question is shown: the
+// collection's code adjusts what each answer button does, and the card is
+// answered with what it left. It runs on a page of its own with the question
+// put on it as it is: the code can read the question, none of the card's own
+// scripts run there, and what the code changes on the page isn't drawn.
+void ReviewerActivity::runCustomScheduling()
+{
+    mutatedStates.clear();
+    answerWaiting  = false;
+    schedulingDone = true;
+    std::string code = card.value("custom_scheduling", "");
+    if (code.empty())
+        return;
+    if (!schedulingPage)
+        schedulingPage = makeScript();
+    // New for each card (as Anki's random key, which is per session): states a
+    // late run for an earlier card hands back are ignored.
+    schedulingKey   = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    schedulingDone  = false;
+    schedulingStart = std::chrono::steady_clock::now();
+    schedulingPage->place(questionBody(), card.value("body_class", "card"));
+    if (!schedulingPage->mutateStates(schedulingKey, code))
+        return finishCustomScheduling();
+    afterCustomScheduling();
+}
+
+// After the custom scheduling code ran, or a timer on its page: done once the
+// code has finished ("statesMutated") or handed states back, or when nothing
+// will run on its page any more; else at its next timer.
+void ReviewerActivity::afterCustomScheduling()
+{
+    bool settled = !mutatedStates.empty();
+    for (const std::string& command : schedulingPage->takeCommands()) // the page is never shown: the rest go
+        settled = settled || command == "statesMutated";
+    if (schedulingDone)
+        return;
+    int ms = settled ? -1 : schedulingPage->nextTimer();
+    if (ms < 0)
+        return finishCustomScheduling();
+    brls::delay(ms, [this, token = alive, key = schedulingKey] {
+        if (!*token || schedulingDone || key != schedulingKey)
+            return;
+        schedulingPage->runTimers();
+        afterCustomScheduling();
+    });
+}
+
+// The custom scheduling code has finished: answering uses the states it
+// handed back, and the answer buttons show their intervals.
+void ReviewerActivity::finishCustomScheduling()
+{
+    if (schedulingDone)
+        return;
+    schedulingDone = true;
+    if (state != State::Question) // the card has gone meanwhile
+        return;
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - schedulingStart)
+                  .count();
+    anki::json states = anki::json::parse(mutatedStates, nullptr, false);
+    bool applied      = false;
+    if (states.is_object())
+    {
+        try
+        {
+            anki::json result = anki::call("set_scheduling_states", { { "card_id", card["card_id"] }, { "states", states } });
+            card["buttons"]   = result["buttons"];
+            // What the card's own scripts get from now on, as in Anki.
+            card["scheduling"]["states"] = states;
+            applied                      = true;
+            CardScript::log(0, "custom scheduling ran in " + std::to_string(ms) + " ms");
+        }
+        catch (const anki::Error& e)
+        {
+            CardScript::log(2, std::string("custom scheduling: ") + e.what());
+        }
+    }
+    // The code's own errors are in the log already.
+    if (!applied && !schedulingWarned)
+    {
+        schedulingWarned = true;
+        brls::Application::notify("ankinx/review/scheduling_failed"_i18n);
+    }
+    if (answerWaiting)
+    {
+        answerWaiting = false;
+        showAnswer();
+    }
+}
+
 // The question, with the answer box (type-answer cards) showing what was typed.
 std::string ReviewerActivity::questionBody() const
 {
@@ -914,6 +1014,21 @@ void ReviewerActivity::showAnswer()
 {
     if (state != State::Question)
         return;
+    // As Anki, the answer waits for the custom scheduling code (code that
+    // waits for a timer); here for 3 seconds at most, then without it.
+    if (!schedulingDone)
+    {
+        if (answerWaiting)
+            return;
+        answerWaiting = true;
+        brls::delay(3000, [this, token = alive, key = schedulingKey] {
+            if (!*token || schedulingDone || key != schedulingKey)
+                return;
+            CardScript::log(1, "custom scheduling still running after 3 s: answering without it");
+            finishCustomScheduling();
+        });
+        return;
+    }
     state     = State::Answer;
     shownBody = card["answer"].get<std::string>();
     if (card.value("type_answer", false) && !typed.empty())

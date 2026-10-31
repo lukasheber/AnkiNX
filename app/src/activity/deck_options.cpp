@@ -162,6 +162,30 @@ void DeckOptionsActivity::fill(const anki::json& options)
         number(t(key), key, true);
         sm2Rows.push_back(list->getChildren().back());
     }
+    // Custom scheduling: JavaScript for every deck, written in Anki desktop
+    // (AnkiNX runs it when studying); here whether there is some, and a way
+    // to delete it, as the reset button in Anki's deck options. FSRS leaves
+    // it alone, as in Anki.
+    customScheduling     = options.value("custom_scheduling", false);
+    customSchedulingCell = new brls::DetailCell();
+    customSchedulingCell->setText(t("custom_scheduling"));
+    customSchedulingCell->setDetailText(customScheduling ? "hints/on"_i18n : "hints/off"_i18n);
+    customSchedulingCell->registerClickAction([this](brls::View*) {
+        if (!customScheduling)
+        {
+            brls::Application::notify(t("custom_scheduling_note"));
+            return true;
+        }
+        auto* dialog = new brls::Dialog(t("custom_scheduling_off_confirm"));
+        dialog->addButton("hints/cancel"_i18n, [] {});
+        dialog->addButton(t("custom_scheduling_off"), [this, token = alive] {
+            if (*token)
+                apply({ { "custom_scheduling", false } });
+        });
+        dialog->open();
+        return true;
+    });
+    list->addView(customSchedulingCell);
     showSchedulerRows();
     // The list arrives after the screen did: focus its first row.
     if (brls::Application::getActivitiesStack().back() == this)
@@ -253,6 +277,8 @@ void DeckOptionsActivity::refresh(const anki::json& options)
             if (values.value(key, "") == choice.second[i])
                 choice.first->setSelection((int)i, true);
     fsrsCell->setOn(fsrs, false);
+    customScheduling = options.value("custom_scheduling", false);
+    customSchedulingCell->setDetailText(customScheduling ? "hints/on"_i18n : "hints/off"_i18n);
     showSchedulerRows();
 }
 

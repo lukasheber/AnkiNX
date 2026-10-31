@@ -559,6 +559,168 @@ void timing()
     }
 }
 
+// Scheduling states as the backend sends them (anki_switch_core/src/scheduling.rs):
+// Anki's own test input (ts/reviewer/lib.test.ts), keys in another order.
+const char* REVIEW_STATES = R"({"context": {"deckName": "hello", "seed": "123"}, "states": {
+  "easy": {"normal": {"review": {"scheduledDays": 6, "elapsedDays": 0, "easeFactor": 2, "lapses": 4, "leeched": false}}},
+  "current": {"customData": "{\"v\":\"v3.20.0\",\"seed\":2104}",
+              "normal": {"review": {"elapsedDays": 2, "scheduledDays": 1, "easeFactor": 1.850000023841858, "lapses": 4, "leeched": false}}},
+  "again": {"normal": {"relearning": {"learning": {"remainingSteps": 1, "scheduledSecs": 600},
+            "review": {"scheduledDays": 1, "elapsedDays": 0, "easeFactor": 1.649999976158142, "lapses": 5, "leeched": false}}}},
+  "hard": {"normal": {"review": {"scheduledDays": 2, "elapsedDays": 0, "easeFactor": 1.7000000476837158, "lapses": 4, "leeched": false}}},
+  "good": {"normal": {"review": {"scheduledDays": 4, "elapsedDays": 0, "easeFactor": 1.850000023841858, "lapses": 4, "leeched": false}}}}})";
+
+// What a transform that changes nothing hands back: protobuf's field order,
+// zero values written out, and current's custom data in each answer's.
+const char* REVIEW_UNCHANGED =
+    R"({"current":{"normal":{"review":{"scheduledDays":1,"elapsedDays":2,"easeFactor":1.850000023841858,"lapses":4,"leeched":false}},)"
+    R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
+    R"("again":{"normal":{"relearning":{"review":{"scheduledDays":1,"elapsedDays":0,"easeFactor":1.649999976158142,"lapses":5,"leeched":false},)"
+    R"("learning":{"remainingSteps":1,"scheduledSecs":600,"elapsedSecs":0}}},"customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
+    R"("hard":{"normal":{"review":{"scheduledDays":2,"elapsedDays":0,"easeFactor":1.7000000476837158,"lapses":4,"leeched":false}},)"
+    R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
+    R"("good":{"normal":{"review":{"scheduledDays":4,"elapsedDays":0,"easeFactor":1.850000023841858,"lapses":4,"leeched":false}},)"
+    R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
+    R"("easy":{"normal":{"review":{"scheduledDays":6,"elapsedDays":0,"easeFactor":2,"lapses":4,"leeched":false}},)"
+    R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"}})";
+
+// A new card's: learning steps, Easy graduating it.
+const char* NEW_STATES = R"({"context": {"deckName": "Spanish::Verbs", "seed": "18446744073709551615", "desiredRetention": 0.8999999761581421},
+  "states": {"current": {"normal": {"new": {"position": 3}}, "customData": ""},
+  "again": {"normal": {"learning": {"remainingSteps": 2, "scheduledSecs": 60, "elapsedSecs": 0}}},
+  "hard": {"normal": {"learning": {"remainingSteps": 2, "scheduledSecs": 330, "elapsedSecs": 0}}},
+  "good": {"normal": {"learning": {"remainingSteps": 1, "scheduledSecs": 600, "elapsedSecs": 0}}},
+  "easy": {"normal": {"review": {"scheduledDays": 4, "elapsedDays": 0, "easeFactor": 2.5, "lapses": 0, "leeched": false}}}}})";
+
+// The example in Anki's manual (Deck Options > Advanced > Custom scheduling).
+const char* MANUAL_EXAMPLE = R"(// print the existing states
+console.log(JSON.stringify(states, null, 4));
+
+// load the debugger if the web inspector is open
+debugger;
+
+// if the hard button is a learning step, make it
+// a 123 minute delay
+if (states.hard.normal?.learning) {
+    states.hard.normal.learning.scheduledSecs = 123 * 60;
+}
+
+// apply the same change in a rescheduling filtered deck
+if (states.hard.filtered?.rescheduling?.originalState?.learning) {
+    states.hard.filtered.rescheduling.originalState.learning.scheduledSecs = 123 * 60;
+}
+
+// increase ease factor by 0.2 when Easy used on a review
+if (states.good.normal?.review) {
+    states.easy.normal.review.easeFactor = states.good.normal.review.easeFactor + 0.2;
+}
+// a comment on the last line)";
+
+// Custom scheduling (scheduling.js): Anki's mutateNextCardStates on the
+// states the reviewer gives, as Anki's reviewer runs the collection's code.
+void scheduling()
+{
+    std::string states = REVIEW_STATES, handedKey, handed;
+    CardScript::Host host;
+    host.schedulingStates    = [&] { return states; };
+    host.setSchedulingStates = [&](const std::string& key, const std::string& json) {
+        handedKey = key;
+        handed    = json;
+    };
+    CardScript s(runtime, media, host);
+    // The code as the reviewer runs it: true if it started and said it finished.
+    auto run = [&](const std::string& code) {
+        handed.clear();
+        handedKey.clear();
+        logged.clear();
+        bool started  = s.mutateStates("k42", code);
+        bool finished = false;
+        for (const auto& c : s.takeCommands())
+            finished = finished || c == "statesMutated";
+        return started && finished;
+    };
+
+    check(run("") && handedKey == "k42" && handed == REVIEW_UNCHANGED,
+          "states handed back with the key, as protobuf-es writes them; custom data in each answer", handed);
+    check(run("customData.easy = { foo: 'hello world' };") &&
+              has(handed, R"("easeFactor":2,"lapses":4,"leeched":false}},"customData":"{\"foo\":\"hello world\"}"})") &&
+              has(handed, R"("hard":{"normal":{"review":{"scheduledDays":2,"elapsedDays":0,"easeFactor":1.7000000476837158,"lapses":4,"leeched":false}},"customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"})"),
+          "custom data changed for one answer", handed);
+    check(run("states.good.normal.review.scheduledDays = 10;") &&
+              has(handed, R"("good":{"normal":{"review":{"scheduledDays":10,)"),
+          "an interval changed", handed);
+    check(run("if (customData.easy.seed === 2104 && ctx.deckName === 'hello' &&"
+              "    states.again.normal.relearning.learning.remainingSteps === 1)"
+              "  states.again.normal = { review: states.again.normal.relearning.review };") &&
+              has(handed, R"("again":{"normal":{"review":{"scheduledDays":1,"elapsedDays":0,"easeFactor":1.649999976158142,"lapses":5,)"),
+          "the code reads states, custom data and context; a state's kind changed", handed);
+    check(run(MANUAL_EXAMPLE) && has(handed, R"("easy":{"normal":{"review":{"scheduledDays":6,"elapsedDays":0,"easeFactor":2.05)") &&
+              has(logged, "\"easeFactor\": 1.850000023841858"),
+          "the manual's example on a review card (and its console output)", handed + "\n" + logged);
+
+    // What protobuf-es reads, and what it refuses (the states then stay).
+    check(run("states.good.normal.review = { scheduled_days: '3', easeFactor: 'NaN', memoryState: null };") &&
+              has(handed, R"("good":{"normal":{"review":{"scheduledDays":3,"elapsedDays":0,"easeFactor":"NaN","lapses":0,"leeched":false}},)"),
+          "proto names, numbers as strings, NaN, null for an unset message", handed);
+    for (const char* refused : {
+             "states.good.normal.review.scheduledDays = 1.5;",
+             "states.good.normal.review.scheduledDays = -1;",
+             "states.good.normal.review.scheduledDays = undefined;",
+             "states.good.normal.review.scheduledDays = NaN;",
+             "states.good.normal.review.scheduledDays = ' 4';",
+             "states.good.normal.review.leeched = 0;",
+             "states.good.normal.review.easeFactor = 1e39;",
+             "states.good.normal.review.memoryState = undefined;",
+             "states.good.normal.learning = {};",
+             "states.good.normal = null;",
+             "states.good.bogus = 1;",
+             "delete states.again;",
+             "customData.good = 1n;",
+             "throw new Error('boom');",
+         })
+        check(run(refused) && handed.empty() && has(logged, "custom scheduling: "),
+              (std::string("refused, states unchanged: ") + refused).c_str(), handed + logged);
+    check(!run("states.good = {") && handed.empty(), "a syntax error: the code doesn't start");
+
+    // The context as a protobuf-es message has it.
+    states = NEW_STATES;
+    check(run("console.log([ctx.deckName, typeof ctx.seed, ctx.seed === 18446744073709551615n, ctx.decay,"
+              "             ctx.desiredRetention, JSON.stringify(ctx)].join('|'));") &&
+              has(logged, R"(Spanish::Verbs|bigint|true||0.8999999761581421|{"deckName":"Spanish::Verbs","seed":"18446744073709551615","desiredRetention":0.8999999761581421})"),
+          "context: deck name, seed as a BigInt, desired retention, JSON", logged);
+    check(run(MANUAL_EXAMPLE) &&
+              has(handed, R"("hard":{"normal":{"learning":{"remainingSteps":2,"scheduledSecs":7380,"elapsedSecs":0}},"customData":"{}"})") &&
+              has(handed, R"("easy":{"normal":{"review":{"scheduledDays":4,"elapsedDays":0,"easeFactor":2.5,)"),
+          "the manual's example on a new card: Hard becomes a 123-minute step", handed);
+
+    // Code that waits: the states come when it is done.
+    check(!run("await new Promise(r => setTimeout(r, 50)); states.good.normal.learning.scheduledSecs = 900;") && handed.empty(),
+          "code waiting for a timer hasn't handed states back yet");
+    runFor(s, 300);
+    bool finished = false;
+    for (const auto& c : s.takeCommands())
+        finished = finished || c == "statesMutated";
+    check(finished && has(handed, R"("good":{"normal":{"learning":{"remainingSteps":1,"scheduledSecs":900,)"),
+          "then it does, after the timer", handed);
+
+    // The question put on the page as it is, for code that reads it: none of it runs.
+    s.place("<div id=\"deck\" deck_name=\"Verbs\"></div><script>globalThis.ran = 1</script>"
+            "<img src=\"missing.png\" onerror=\"globalThis.ran = 2\"><b onclick=\"globalThis.ran = 3\">x</b>",
+            "card card2");
+    check(run("console.log('ran:' + typeof ran + ':' + document.getElementById('deck').getAttribute('deck_name') + ':' +"
+              "            document.body.className);") &&
+              has(logged, "ran:undefined:Verbs:card card2"),
+          "the code reads the question placed on its page, whose scripts don't run", logged);
+
+    // Templates may call it too: with their own key, which the reviewer ignores.
+    logged.clear();
+    s.eval("anki.mutateNextCardStates('mine', async states => console.log('peek:' + states.current.normal.new.position));");
+    check(handedKey == "mine" && has(logged, "peek:3"), "a template's own call reads the states, hands back its own key",
+          handedKey + logged);
+    states.clear();
+    check(run("") && handed.empty() && has(logged, "no card is being studied"), "no states: nothing to run on", logged);
+}
+
 } // namespace
 
 // The SVG a serialised <canvas> (an <img>) shows, decoded.
@@ -705,6 +867,7 @@ int main(int argc, char** argv)
     canvas();
     typing();
     timing();
+    scheduling();
 
     std::printf("%s\n", failures ? "SCRIPT TESTS FAILED" : "all script tests passed");
     return failures ? 1 : 0;

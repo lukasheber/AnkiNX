@@ -59,6 +59,11 @@ class ReviewerActivity : public brls::Activity
     void runScripts();
     void afterScript();
     void scheduleTimers();
+    // Custom scheduling (deck options > Advanced, for every deck): the
+    // collection's code runs when a question is shown; the answer waits for it.
+    void runCustomScheduling();
+    void afterCustomScheduling();
+    void finishCustomScheduling();
     // What a tap on a link does (playsound:, anki-hint:, anki-typeans:), from
     // the card view or the card's page.
     void followLink(const std::string& url);
@@ -123,6 +128,17 @@ class ReviewerActivity : public brls::Activity
     std::string scriptBodyClass, scriptCss;
     // Bumped when the page's next timer is scheduled anew.
     int scriptTimerGeneration = 0;
+    // Custom scheduling: the page its code runs on (kept for the session, as
+    // Anki keeps its reviewer page), the key this card's states come back
+    // with and those states, whether the code has finished, Show Answer
+    // waiting for it, and the one notice per session of a failure.
+    std::unique_ptr<CardScript> schedulingPage;
+    std::string schedulingKey;
+    std::string mutatedStates;
+    bool schedulingDone   = true;
+    bool answerWaiting    = false;
+    bool schedulingWarned = false;
+    std::chrono::steady_clock::time_point schedulingStart;
     // The card answered before this one ("Previous card info").
     int64_t previousCardId = 0;
     // A press of the replay button being watched for a hold.

@@ -97,6 +97,7 @@
     "advance_on": "自動進行オン",
     "advance_off": "自動進行オフ",
     "advance_show_reminder": "解答を表示する時間です",
+    "scheduling_failed": "このカードでカスタムスケジューリングがエラーになったため、Anki本来の間隔を使います。詳細はログにあります。",
     "advance_answer_reminder": "回答する時間です"
   },
   "overview": {
@@ -143,6 +144,10 @@
     "interval_modifier": "間隔の倍率",
     "hard_interval": "難しいの間隔",
     "new_interval": "新しい間隔",
+    "custom_scheduling": "カスタムスケジューリング(すべてのデッキ)",
+    "custom_scheduling_note": "パソコン版Ankiのデッキオプションで設定します。AnkiNXは学習中にこのJavaScriptをAnkiと同じように実行します。",
+    "custom_scheduling_off_confirm": "カスタムスケジューリングをオフにしますか?コレクションからコードが削除され、すべてのデッキに反映されます。同期すると他の端末からも削除されます(パソコン版Ankiのリセットボタンと同じです)。再び使うには、パソコン版Ankiにコードを貼り付けてください。",
+    "custom_scheduling_off": "オフにする",
     "timer": "タイマー",
     "show_timer": "解答タイマーを表示",
     "stop_timer": "解答表示でタイマーを止める",

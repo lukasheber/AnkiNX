@@ -13,6 +13,9 @@
 //                                    clientLeft, clientTop, clientWidth, clientHeight, style]}, or null
 //   viewport()                       [width, height, scrollY, devicePixelRatio] in CSS pixels
 //   scrollTo(y)                      scroll the card (CSS pixels)
+//   schedulingStates()               the shown card's scheduling states and context as JSON
+//                                    ({states, context}, see scheduling.js), or null
+//   setSchedulingStates(key, json)   states for answering the card, from custom scheduling code
 export const native = globalThis.__native;
 delete globalThis.__native;
 

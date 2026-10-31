@@ -44,6 +44,12 @@ class CardScript
         std::function<Layout(const std::string& body, const std::string& bodyClass, const std::string& css)> layout;
         std::function<Viewport()> viewport;
         std::function<void(float y)> scrollTo;
+        // Custom scheduling (anki.mutateNextCardStates): the shown card's
+        // scheduling states and context as JSON (next_card's "scheduling"),
+        // or "" when there is none; and states the page hands back, with the
+        // key it was given (mutateStates).
+        std::function<std::string()> schedulingStates;
+        std::function<void(const std::string& key, const std::string& states)> setSchedulingStates;
     };
 
     // `runtime`: resources/script/runtime.js. `mediaDir`: the collection's
@@ -58,6 +64,14 @@ class CardScript
     // then what they start at once (promises, zero-delay timers, script
     // files), so the first drawing shows their result.
     void show(bool answer, const std::string& html, const std::string& bodyClass);
+    // Put a side on the page as it is, running nothing in it (for code that
+    // only reads it: custom scheduling).
+    void place(const std::string& html, const std::string& bodyClass);
+    // Custom scheduling, as Anki's reviewer runs it on each question: the
+    // collection's code (deck options > Advanced) on the card's scheduling
+    // states, which it gets and hands back through the Host with `key`.
+    // False if the code could not start (a syntax error): the states stay.
+    bool mutateStates(const std::string& key, const std::string& code);
     // The page's body as HTML for the card view, every element tagged
     // data-ankinx-node (and data-ankinx-click if it has click handlers).
     std::string html();

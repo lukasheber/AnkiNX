@@ -97,6 +97,7 @@
     "advance_on": "Avanço automático ativado",
     "advance_off": "Avanço automático desativado",
     "advance_show_reminder": "Hora de mostrar a resposta",
+    "scheduling_failed": "O agendamento personalizado falhou neste cartão, então valem os intervalos do próprio Anki. Os detalhes estão no registro.",
     "advance_answer_reminder": "Hora de responder"
   },
   "overview": {
@@ -143,6 +144,10 @@
     "interval_modifier": "Modificador de intervalo",
     "hard_interval": "Intervalo difícil",
     "new_interval": "Novo intervalo",
+    "custom_scheduling": "Agendamento personalizado (todos os baralhos)",
+    "custom_scheduling_note": "Definido nas opções de baralho do Anki para computador. O AnkiNX executa este JavaScript quando você estuda, como o Anki.",
+    "custom_scheduling_off_confirm": "Desativar o agendamento personalizado? O código será apagado da sua coleção, em todos os baralhos e, ao sincronizar, nos seus outros dispositivos, como faz o botão de redefinir do Anki para computador. Para usá-lo de novo, cole-o outra vez no Anki para computador.",
+    "custom_scheduling_off": "Desativar",
     "timer": "Cronômetro",
     "show_timer": "Mostrar cronômetro de resposta",
     "stop_timer": "Parar o cronômetro na resposta",
