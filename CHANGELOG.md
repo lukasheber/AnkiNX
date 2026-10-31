@@ -8,7 +8,10 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
-## Unreleased
+## 0.8.0 (2026-10-30)
+
+Your custom scheduling code from Anki desktop now runs on the Switch, and
+a deck's statistics can open the cards of any day on its heatmap.
 
 ### Studying
 
