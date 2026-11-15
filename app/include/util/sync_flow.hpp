@@ -35,6 +35,12 @@ void start(std::function<void()> onFinished, Mode mode = Mode::Manual);
 // `onFinished`. `always` also pulls changes made on other devices (app open).
 void autoSync(std::function<void()> onFinished, Mode mode, bool always);
 
+// Whether a media sync is running in the background (it starts after a
+// collection sync and can take long), and an event fired on the UI thread
+// when that changes.
+bool mediaSyncing();
+brls::Event<bool>* mediaSyncEvent();
+
 // Open the AnkiWeb login screen. `onDone` runs once it closes.
 void login(std::function<void(bool loggedIn)> onDone);
 

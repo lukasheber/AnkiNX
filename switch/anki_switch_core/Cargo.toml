@@ -18,6 +18,8 @@ anki = { path = "../../source_code/anki-26.09.3/rslib", features = ["rustls"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
 # Same crate rusqlite links (bundled SQLite); used to pick the default VFS.
 libsqlite3-sys = "0.34"
+# Reading the media database for media sync progress; Anki's own version.
+rusqlite = "0.36"
 # For the JSON API (src/api.rs); versions are resolved from Anki's lockfile.
 anki_proto = { path = "../../source_code/anki-26.09.3/rslib/proto" }
 chrono = "0.4"

@@ -340,6 +340,10 @@ fn study_flow() {
     // Sync needs a login; nothing touches the network here.
     assert_eq!(error_kind("sync", json!({})), "auth");
     assert_eq!(ok("media_sync_status", json!({}))["active"], false);
+    let progress = ok("media_sync_progress", json!({}));
+    assert_eq!(progress["active"], false);
+    assert!(progress["percent"].is_null(), "{progress}");
+    assert!(progress["files"].is_null() || progress["files"] == 0, "{progress}");
     assert_eq!(error_kind("bogus", json!({})), "unknown_command");
 
     // Closing backs up the changed collection, then reopening keeps the reviews.
@@ -579,5 +583,60 @@ fn study_flow() {
     assert_eq!(ok("undo", json!({}))["undone"], true);
     assert_eq!(ok("deck_options", json!({ "deck_id": scheduled }))["custom_scheduling"], true);
     ok("set_deck_options", json!({ "deck_id": scheduled, "custom_scheduling": false }));
+    ok("shutdown", json!({}));
+
+    // Profiles: a collection each. The first one is the data folder itself;
+    // the others have a folder in "profiles", named from their first name.
+    let has_deck = |name: &str| {
+        let decks = ok("deck_tree", json!({}));
+        decks["decks"].as_array().unwrap().iter().any(|d| d["name"] == name)
+    };
+    ok("init", json!({ "base_dir": custom, "langs": ["en"] }));
+    let status = ok("open", json!({}));
+    assert_eq!((&status["profile"], &status["profile_count"]), (&json!(""), &json!(1)));
+    let work = ok("add_profile", json!({ "name": "  Work  &  日本語 " }))["id"].clone();
+    assert_eq!(work, "Work");
+    assert_eq!(error_kind("add_profile", json!({ "name": "work & 日本語" })), "exists");
+    assert_eq!(error_kind("add_profile", json!({ "name": "  " })), "args");
+    assert_eq!(ok("add_profile", json!({ "name": "日本語" }))["id"], "profile");
+    assert_eq!(ok("add_profile", json!({ "name": "work" }))["id"], "work-2");
+    // (a folder made on a computer is a profile too)
+    std::fs::create_dir_all(custom.join("profiles").join("Copied")).unwrap();
+    let list = ok("profiles", json!({}));
+    let names: Vec<&str> = list["profiles"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["", "Copied", "work", "Work & 日本語", "日本語"]);
+    assert_eq!(list["profiles"][0]["current"], true);
+    ok("rename_profile", json!({ "id": "", "name": "Home" }));
+    assert_eq!(error_kind("rename_profile", json!({ "id": "Copied", "name": "home" })), "exists");
+    ok("rename_profile", json!({ "id": "Copied", "name": "Copied" }));
+    assert_eq!(error_kind("switch_profile", json!({ "id": "../custom" })), "no_profile");
+
+    let status = ok("switch_profile", json!({ "id": work }));
+    assert_eq!(status["profile"], "Work");
+    assert_eq!(status["profile_name"], "Work & 日本語");
+    assert_eq!((&status["open"], &status["profile_count"]), (&json!(true), &json!(5)));
+    assert!(!has_deck("Scheduled"), "a collection of its own");
+    assert!(custom.join("profiles").join("Work").join("collection.anki2").exists());
+    assert!(status["media_dir"].as_str().unwrap().contains("Work"), "{status}");
+    assert_eq!(error_kind("delete_profile", json!({ "id": work })), "in_use");
+    assert_eq!(error_kind("delete_profile", json!({ "id": "" })), "args");
+    // The profile in use is remembered.
+    ok("shutdown", json!({}));
+    let status = ok("init", json!({ "base_dir": custom, "langs": ["en"] }));
+    assert_eq!(status["profile"], "Work");
+    ok("open", json!({}));
+    // A profile that can't be opened: the one in use stays, open.
+    std::fs::write(custom.join("profiles").join("Copied").join("collection.anki2"), "not a database").unwrap();
+    call("switch_profile", json!({ "id": "Copied" }))["kind"].as_str().expect("opening it fails");
+    let status = ok("status", json!({}));
+    assert_eq!((&status["profile"], &status["open"]), (&json!("Work"), &json!(true)));
+
+    let status = ok("switch_profile", json!({ "id": "" }));
+    assert_eq!(status["profile_name"], "Home");
+    assert!(has_deck("Scheduled"));
+    ok("delete_profile", json!({ "id": work }));
+    assert!(!custom.join("profiles").join("Work").exists());
+    assert_eq!(ok("profiles", json!({}))["profiles"].as_array().unwrap().len(), 4);
+    assert_eq!(ok("status", json!({}))["profile_count"], 4);
     ok("shutdown", json!({}));
 }

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "anki/api.hpp"
+
 struct DeckEntry
 {
     int64_t id;
@@ -62,6 +64,7 @@ class DeckPickerActivity : public brls::Activity
     void afterSync();
     void openSettings();
     void updateAccountLabel(const std::string& username);
+    bool enterProfile(const anki::json& status);
     void showMessage(const std::string& text);
     void fitTable();
     void fitStatusLine();
@@ -85,6 +88,12 @@ class DeckPickerActivity : public brls::Activity
     float secsPerCard = 0;
     // Dot on the header's sync button: changes not yet on AnkiWeb.
     brls::Box* syncDot = nullptr;
+    // The sync icon (turns while media syncs) and the media progress beside it.
+    class SpinningLabel* syncIcon = nullptr;
+    brls::Label* mediaLabel       = nullptr;
+    int mediaGeneration           = 0;
+    void showMediaSync(bool active);
+    void refreshMediaProgress(int generation);
     // Memory Forest behind the screen (view/forest_view.hpp), when it is on:
     // grown again from the collection at each refresh, and its data, which
     // the full-screen forest (L, or a tap on the tree count) draws too.
@@ -94,6 +103,12 @@ class DeckPickerActivity : public brls::Activity
     void growForest();
     void openForest();
     void updateSyncDot(bool pending);
+
+    // The profile in use (the backend's id, "" for the first), its folder,
+    // and its name for the status line: empty while it is the only one.
+    std::string profile;
+    std::string profileDir;
+    std::string profileName;
 
     std::vector<DeckEntry> entries;
     size_t focusedIndex = 0;

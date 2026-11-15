@@ -249,6 +249,29 @@ void ReviewerActivity::onContentAvailable()
 {
     frame->setTitle(deckName);
     app::hideStatus(frame); // no + to quit while studying (B goes back to the decks)
+    // No footer, to give the card the room: the button hints go on the right
+    // of the header, beside the deck name (tappable, as in the footer).
+    if (auto* hintBox = dynamic_cast<brls::Box*>(frame->getView("brls/applet_frame/hint_box")))
+    {
+        hintBox->setMarginTop(0);
+        hintBox->setAlignSelf(brls::AlignSelf::CENTER);
+        hintBox->setAlignItems(brls::AlignItems::CENTER);
+        auto* hints = new brls::Hints();
+        hints->setAddUnableAButtonAction(false); // no greyed "A OK" when A does nothing
+        hintBox->addView(hints);
+        hintBox->setShrink(0);
+        // A long deck name ends in "..." instead of running under the hints.
+        if (auto* title = dynamic_cast<brls::Label*>(frame->getView("brls/applet_frame/title_label")))
+        {
+            title->setSingleLine(true);
+            title->setShrink(1);
+            if (auto* titleBox = title->getParent())
+            {
+                titleBox->setShrink(1);
+                titleBox->setMarginRight(24);
+            }
+        }
+    }
     showAnswerLabel->setText(std::string("  ") + "ankinx/review/show_answer"_i18n);
 
     for (int ease = 1; ease <= 4; ease++)
@@ -368,7 +391,10 @@ void ReviewerActivity::loadNext()
     brls::async([this, night, token = alive] {
         try
         {
+            auto start      = std::chrono::steady_clock::now();
             anki::json next = anki::call("next_card", { { "night_mode", night } });
+            brls::Logger::info("next card from the collection: {} ms",
+                               std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
             onUi(token, [this, next] {
                 card = next;
                 if (card["done"].get<bool>())
@@ -803,7 +829,10 @@ void ReviewerActivity::runScripts()
 {
     if (!script)
         return;
+    auto start = std::chrono::steady_clock::now();
     script->show(state == State::Answer, shownBody, card.value("body_class", "card"));
+    brls::Logger::info("card scripts: {} ms",
+                       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
     shownBody       = script->html();
     scriptBodyClass = script->bodyClass();
     scriptCss       = script->extraCss();
@@ -1072,7 +1101,10 @@ void ReviewerActivity::answer(int ease)
     brls::async([this, ease, token = alive] {
         try
         {
+            auto start        = std::chrono::steady_clock::now();
             anki::json result = anki::call("answer", { { "ease", ease } });
+            brls::Logger::info("answer saved: {} ms",
+                               std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
             onUi(token, [this, result] {
                 // As Anki: say when a card has become a leech.
                 if (result.value("leech", false))

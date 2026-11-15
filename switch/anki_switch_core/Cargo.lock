@@ -217,6 +217,7 @@ dependencies = [
  "prost",
  "regex",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha1",

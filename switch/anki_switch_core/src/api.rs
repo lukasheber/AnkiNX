@@ -6,9 +6,13 @@
 //! C++ side never handles protobuf or sync details. Scheduling states reach it
 //! only as JSON, for the collection's custom scheduling code (scheduling.rs).
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -50,6 +54,11 @@ const FOREST_STATE_FILE: &str = "forest-state.json";
 /// Memory Forest's live weather (src/weather.rs).
 const FOREST_WEATHER_FILE: &str = "forest-weather.json";
 const CRASH_LOG: &str = "crash.log";
+/// The other profiles' folders, in the data folder. The first profile is the
+/// data folder itself, where everything was before there were profiles.
+const PROFILES_FOLDER: &str = "profiles";
+const PROFILES_FILE: &str = "profiles.json";
+const MAX_PROFILE_NAME: usize = 40;
 /// Rendered maths (SVG). Not in collection.media, so media sync ignores it.
 const MATH_CACHE: &str = "cache/math";
 const MAX_BACKUPS: usize = 10;
@@ -237,15 +246,105 @@ fn compare_type_answer(col: &mut Collection, answer: &str, typing: Option<&Typin
 struct MediaSync {
     abort: AbortHandle,
     task: JoinHandle<Result<()>>,
+    /// AnkiWeb's media usn when this sync began, once known (-1 before):
+    /// how far the media database's lastUsn has to go.
+    server_usn: Arc<AtomicI32>,
+    /// Why AnkiWeb's media usn isn't known, if asking failed.
+    usn_error: Arc<Mutex<Option<String>>>,
+    /// The media database's files and lastUsn when this sync began, read
+    /// before it starts: on the console a file open for writing can't be
+    /// opened again, so the database is unreadable while it runs.
+    start: Option<(i64, i32)>,
+}
+
+/// The collection's progress, which Anki's long operations (the media sync
+/// among them) report to. Anki keeps its type in a private module, so it can
+/// only be handed to the collection and read back through its Debug form.
+struct SharedProgress {
+    attach: Box<dyn Fn(&mut CollectionBuilder) + Send + Sync>,
+    read: Box<dyn Fn() -> String + Send + Sync>,
+}
+
+impl SharedProgress {
+    fn new() -> Self {
+        let state = Arc::new(Mutex::new(Default::default()));
+        let shared = state.clone();
+        let attach = Box::new(move |builder: &mut CollectionBuilder| {
+            builder.set_shared_progress_state(shared.clone());
+        });
+        let read = Box::new(move || match state.lock() {
+            Ok(guard) => format!("{:?}", guard.last_progress),
+            Err(_) => String::new(),
+        });
+        SharedProgress { attach, read }
+    }
+
+    /// The media sync's (downloaded files, downloaded deletions), if it is
+    /// what reported last.
+    fn media_downloads(&self) -> Option<(i64, i64)> {
+        media_downloads(&(self.read)())
+    }
+}
+
+/// Reads `Some(MediaSync(MediaSyncProgress { .., downloaded_files: 12,
+/// downloaded_deletions: 0, .. }))`.
+fn media_downloads(debug: &str) -> Option<(i64, i64)> {
+    if !debug.starts_with("Some(MediaSync(") {
+        return None;
+    }
+    let field = |name: &str| -> Option<i64> {
+        let rest = &debug[debug.find(&format!("{name}: "))? + name.len() + 2..];
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        digits.parse().ok()
+    };
+    Some((field("downloaded_files")?, field("downloaded_deletions")?))
+}
+
+/// Ask AnkiWeb where its media history ends (the media sync's first
+/// request, which Anki then skips when given the answer).
+async fn media_server_usn(auth: SyncAuth, client: Client) -> Result<Usn> {
+    use anki::sync::media::begin::SyncBeginRequest;
+    use anki::sync::media::protocol::MediaSyncProtocol;
+    let client_version = format!(
+        "anki,{} ({}),{}",
+        anki::version::version(),
+        anki::version::buildhash(),
+        std::env::consts::OS
+    );
+    let reply = HttpSyncClient::new(auth, client)
+        .begin(SyncBeginRequest { client_version }.try_into_sync_request()?)
+        .await?
+        .json_result()?;
+    Ok(reply.usn)
+}
+
+/// The media database's files present on this console and how far its
+/// sync has got (Anki keeps it in WAL mode: readable while syncing).
+fn read_media_db(path: &Path) -> rusqlite::Result<(i64, i32)> {
+    let db = rusqlite::Connection::open(path)?;
+    db.busy_timeout(std::time::Duration::from_millis(250))?;
+    let files = db.query_row("select count(*) from media where csum is not null", [], |r| r.get(0))?;
+    let usn = db.query_row("select lastUsn from meta", [], |r| r.get(0))?;
+    Ok((files, usn))
 }
 
 struct State {
+    /// The data folder: what all profiles share (the maths cache, the crash
+    /// log, the forest's weather) and [PROFILES_FILE].
+    root: PathBuf,
+    /// The folder of the profile in use: its collection, media, backups,
+    /// AnkiWeb login and forest. `root` itself for the first profile.
     base: PathBuf,
+    profiles: Profiles,
+    /// How many profiles there are, the first included (for `status`).
+    profile_count: usize,
     tr: I18n,
     col: Option<Collection>,
     shown: Option<Shown>,
     login: Option<SavedLogin>,
     media_sync: Option<MediaSync>,
+    /// Given to every collection opened, for the media sync's progress.
+    progress: SharedProgress,
     /// Error from the last finished media sync, reported once.
     media_error: Option<String>,
     /// Typesets card maths; created when first needed (see math.rs).
@@ -337,7 +436,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
             let state = guard
                 .as_ref()
                 .ok_or_else(|| ApiError::new("not_initialized", "init has not been called"))?;
-            (state.client.clone(), state.runtime.handle().clone(), state.base.join(FOREST_WEATHER_FILE))
+            (state.client.clone(), state.runtime.handle().clone(), state.root.join(FOREST_WEATHER_FILE))
         };
         drop(guard);
         return Ok(runtime.block_on(crate::weather::refresh(&path, &city, &client)));
@@ -363,6 +462,11 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "status" => state.status(),
         "open" => state.open(),
         "close" => state.close(),
+        "profiles" => state.list_profiles(),
+        "add_profile" => state.add_profile(&args),
+        "rename_profile" => state.rename_profile(&args),
+        "delete_profile" => state.delete_profile(&args),
+        "switch_profile" => state.switch_profile(&args),
         "list_backups" => state.list_backups(),
         "backup_now" => state.backup_now(),
         "restore_backup" => state.restore_backup(&args),
@@ -392,6 +496,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "sync" => state.sync(),
         "full_sync" => state.full_sync(&args),
         "media_sync_status" => state.media_sync_status(),
+        "media_sync_progress" => state.media_sync_progress(),
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
         "forest" => state.forest(&args),
@@ -412,12 +517,22 @@ fn i64_arg(args: &Value, key: &str) -> std::result::Result<i64, ApiError> {
         .ok_or_else(|| ApiError::new("args", format!("missing integer argument '{key}'")))
 }
 
-/// `init {base_dir, langs: [..]}`: set the data folder and UI languages.
+/// `init {base_dir, langs: [..]}`: set the data folder and UI languages. The
+/// profile last switched to is the one in use.
 fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
     if let Some(state) = slot.as_mut() {
         return state.status();
     }
-    let base = PathBuf::from(str_arg(args, "base_dir")?);
+    let root = PathBuf::from(str_arg(args, "base_dir")?);
+    let mut profiles: Profiles = std::fs::read(root.join(PROFILES_FILE))
+        .ok()
+        .and_then(|data| serde_json::from_slice(&data).ok())
+        .unwrap_or_default();
+    let others = profile_ids(&root);
+    if !others.contains(&profiles.current) {
+        profiles.current.clear(); // its folder is gone (deleted on a computer)
+    }
+    let base = profile_dir(&root, &profiles.current);
     let langs: Vec<String> = args
         .get("langs")
         .and_then(Value::as_array)
@@ -427,7 +542,7 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         std::fs::create_dir_all(&dir)
             .map_err(|e| ApiError::new("io", format!("{}: {e}", dir.display())))?;
     }
-    log_panics_to(base.join(CRASH_LOG));
+    log_panics_to(root.join(CRASH_LOG));
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
@@ -438,16 +553,18 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         .http1_only()
         .build()
         .map_err(|e| ApiError::new("network", e.to_string()))?;
-    let login = std::fs::read(base.join(SYNC_FILE))
-        .ok()
-        .and_then(|data| serde_json::from_slice(&data).ok());
+    let login = saved_login(&base);
     *slot = Some(State {
+        root,
         base,
+        profiles,
+        profile_count: others.len() + 1,
         tr: I18n::new(&langs),
         col: None,
         shown: None,
         login,
         media_sync: None,
+        progress: SharedProgress::new(),
         media_error: None,
         math: None,
         daily: None,
@@ -458,6 +575,77 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         client,
     });
     slot.as_mut().unwrap().status()
+}
+
+/// [PROFILES_FILE]: the profile in use (its folder in [PROFILES_FOLDER], ""
+/// for the first profile) and the names profiles were given. A folder made
+/// by hand in [PROFILES_FOLDER] is a profile too, called as its folder.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+struct Profiles {
+    current: String,
+    names: BTreeMap<String, String>,
+}
+
+fn profile_dir(root: &Path, id: &str) -> PathBuf {
+    if id.is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(PROFILES_FOLDER).join(id)
+    }
+}
+
+/// The profiles after the first: the folders in [PROFILES_FOLDER].
+fn profile_ids(root: &Path) -> Vec<String> {
+    let mut ids: Vec<String> = std::fs::read_dir(root.join(PROFILES_FOLDER))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// A folder for a new profile called `name`: its ASCII letters and digits
+/// (any name is safe on the SD card that way), told apart by a number from
+/// the folders there are; the SD card's file system ignores case.
+fn new_profile_id(root: &Path, name: &str) -> String {
+    let words: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' }).collect();
+    let mut slug = words.split_whitespace().collect::<Vec<_>>().join("-");
+    slug.truncate(24);
+    let slug = match slug.trim_end_matches('-') {
+        "" => "profile",
+        slug => slug,
+    };
+    let taken: Vec<String> = profile_ids(root).iter().map(|id| id.to_lowercase()).collect();
+    std::iter::once(slug.to_string())
+        .chain((2..).map(|n| format!("{slug}-{n}")))
+        .find(|id| !taken.contains(&id.to_lowercase()))
+        .unwrap()
+}
+
+/// Delete a folder and all in it. Each folder is listed, then emptied: not
+/// `std::fs::remove_dir_all`, which deletes from a folder it is still reading.
+fn remove_tree(dir: &Path) -> std::io::Result<()> {
+    let paths = std::fs::read_dir(dir)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<PathBuf>>>()?;
+    for path in paths {
+        if path.is_dir() {
+            remove_tree(&path)?;
+        } else {
+            std::fs::remove_file(&path)?;
+        }
+    }
+    std::fs::remove_dir(dir)
+}
+
+fn saved_login(dir: &Path) -> Option<SavedLogin> {
+    std::fs::read(dir.join(SYNC_FILE))
+        .ok()
+        .and_then(|data| serde_json::from_slice(&data).ok())
 }
 
 /// Anki's `Collection::full_download` (rslib/src/sync/collection/download.rs),
@@ -613,6 +801,7 @@ impl State {
         builder
             .set_media_paths(self.base.join(MEDIA_FOLDER), self.base.join(MEDIA_DB))
             .set_tr(self.tr.clone());
+        (self.progress.attach)(&mut builder);
         builder
     }
 
@@ -628,7 +817,11 @@ impl State {
             }
         });
         Ok(json!({
-            "base_dir": self.base.to_string_lossy(),
+            "base_dir": self.root.to_string_lossy(),
+            "profile": self.profiles.current,
+            "profile_name": self.profile_name(&self.profiles.current),
+            "profile_dir": self.base.to_string_lossy(),
+            "profile_count": self.profile_count,
             "media_dir": self.base.join(MEDIA_FOLDER).to_string_lossy(),
             "collection_exists": self.base.join(COLLECTION_FILE).exists(),
             "open": self.col.is_some(),
@@ -687,7 +880,155 @@ impl State {
         Ok(json!({}))
     }
 
-    /// `list_backups`: the backups in /switch/ankinx/backups, newest first,
+    // ----- Profiles: a collection each, with its media, backups and login -----
+
+    /// A profile's name: the one it was given, else its folder's ("" for the
+    /// first profile, which the app calls "Default").
+    fn profile_name(&self, id: &str) -> String {
+        self.profiles.names.get(id).cloned().unwrap_or_else(|| id.to_string())
+    }
+
+    fn save_profiles(&self) -> std::result::Result<(), ApiError> {
+        let path = self.root.join(PROFILES_FILE);
+        std::fs::write(&path, serde_json::to_vec_pretty(&self.profiles).unwrap())
+            .map_err(|e| ApiError::new("io", format!("{}: {e}", path.display())))
+    }
+
+    /// The `id` argument, if there is such a profile.
+    fn profile_arg(&self, args: &Value) -> std::result::Result<String, ApiError> {
+        let id = str_arg(args, "id")?;
+        if id.is_empty() || profile_ids(&self.root).iter().any(|other| other == id) {
+            Ok(id.to_string())
+        } else {
+            Err(ApiError::new("no_profile", format!("no such profile: {id}")))
+        }
+    }
+
+    /// The `name` argument, tidied, for the profile `id` (None: a new one):
+    /// not empty, and no other profile's name.
+    fn profile_name_arg(&self, args: &Value, id: Option<&str>) -> std::result::Result<String, ApiError> {
+        let name = str_arg(args, "name")?.split_whitespace().collect::<Vec<_>>().join(" ");
+        let name: String = name.chars().take(MAX_PROFILE_NAME).collect();
+        if name.is_empty() {
+            return Err(ApiError::new("args", "a profile needs a name"));
+        }
+        let taken = std::iter::once(String::new())
+            .chain(profile_ids(&self.root))
+            .filter(|other| Some(other.as_str()) != id)
+            .any(|other| self.profile_name(&other).to_lowercase() == name.to_lowercase());
+        if taken {
+            return Err(ApiError::new("exists", format!("there is already a profile called {name}")));
+        }
+        Ok(name)
+    }
+
+    /// `profiles`: the first profile, then the others by name, each with its
+    /// AnkiWeb username (null when not logged in) and folder.
+    fn list_profiles(&mut self) -> ApiResult {
+        let ids = profile_ids(&self.root);
+        self.profile_count = ids.len() + 1;
+        let entry = |id: &str| {
+            let dir = profile_dir(&self.root, id);
+            json!({
+                "id": id,
+                "name": self.profile_name(id),
+                "current": id == self.profiles.current,
+                "username": saved_login(&dir).map(|l| l.username),
+                "collection_exists": dir.join(COLLECTION_FILE).exists(),
+                "dir": dir.to_string_lossy(),
+            })
+        };
+        let mut others: Vec<Value> = ids.iter().map(|id| entry(id)).collect();
+        others.sort_by_key(|p| p["name"].as_str().unwrap_or_default().to_lowercase());
+        let mut profiles = vec![entry("")];
+        profiles.extend(others);
+        Ok(json!({ "current": self.profiles.current, "profiles": profiles }))
+    }
+
+    /// `add_profile {name}`: a new, empty profile; its `id`. It isn't
+    /// switched to.
+    fn add_profile(&mut self, args: &Value) -> ApiResult {
+        let name = self.profile_name_arg(args, None)?;
+        let id = new_profile_id(&self.root, &name);
+        let dir = profile_dir(&self.root, &id);
+        for dir in [dir.join(MEDIA_FOLDER), dir.join(BACKUP_FOLDER)] {
+            std::fs::create_dir_all(&dir).map_err(|e| ApiError::new("io", format!("{}: {e}", dir.display())))?;
+        }
+        self.profiles.names.insert(id.clone(), name);
+        self.save_profiles()?;
+        self.profile_count = profile_ids(&self.root).len() + 1;
+        Ok(json!({ "id": id }))
+    }
+
+    /// `rename_profile {id, name}`. The folder keeps its name.
+    fn rename_profile(&mut self, args: &Value) -> ApiResult {
+        let id = self.profile_arg(args)?;
+        let name = self.profile_name_arg(args, Some(&id))?;
+        self.profiles.names.insert(id, name);
+        self.save_profiles()?;
+        Ok(json!({}))
+    }
+
+    /// `delete_profile {id}`: delete a profile's folder: its collection,
+    /// media and backups. Not the profile in use, nor the first one (the
+    /// data folder itself).
+    fn delete_profile(&mut self, args: &Value) -> ApiResult {
+        let id = self.profile_arg(args)?;
+        if id.is_empty() {
+            return Err(ApiError::new("args", "the first profile can't be deleted"));
+        }
+        if id == self.profiles.current {
+            return Err(ApiError::new("in_use", "switch to another profile first"));
+        }
+        let dir = profile_dir(&self.root, &id);
+        let removed = remove_tree(&dir).map_err(|e| ApiError::new("io", format!("{}: {e}", dir.display())));
+        self.profile_count = profile_ids(&self.root).len() + 1;
+        removed?;
+        self.profiles.names.remove(&id);
+        self.save_profiles()?;
+        Ok(json!({}))
+    }
+
+    /// `switch_profile {id}`: close the collection (with a backup, if due)
+    /// and open that profile's; the status. If it can't be opened, the
+    /// profile in use stays, open again.
+    fn switch_profile(&mut self, args: &Value) -> ApiResult {
+        let id = self.profile_arg(args)?;
+        if id == self.profiles.current {
+            return self.open();
+        }
+        let before = self.profiles.current.clone();
+        let switched = match self.close() {
+            Ok(_) => self
+                .enter_profile(&id)
+                .and_then(|()| self.open())
+                .and_then(|_| self.save_profiles()),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = switched {
+            let _ = self.close();
+            let _ = self.enter_profile(&before);
+            let _ = self.open();
+            return Err(e);
+        }
+        self.status()
+    }
+
+    /// Make `id` the profile in use, while no collection is open.
+    fn enter_profile(&mut self, id: &str) -> std::result::Result<(), ApiError> {
+        let base = profile_dir(&self.root, id);
+        for dir in [base.join(MEDIA_FOLDER), base.join(BACKUP_FOLDER)] {
+            std::fs::create_dir_all(&dir).map_err(|e| ApiError::new("io", format!("{}: {e}", dir.display())))?;
+        }
+        self.login = saved_login(&base);
+        self.base = base;
+        self.profiles.current = id.to_string();
+        self.synced = false;
+        self.media_error = None;
+        Ok(())
+    }
+
+    /// `list_backups`: the profile's backups (in its "backups" folder), newest first,
     /// with a readable date.
     fn list_backups(&mut self) -> ApiResult {
         let mut names: Vec<String> = std::fs::read_dir(self.base.join(BACKUP_FOLDER))
@@ -1167,7 +1508,7 @@ impl State {
         let mut answer = compare_type_answer(col, &answer, typing.as_ref(), "").map_err(err)?;
         let night = args.get("night_mode").and_then(Value::as_bool).unwrap_or(false);
         if answer.contains("\\(") || answer.contains("\\[") {
-            let base = &self.base;
+            let base = &self.root;
             let math = self
                 .math
                 .get_or_insert_with(|| crate::math::MathRenderer::new(base.join(MATH_CACHE)));
@@ -1282,7 +1623,7 @@ impl State {
         // Maths (\(...\), \[...\]) as images; created on the first card with maths.
         let night = args.get("night_mode").and_then(Value::as_bool).unwrap_or(false);
         if [&question, &answer].iter().any(|side| side.contains("\\(") || side.contains("\\[")) {
-            let base = &self.base;
+            let base = &self.root;
             let math = self
                 .math
                 .get_or_insert_with(|| crate::math::MathRenderer::new(base.join(MATH_CACHE)));
@@ -1740,17 +2081,39 @@ impl State {
         self.collect_media_sync();
         let auth = self.require_login()?.auth().map_err(|e| self.err(e))?;
         let tr = self.tr.clone();
+        let start = read_media_db(&self.base.join(MEDIA_DB)).ok();
         let col = self.col()?;
         let manager = col.media().map_err(|e| ApiError::anki(e, &tr))?;
         let progress = col.new_progress_handler();
         let (abort, registration) = AbortHandle::new_pair();
         let handle = self.runtime.handle().clone();
         let client = self.client.clone();
+        let server_usn = Arc::new(AtomicI32::new(-1));
+        let known_usn = server_usn.clone();
+        let usn_error = Arc::new(Mutex::new(None));
+        let failed_usn = usn_error.clone();
         let task = std::thread::spawn(move || {
-            let fut = Abortable::new(manager.sync_media(progress, auth, client, None), registration);
-            handle.block_on(fut).unwrap_or(Err(AnkiError::Interrupted))
+            let sync = async move {
+                // Without the answer, Anki asks itself (and reports the error).
+                let usn = match media_server_usn(auth.clone(), client.clone()).await {
+                    Ok(usn) => {
+                        known_usn.store(usn.0, Ordering::Relaxed);
+                        Some(usn)
+                    }
+                    Err(e) => {
+                        if let Ok(mut error) = failed_usn.lock() {
+                            *error = Some(format!("{e:?}"));
+                        }
+                        None
+                    }
+                };
+                manager.sync_media(progress, auth, client, usn).await
+            };
+            handle
+                .block_on(Abortable::new(sync, registration))
+                .unwrap_or(Err(AnkiError::Interrupted))
         });
-        self.media_sync = Some(MediaSync { abort, task });
+        self.media_sync = Some(MediaSync { abort, task, server_usn, usn_error, start });
         Ok(())
     }
 
@@ -1810,7 +2173,7 @@ impl State {
     /// between days is kept in FOREST_STATE_FILE.
     fn forest(&mut self, args: &Value) -> ApiResult {
         let city = args.get("city").and_then(Value::as_str).map(str::trim).filter(|c| !c.is_empty());
-        let weather_file = self.base.join(FOREST_WEATHER_FILE);
+        let weather_file = self.root.join(FOREST_WEATHER_FILE);
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
         let look = crate::forest::Look {
             environment: str_arg(args, "environment")?.into(),
@@ -1901,6 +2264,37 @@ impl State {
         Ok(json!({
             "active": self.media_sync.is_some(),
             "error": self.media_error.take(),
+        }))
+    }
+
+    /// `media_sync_progress`: `files` (on this console), and while a media
+    /// sync runs `percent`, how much of AnkiWeb's media history it has gone
+    /// through (null until known). AnkiWeb doesn't say how many files there
+    /// will be, only where its history ends.
+    fn media_sync_progress(&mut self) -> ApiResult {
+        self.collect_media_sync();
+        let Some(sync) = self.media_sync.as_ref() else {
+            let files = read_media_db(&self.base.join(MEDIA_DB)).ok().map(|(files, _)| files);
+            return Ok(json!({ "active": false, "files": files, "percent": null }));
+        };
+        // While it runs: where it started plus what it has downloaded since
+        // (Anki reports downloads; files already here count as nothing).
+        let server_usn = Some(sync.server_usn.load(Ordering::Relaxed)).filter(|usn| *usn > 0);
+        let (added, removed) = self.progress.media_downloads().unwrap_or((0, 0));
+        let files = sync.start.map(|(files, _)| (files + added - removed).max(0));
+        let percent = match (sync.start, server_usn) {
+            (Some((_, usn)), Some(server)) => {
+                let done = usn.max(0) as i64 + added + removed;
+                Some((done * 100 / server as i64).clamp(0, 99))
+            }
+            _ => None,
+        };
+        let usn_error = sync.usn_error.lock().ok().and_then(|e| e.clone());
+        Ok(json!({
+            "active": true,
+            "files": files,
+            "percent": percent,
+            "usn_error": usn_error,
         }))
     }
 }
@@ -2280,6 +2674,24 @@ fn play_links(html: &str, side: &str) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn media_downloads_read_from_debug_form() {
+        use anki::sync::media::progress::MediaSyncProgress;
+        let progress = MediaSyncProgress {
+            checked: 7,
+            downloaded_files: 11236,
+            downloaded_deletions: 3,
+            uploaded_files: 1,
+            uploaded_deletions: 0,
+        };
+        // As Progress::MediaSync's derived Debug writes it inside Some(..).
+        assert_eq!(media_downloads(&format!("Some(MediaSync({progress:?}))")), Some((11236, 3)));
+        assert_eq!(media_downloads("Some(NormalSync(NormalSyncProgress { .. }))"), None);
+        assert_eq!(media_downloads("None"), None);
+        // And the collection's shared state starts empty.
+        assert_eq!(SharedProgress::new().media_downloads(), None);
+    }
 
     #[test]
     fn hint_links_point_at_their_div() {

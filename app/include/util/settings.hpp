@@ -11,6 +11,14 @@
 namespace settings
 {
 
+// The profile in use (the backend's id; "" for the first one, and until the
+// collection is open). Each profile has its own of the settings that go with
+// a collection: the sync server, each deck's zoom, and what Memory Forest
+// counts (decks left out, first day, earlier and suspended trees).
+void setProfile(const std::string& id);
+// Drop a deleted profile's settings.
+void forgetProfile(const std::string& id);
+
 // Sync with AnkiWeb when the app opens, after studying, and before + exits,
 // like Anki desktop's default and AnkiDroid's "Automatic synchronization".
 bool autoSync();

@@ -238,6 +238,13 @@ void basics()
         check(has(html, ">à&nbsp;é سلام<"), "non-ASCII text survives serialisation", html);
     }
     {
+        // WaniKani-style template: "<!-- ... --!>" closes the comment in browsers.
+        CardScript s(runtime, media);
+        std::string html = show(s, "<!-- don't change below --!><p id=\"w\">x</p><!--><!--->"
+                                   "<script>var t = '<!-- no -->'; document.getElementById('w').textContent = 'ran';</script>");
+        check(innerOf(html, "id=\"w\"") == "ran" && !has(html, "--!>"), "comments end at --!> as in browsers", html);
+    }
+    {
         CardScript s(runtime, media);
         std::string html = show(s, "<div id=\"i\"></div><script>document.getElementById('i').innerHTML = \"<svg "
                                    "xmlns:xlink='http://www.w3.org/1999/xlink' viewBox='0 0 9 9' xml:space='preserve'>"

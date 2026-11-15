@@ -17,10 +17,55 @@ const started = new WeakSet(); // "already started"
 let parserDepth = 0;
 let current = null;
 
-function parsing(fn) {
+// Comments end as in browsers (HTML Standard, comment states): at "-->", at
+// "--!>" (shared-deck templates write "<!-- ... --!>"), and "<!-->" and
+// "<!--->" are empty comments. htmlparser2 only knows "-->", so it would run
+// such a comment, scripts and all, to the end of the markup. The text of
+// script, style, textarea and title elements is left alone.
+const RAW_TEXT = /<(script|style|textarea|title)(?=[\s/>])/gi;
+export function closeComments(markup) {
+    if (typeof markup !== "string" || !markup.includes("<!--")) return markup;
+    let out = "";
+    let i = 0;
+    while (i < markup.length) {
+        const comment = markup.indexOf("<!--", i);
+        RAW_TEXT.lastIndex = i;
+        const raw = RAW_TEXT.exec(markup);
+        if (raw && (comment < 0 || raw.index < comment)) {
+            const close = markup.toLowerCase().indexOf("</" + raw[1].toLowerCase(), RAW_TEXT.lastIndex);
+            const end = close < 0 ? markup.length : close + 2 + raw[1].length;
+            out += markup.slice(i, end);
+            i = end;
+            continue;
+        }
+        if (comment < 0) break;
+        out += markup.slice(i, comment);
+        const body = comment + 4;
+        if (markup.startsWith(">", body) || markup.startsWith("->", body)) {
+            out += "<!---->";
+            i = body + (markup[body] === ">" ? 1 : 2);
+            continue;
+        }
+        const a = markup.indexOf("-->", body);
+        const b = markup.indexOf("--!>", body);
+        if (b >= 0 && (a < 0 || b < a)) {
+            out += markup.slice(comment, b) + "-->";
+            i = b + 4;
+        } else {
+            const end = a < 0 ? markup.length : a + 3;
+            out += markup.slice(comment, end);
+            i = end;
+        }
+    }
+    return out + markup.slice(i);
+}
+
+// `markupAt`: the index of the argument holding markup, if any.
+function parsing(fn, markupAt = -1) {
     return function (...args) {
         parserDepth++;
         try {
+            if (markupAt >= 0) args[markupAt] = closeComments(args[markupAt]);
             return fn.apply(this, args);
         } finally {
             parserDepth--;
@@ -29,13 +74,17 @@ function parsing(fn) {
 }
 function wrapSetter(proto, name) {
     const d = Object.getOwnPropertyDescriptor(proto, name);
-    if (d && d.set) Object.defineProperty(proto, name, { ...d, set: parsing(d.set) });
+    if (d && d.set) Object.defineProperty(proto, name, { ...d, set: parsing(d.set, 0) });
 }
 wrapSetter(linkedom.Element.prototype, "innerHTML");
 wrapSetter(linkedom.Element.prototype, "outerHTML");
 wrapSetter(linkedom.ShadowRoot.prototype, "innerHTML");
-linkedom.Element.prototype.insertAdjacentHTML = parsing(linkedom.Element.prototype.insertAdjacentHTML);
-linkedom.DOMParser.prototype.parseFromString = parsing(linkedom.DOMParser.prototype.parseFromString);
+linkedom.Element.prototype.insertAdjacentHTML = parsing(linkedom.Element.prototype.insertAdjacentHTML, 1);
+const parseHTMLOrXML = linkedom.DOMParser.prototype.parseFromString;
+linkedom.DOMParser.prototype.parseFromString = parsing(function (markup, type, ...rest) {
+    if (String(type).toLowerCase() === "text/html") markup = closeComments(markup);
+    return parseHTMLOrXML.call(this, markup, type, ...rest);
+});
 
 // All insertions go through ParentNode's insertBefore.
 let PNP = linkedom.Element.prototype;

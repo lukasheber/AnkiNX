@@ -1,5 +1,6 @@
 #include "activity/settings.hpp"
 
+#include "activity/profiles.hpp"
 #include "activity/stats.hpp"
 #include "anki/api.hpp"
 #include "anki_switch_core.h"
@@ -58,6 +59,20 @@ std::string accountText()
     {
     }
     return "ankinx/settings/not_logged_in"_i18n;
+}
+
+// The profile in use: its name, and its folder on the SD card.
+std::string profileText(const char* field = "profile_name")
+{
+    try
+    {
+        std::string value = anki::call("status").value(field, "");
+        return field == std::string("profile_name") ? profiles::displayName(value) : value;
+    }
+    catch (const anki::Error&)
+    {
+        return "";
+    }
 }
 
 std::string layoutName(controls::Layout layout)
@@ -166,6 +181,11 @@ brls::View* SettingsActivity::accountTab()
 {
     brls::ScrollingFrame* scroller;
     brls::Box* box = column(&scroller);
+    // Each profile has its own collection and account: what follows is the
+    // one in use's (its action comes after them, as it changes what they say).
+    box->addView(header("ankinx/profiles/profile"_i18n));
+    auto* profile = detail("ankinx/profiles/profile"_i18n, profileText());
+    box->addView(profile);
     box->addView(header("ankinx/settings/ankiweb"_i18n));
 
     auto* account = detail("ankinx/settings/account"_i18n, accountText());
@@ -229,6 +249,17 @@ brls::View* SettingsActivity::accountTab()
         return true;
     });
     box->addView(server);
+
+    profile->registerClickAction([profile, account, server, serverText, token = alive](brls::View*) {
+        brls::Application::pushActivity(new ProfilesActivity([profile, account, server, serverText, token] {
+            if (!*token)
+                return;
+            profile->setDetailText(profileText());
+            account->setDetailText(accountText());
+            server->setDetailText(serverText());
+        }));
+        return true;
+    });
 
     auto* autoSync = new brls::BooleanCell();
     autoSync->init("ankinx/settings/auto_sync"_i18n, settings::autoSync(), [](bool on) { settings::setAutoSync(on); });
@@ -680,7 +711,7 @@ brls::View* SettingsActivity::collectionTab()
     note->setFontSize(16);
     note->setMarginTop(16);
     note->setTextColor(brls::Application::getTheme()["brls/text"]);
-    note->setText(brls::getStr("ankinx/settings/backups_note", anki::dataDir() + "/backups"));
+    note->setText(brls::getStr("ankinx/settings/backups_note", profileText("profile_dir") + "/backups"));
     box->addView(note);
     return scroller;
 }
@@ -751,7 +782,7 @@ brls::View* SettingsActivity::aboutTab()
     box->addView(autoCheck);
 
     box->addView(detail("ankinx/settings/backend"_i18n, std::string("Anki ") + anki_buildhash()));
-    box->addView(detail("ankinx/settings/data_folder"_i18n, anki::dataDir()));
+    box->addView(detail("ankinx/settings/data_folder"_i18n, profileText("profile_dir")));
     box->addView(detail("ankinx/settings/licence"_i18n, "AGPL-3.0-or-later"));
     box->addView(detail("ankinx/settings/source"_i18n, "github.com/lukasheber/AnkiNX"));
     return scroller;

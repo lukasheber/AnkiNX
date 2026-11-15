@@ -18,7 +18,10 @@ new/learning/due counts, reviewer with four answer buttons, AnkiWeb sync.
 
 Data lives in `sdmc:/switch/ankinx/`: `collection.anki2`, `collection.media/`,
 `backups/` (rolling backups made on exit) and `sync.json` (AnkiWeb key, not the
-password).
+password). That is the first profile; the ones added in **Settings › Account &
+sync › Profile** each have the same files in `sdmc:/switch/ankinx/profiles/<folder>/`
+(`profiles.json` holds their names and the one in use). App settings
+(`settings.json`) are shared, except those that go with a collection.
 
 | Screen | Controls |
 | --- | --- |

@@ -206,9 +206,10 @@ between panels.
 - **Language**: follows the console by default; Settings > About can
   override. App strings translated per language file; Anki's own strings
   come from rslib already.
-- **Profiles per Switch user**: at start, if several Switch users exist,
-  the system user picker appears once; each user gets
-  `/switch/ankinx/<user>/`.
+- **Profiles**: as Anki desktop's, not tied to Switch users. Settings >
+  Account & sync > Profile lists them (switch, add, rename, delete); the
+  last one used opens at start. The first is `/switch/ankinx/` itself,
+  the others `/switch/ankinx/profiles/<folder>/`.
 - **Docked layout**: at 1080p, card text and buttons scale up.
 - **Resume after sleep**: keep the current card; sync when waking if
   automatic sync is on.

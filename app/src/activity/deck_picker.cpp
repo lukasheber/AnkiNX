@@ -2,6 +2,7 @@
 
 #include "activity/deck_overview.hpp"
 #include "activity/forest.hpp"
+#include "activity/profiles.hpp"
 #include "activity/reviewer.hpp"
 #include "anki/api.hpp"
 #include "app.hpp"
@@ -15,6 +16,7 @@
 #include "view/forest_view.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 
 using namespace brls::literals;
@@ -64,10 +66,68 @@ NVGcolor mutedColor()
     return dark ? nvgRGB(185, 185, 185) : nvgRGB(110, 110, 110);
 }
 
+} // namespace
+
+// An icon label that can turn, anticlockwise, a turn a second (the sync icon
+// while media syncs in the background).
+class SpinningLabel : public brls::Label
+{
+  public:
+    void setSpinning(bool on) { spinning = on; }
+    bool isSpinning() const { return spinning; }
+
+    // Drawn here, not by Label, so it turns about the icon's own centre: a
+    // Material icon fills a font-size square standing on the baseline, while
+    // the label's box is a line of text (taller, centred elsewhere).
+    void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style,
+              brls::FrameContext*) override
+    {
+        float size = getFontSize();
+        float cx = x + width / 2, cy = y + height / 2;
+        nvgSave(vg);
+        nvgTranslate(vg, cx, cy);
+        if (spinning)
+        {
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count();
+            nvgRotate(vg, -(float)(ms % 1000) / 1000.0f * 2 * NVG_PI);
+        }
+        nvgFontFaceId(vg, getFont());
+        nvgFontSize(vg, size);
+        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+        nvgFillColor(vg, a(getTextColor()));
+        nvgText(vg, -size / 2, size / 2, getFullText().c_str(), nullptr);
+        nvgRestore(vg);
+    }
+
+  private:
+    bool spinning = false;
+};
+
+namespace
+{
+
+// "11236" -> "11,236" (the separator as the language writes it).
+std::string groupDigits(long long n)
+{
+    std::string digits = std::to_string(n);
+    std::string sep    = "ankinx/sync/digit_group"_i18n;
+    std::string out;
+    for (size_t i = 0; i < digits.size(); i++)
+    {
+        if (i > 0 && (digits.size() - i) % 3 == 0)
+            out += sep;
+        out += digits[i];
+    }
+    return out;
+}
+
 // A header button: the controller button's glyph and an icon; tappable.
-// dot: a small badge on the icon, hidden until set visible.
+// dot: a small badge on the icon, hidden until set visible. glyph: the label
+// to show the icon in (one made here if null).
 brls::Box* headerButton(brls::ControllerButton button, const char* icon, std::function<void()> action,
-                        brls::Box** dot = nullptr)
+                        brls::Box** dot = nullptr, brls::Label* glyph = nullptr)
 {
     auto* box = new brls::Box(brls::Axis::ROW);
     box->setAlignItems(brls::AlignItems::CENTER);
@@ -78,7 +138,8 @@ brls::Box* headerButton(brls::ControllerButton button, const char* icon, std::fu
     key->setText(brls::Hint::getKeyIcon(button, true));
     key->setMarginRight(8);
     box->addView(key);
-    auto* glyph = new brls::Label();
+    if (!glyph)
+        glyph = new brls::Label();
     glyph->setFontSize(30);
     glyph->setText(icon);
     box->addView(glyph);
@@ -256,7 +317,20 @@ void DeckPickerActivity::onContentAvailable()
         hintBox->setMarginTop(0);
         hintBox->setAlignSelf(brls::AlignSelf::CENTER);
         hintBox->setAlignItems(brls::AlignItems::CENTER);
-        hintBox->addView(headerButton(brls::BUTTON_X, ICON_SYNC, [this] { sync(); }, &syncDot));
+        // While media syncs in the background the icon turns and its
+        // progress is written to the left of the button.
+        syncIcon         = new SpinningLabel();
+        auto* syncButton = headerButton(brls::BUTTON_X, ICON_SYNC, [this] { sync(); }, &syncDot, syncIcon);
+        mediaLabel       = new brls::Label();
+        mediaLabel->setFontSize(17);
+        mediaLabel->setSingleLine(true);
+        mediaLabel->setTextColor(mutedColor());
+        mediaLabel->setMarginRight(10);
+        mediaLabel->setVisibility(brls::Visibility::GONE);
+        syncButton->addView(mediaLabel, 0);
+        hintBox->addView(syncButton);
+        sync_flow::mediaSyncEvent()->subscribe([this](bool active) { showMediaSync(active); });
+        showMediaSync(sync_flow::mediaSyncing());
         hintBox->addView(headerButton(brls::BUTTON_BACK, ICON_SETTINGS, [this] { openSettings(); }));
         hintBox->addView(headerButton(brls::BUTTON_START, ICON_EXIT, [] { app::quit(); }));
     }
@@ -323,10 +397,9 @@ void DeckPickerActivity::openCollection()
             anki::json langs = { locale, locale.substr(0, locale.find('-')), "en" };
             anki::call("init", { { "base_dir", anki::dataDir() }, { "langs", langs } });
             anki::json status = anki::call("open");
-            std::string username = status["username"].is_string() ? status["username"].get<std::string>() : "";
-            brls::sync([this, username] {
+            brls::sync([this, status] {
                 ready = true;
-                updateAccountLabel(username);
+                enterProfile(status);
                 refresh();
                 // Bring in what was studied on other devices, as Anki desktop
                 // does on startup.
@@ -374,7 +447,9 @@ void DeckPickerActivity::refresh()
                 fitTable();
                 if (entries.empty())
                 {
-                    showMessage("ankinx/decks/empty"_i18n);
+                    // (where to copy a collection to: each profile has its folder)
+                    showMessage(profile.empty() ? "ankinx/decks/empty"_i18n
+                                                : brls::getStr("ankinx/profiles/empty", profileDir));
                     return;
                 }
                 message->setVisibility(brls::Visibility::GONE);
@@ -445,16 +520,37 @@ void DeckPickerActivity::sync()
 
 void DeckPickerActivity::afterSync()
 {
+    // Another profile since (Settings > Account): another collection, to
+    // bring up to date as when the app opens.
+    bool switched = false;
     try
     {
-        anki::json status    = anki::call("status");
-        std::string username = status["username"].is_string() ? status["username"].get<std::string>() : "";
-        updateAccountLabel(username);
+        switched = enterProfile(anki::call("status"));
     }
     catch (const anki::Error&)
     {
     }
     refresh();
+    if (switched)
+        sync_flow::autoSync([this] { afterSync(); }, sync_flow::Mode::Automatic, true);
+}
+
+// What the status says of the profile in use and its account, for the
+// status line and the settings that go with a profile; whether it is
+// another profile than before.
+bool DeckPickerActivity::enterProfile(const anki::json& status)
+{
+    std::string id = status.value("profile", "");
+    bool switched  = id != profile;
+    profile        = id;
+    profileDir     = status.value("profile_dir", "");
+    settings::setProfile(id);
+    if (switched)
+        focusedIndex = 0;
+    // Named only when there is more than one.
+    profileName = status.value("profile_count", 1) > 1 ? profiles::displayName(status.value("profile_name", "")) : "";
+    updateAccountLabel(status["username"].is_string() ? status["username"].get<std::string>() : "");
+    return switched;
 }
 
 // Settings (account, controls, about), docs/ux-plan.md section 1.
@@ -469,9 +565,10 @@ void DeckPickerActivity::openSettings()
 void DeckPickerActivity::updateAccountLabel(const std::string& username)
 {
     // Short, so it never runs into the centred study line: an icon and the
-    // username.
-    account->setText(username.empty() ? std::string(ICON_CLOUD_OFF) + "  " + "ankinx/decks/not_logged_in"_i18n
-                                      : std::string(ICON_CLOUD) + "  " + username);
+    // username, after the profile's name when there are several.
+    account->setText((profileName.empty() ? "" : profileName + "  ·  ") +
+                     (username.empty() ? std::string(ICON_CLOUD_OFF) + "  " + "ankinx/decks/not_logged_in"_i18n
+                                       : std::string(ICON_CLOUD) + "  " + username));
     fitStatusLine();
 }
 
@@ -490,6 +587,61 @@ void DeckPickerActivity::updateSyncDot(bool pending)
 {
     if (syncDot)
         syncDot->setVisibility(pending ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE);
+}
+
+// A media sync running in the background: the sync icon turns and its
+// progress is written beside it, updated until it ends.
+void DeckPickerActivity::showMediaSync(bool active)
+{
+    syncIcon->setSpinning(active);
+    int generation = ++mediaGeneration;
+    if (!active)
+    {
+        mediaLabel->setVisibility(brls::Visibility::GONE);
+        return;
+    }
+    mediaLabel->setText("ankinx/sync/media_syncing"_i18n);
+    mediaLabel->setVisibility(brls::Visibility::VISIBLE);
+    refreshMediaProgress(generation);
+}
+
+void DeckPickerActivity::refreshMediaProgress(int generation)
+{
+    brls::async([this, generation] {
+        anki::json progress;
+        try
+        {
+            progress = anki::call("media_sync_progress");
+        }
+        catch (const anki::Error&)
+        {
+            // Not this time (the collection opening, say): ask again below.
+        }
+        brls::sync([this, generation, progress] {
+            if (generation != mediaGeneration)
+                return;
+            static int loggedGeneration = 0;
+            if (progress.is_object() && progress["usn_error"].is_string() &&
+                loggedGeneration != generation)
+            {
+                loggedGeneration = generation;
+                brls::Logger::warning("media sync: AnkiWeb's media position unknown ({}), no percentage",
+                                      progress["usn_error"].get<std::string>());
+            }
+            if (progress.is_object() && progress["files"].is_number())
+            {
+                std::string files = groupDigits(progress["files"].get<long long>());
+                mediaLabel->setText(progress["percent"].is_number()
+                                        ? brls::getStr("ankinx/sync/media_progress", files,
+                                                       progress["percent"].get<int>())
+                                        : brls::getStr("ankinx/sync/media_files", files));
+            }
+            brls::delay(1500, [this, generation] {
+                if (generation == mediaGeneration)
+                    refreshMediaProgress(generation);
+            });
+        });
+    });
 }
 
 // Top-level decks' counts already include their subdecks' (within limits).

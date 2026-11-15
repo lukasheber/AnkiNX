@@ -1,7 +1,7 @@
 <brls:AppletFrame
     id="frame"
     iconInterpolation="linear"
-    footerHidden="false">
+    footerHidden="true">
 
     <brls:Box
         width="auto"

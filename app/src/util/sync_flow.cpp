@@ -45,8 +45,19 @@ void showError(const std::string& message)
     dialog->open();
 }
 
-// Report the background media sync once it ends.
-void watchMediaSync()
+bool mediaActive   = false;
+bool mediaWatching = false;
+brls::Event<bool> mediaEvent;
+
+void setMediaActive(bool active)
+{
+    if (mediaActive == active)
+        return;
+    mediaActive = active;
+    mediaEvent.fire(active);
+}
+
+void pollMediaSync()
 {
     brls::delay(1500, [] {
         brls::async([] {
@@ -57,12 +68,21 @@ void watchMediaSync()
             }
             catch (const anki::Error&)
             {
+                brls::sync([] {
+                    mediaWatching = false;
+                    setMediaActive(false);
+                });
                 return;
             }
             brls::sync([status] {
                 if (status.value("active", false))
-                    watchMediaSync();
-                else if (status["error"].is_string())
+                {
+                    pollMediaSync();
+                    return;
+                }
+                mediaWatching = false;
+                setMediaActive(false);
+                if (status["error"].is_string())
                     brls::Application::notify("ankinx/sync/media_failed"_i18n + ": " +
                                               status["error"].get<std::string>());
                 else
@@ -70,6 +90,17 @@ void watchMediaSync()
             });
         });
     });
+}
+
+// A media sync started in the background (after a collection sync): show it
+// running, and report it once it ends. One watch at a time.
+void watchMediaSync()
+{
+    setMediaActive(true);
+    if (mediaWatching)
+        return;
+    mediaWatching = true;
+    pollMediaSync();
 }
 
 void fullSync(bool upload, std::function<void()> onFinished)
@@ -130,6 +161,10 @@ void handleSyncResult(const anki::json& result, std::function<void()> onFinished
 }
 
 } // namespace
+
+bool mediaSyncing() { return mediaActive; }
+
+brls::Event<bool>* mediaSyncEvent() { return &mediaEvent; }
 
 void login(std::function<void(bool)> onDone)
 {

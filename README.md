@@ -145,6 +145,9 @@ To take your reviews back to the computer, copy `collection.anki2` back the
 same way, with Anki closed. This replaces the computer's copy, so don't study
 on both between copies.
 
+A profile added in AnkiNX has its own folder, shown under **Settings › About ›
+Data folder** while it is in use: copy to that one instead.
+
 </details>
 
 ## Controls

@@ -426,6 +426,11 @@ class NvgContainer : public document_container
         // each frame ends, in ms from the start of the loop.
         std::vector<int> frames;
         std::vector<int> frameEnds;
+        // SVG: the document, rasterised again at the size it is drawn
+        // (texWidth x texHeight pixels now).
+        std::shared_ptr<lunasvg::Document> svg;
+        int texWidth  = 0;
+        int texHeight = 0;
 
         // The texture to draw now.
         int current() const
@@ -498,19 +503,17 @@ class NvgContainer : public document_container
         else if (isSvg(path, data))
         {
             registerSvgFonts();
-            auto doc = lunasvg::Document::loadFromData(data);
-            if (!doc)
+            img.svg = lunasvg::Document::loadFromData(data);
+            if (!img.svg)
                 return img;
-            float w = doc->width() > 0 ? doc->width() : 300.0f;
-            float h = doc->height() > 0 ? doc->height() : 150.0f;
-            float scale = std::min(2.0f, 2048.0f / std::max(w, h));
-            auto bitmap = doc->renderToBitmap((int)std::ceil(w * scale), (int)std::ceil(h * scale));
-            if (bitmap.isNull())
-                return img;
-            bitmap.convertToRGBA();
-            img.id     = uploadRgba(vg, bitmap.data(), bitmap.width(), bitmap.height(), bitmap.stride());
+            float w    = img.svg->width() > 0 ? img.svg->width() : 300.0f;
+            float h    = img.svg->height() > 0 ? img.svg->height() : 150.0f;
             img.width  = (int)std::ceil(w);
             img.height = (int)std::ceil(h);
+            // A first texture at most 512 pixels across; drawing renders it
+            // again at the size on screen.
+            float scale = std::min(1.0f, 512.0f / std::max(w, h));
+            rasteriseSvg(img, (int)std::ceil(w * scale), (int)std::ceil(h * scale));
         }
         else if (isGif(data) && decodeGif(data, img))
         {
@@ -526,8 +529,90 @@ class NvgContainer : public document_container
         return img;
     }
 
+    // Render `img.svg` into a w x h texture, replacing the one it had. Large
+    // SVGs (shared decks ship 1420-unit icons) shown small would otherwise
+    // take tens of MB of GPU memory each, more than the console's renderer
+    // handles.
+    void rasteriseSvg(Image& img, int w, int h)
+    {
+        if (int longest = std::max(w, h); longest > 2048)
+        {
+            w = w * 2048 / longest;
+            h = h * 2048 / longest;
+        }
+        w           = std::max(w, 1);
+        h           = std::max(h, 1);
+        auto bitmap = img.svg->renderToBitmap(w, h);
+        if (bitmap.isNull())
+        {
+            brls::Logger::warning("card image: SVG could not be rendered at {}x{}", w, h);
+            return;
+        }
+        bitmap.convertToRGBA();
+        int id = uploadRgba(vg, bitmap.data(), bitmap.width(), bitmap.height(), bitmap.stride());
+        if (id <= 0)
+        {
+            brls::Logger::warning("card image: no texture for an SVG at {}x{}", w, h);
+            return;
+        }
+        if (img.id > 0)
+            brls::Logger::info("card image: SVG rendered again at {}x{} (id {})", w, h, id);
+        if (img.id > 0)
+            nvgDeleteImage(vg, img.id);
+        img.id        = id;
+        img.texWidth  = bitmap.width();
+        img.texHeight = bitmap.height();
+    }
+
+    // Draw an SVG sharp at `box` (document pixels): render it again when the
+    // texture is clearly too small or wastefully large for the screen size.
+    void fitSvg(Image& img, const position& box)
+    {
+        float xf[6];
+        nvgCurrentTransform(vg, xf);
+        float scale = std::sqrt(xf[0] * xf[0] + xf[1] * xf[1]);
+        int w       = (int)std::ceil(box.width.value() * scale);
+        int h       = (int)std::ceil(box.height.value() * scale);
+        if (w <= 0 || h <= 0)
+            return;
+        bool tooSmall = img.texWidth < w * 0.9f || img.texHeight < h * 0.9f;
+        bool tooLarge = img.texWidth > w * 2 && img.texHeight > h * 2;
+        if ((tooSmall && img.texWidth < 2048 && img.texHeight < 2048) || tooLarge)
+            rasteriseSvg(img, w, h);
+    }
+
     CardView* view;
     std::map<std::string, Image> images;
+    std::set<std::string> usedImages; // what the current layout asked for
+
+  public:
+    // Images stay loaded from one layout of a card to the next (scripts,
+    // hints and the answer side lay it out again): only those the new page
+    // no longer uses are dropped, instead of reading them all from the SD
+    // card again.
+    void beginLayout() { usedImages.clear(); }
+    void endLayout()
+    {
+        NVGcontext* ctx = brls::Application::getNVGContext();
+        for (auto it = images.begin(); it != images.end();)
+        {
+            if (usedImages.count(it->first))
+            {
+                ++it;
+                continue;
+            }
+            if (ctx)
+            {
+                if (it->second.id > 0)
+                    nvgDeleteImage(ctx, it->second.id);
+                for (int frame : it->second.frames)
+                    nvgDeleteImage(ctx, frame);
+            }
+            it = images.erase(it);
+        }
+    }
+
+  private:
 
     void applyFont(const Font* f)
     {
@@ -542,16 +627,40 @@ class NvgContainer : public document_container
             src.resize(src.size() - std::strlen(OCCLUDED_IMAGE));
         if (src.empty() || src.find("://") != std::string::npos || src.rfind("data:", 0) == 0)
             return {};
+        // A query or fragment is not part of the file name ("font.eot?#iefix",
+        // "font.svg#Name"), as when Anki serves media over HTTP. Looking such
+        // a name up anyway costs a scan of the whole media folder on the SD
+        // card's filesystem.
+        if (size_t cut = src.find_first_of("?#"); cut != std::string::npos)
+            src.resize(cut);
+        if (src.empty())
+            return {};
         // Absolute: files the backend made, such as rendered maths (Anki media
         // file names never contain '/').
         if (src[0] == '/')
             return fileExists(src) ? src : std::string();
         std::string path = mediaDir + "/" + src;
-        if (fileExists(path))
+        if (mediaFileExists(path))
             return path;
-        path = mediaDir + "/" + urlDecode(src);
-        return fileExists(path) ? path : std::string();
+        std::string decoded = mediaDir + "/" + urlDecode(src);
+        if (decoded != path && mediaFileExists(decoded))
+            return decoded;
+        return {};
     }
+
+    // Whether a media file exists, asked of the SD card once per study
+    // session (this view's lifetime). Its filesystem has no index: each look
+    // through a folder of thousands of files takes 0.1 to 0.4 s on the
+    // console, a missing file the longest, and cards ask for the same files
+    // (fonts, images) on every layout.
+    bool mediaFileExists(const std::string& path) const
+    {
+        auto it = mediaFiles.find(path);
+        if (it == mediaFiles.end())
+            it = mediaFiles.emplace(path, fileExists(path)).first;
+        return it->second;
+    }
+    mutable std::map<std::string, bool> mediaFiles;
 
     // Load an @font-face font (once per app run: NanoVG keeps fonts by name).
     // Glyphs it lacks come from the system fonts.
@@ -559,6 +668,15 @@ class NvgContainer : public document_container
     {
         if (face.id != -2)
             return face.id;
+        auto start = std::chrono::steady_clock::now();
+        int id     = loadFaceFiles(face);
+        auto ms    = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+        brls::Logger::info("card font {}: {} in {} ms", face.family, id >= 0 ? "loaded" : "not loaded", ms);
+        return id;
+    }
+
+    int loadFaceFiles(FontFace& face)
+    {
         face.id = -1;
         constexpr long MAX_FONT_BYTES = 24 * 1024 * 1024;
         for (const std::string& src : face.srcs)
@@ -572,12 +690,14 @@ class NvgContainer : public document_container
             else
             {
                 std::string path = resolve(src);
-                struct stat st;
-                if (path.empty() || stat(path.c_str(), &st) != 0 || st.st_size > MAX_FONT_BYTES)
+                if (path.empty())
                     continue;
                 name = "card-font:" + path;
                 if (int known = nvgFindFont(vg, name.c_str()); known >= 0)
                     return face.id = known;
+                struct stat st;
+                if (stat(path.c_str(), &st) != 0 || st.st_size > MAX_FONT_BYTES)
+                    continue;
                 data = readFile(path);
             }
             if (int known = nvgFindFont(vg, name.c_str()); known >= 0)
@@ -914,13 +1034,11 @@ class NvgContainer : public document_container
 
     void load_image(const char* src, const char*, bool) override
     {
+        usedImages.insert(src);
         if (images.count(src))
             return;
         if (!vg)
-        {
-            images[src] = Image();
-            return;
-        }
+            return; // not drawn yet: loaded on the next layout
         if (std::strncmp(src, "data:", 5) == 0)
         {
             std::string uri = src;
@@ -928,8 +1046,21 @@ class NvgContainer : public document_container
             images[src]     = decodeImage(svg ? "inline.svg" : "inline", decodeDataUri(uri));
             return;
         }
+        using steady     = std::chrono::steady_clock;
+        auto ms          = [](steady::time_point a, steady::time_point b) {
+            return (long)std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
+        };
+        auto start       = steady::now();
         std::string path = resolve(src);
-        images[src]      = path.empty() ? Image() : decodeImage(path, readFile(path));
+        auto found       = steady::now();
+        Image& img       = images[src] = path.empty() ? Image() : decodeImage(path, readFile(path));
+        auto done        = steady::now();
+        if (path.empty())
+            brls::Logger::warning("card image {}: not found ({} ms looking)", src, ms(start, found));
+        else
+            brls::Logger::info("card image {}: found in {} ms, read and decoded in {} ms, {}x{}, texture {}x{} id {}",
+                               src, ms(start, found), ms(found, done), img.width, img.height,
+                               img.svg ? img.texWidth : img.width, img.svg ? img.texHeight : img.height, img.id);
     }
 
     void get_image_size(const char* src, const char*, size& sz) override
@@ -952,6 +1083,8 @@ class NvgContainer : public document_container
         const position& c = layer.clip_box;
         if (o.width.value() <= 0 || o.height.value() <= 0)
             return;
+        if (it->second.svg)
+            fitSvg(it->second, o);
         nvgSave(vg);
         // litehtml clips inline images to the text line's height; a formula
         // taller than the line (rendered maths, by absolute path) must not be.
@@ -1633,13 +1766,14 @@ CardScript::Layout CardView::measure(const std::string& page)
 void CardView::layout(float width)
 {
     auto start = std::chrono::steady_clock::now();
-    container->clearImages();
+    container->beginLayout();
     container->fontFaces = parseFontFaces(html);
     layoutWidth = width / scale();
     document    = document::createFromString(html, container.get());
     darkenTextOnLightBackgrounds(document);
     if (document)
         document->render(layoutWidth);
+    container->endLayout();
     needsLayout = false;
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
     brls::Logger::info("card layout: {} ms", ms);
