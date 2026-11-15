@@ -8,6 +8,42 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.9.0 (2026-11-15)
+
+Profiles arrive, as in Anki desktop, and the review screen gives your cards
+more room. Media sync now shows its progress, and cards with SVG images or
+comment-heavy templates display as they do on the computer.
+
+### Profiles
+
+- **Several collections on one console.** **Settings › Account & sync ›
+  Profile** lists your profiles: A switches, X renames, Y deletes, and you
+  can add new ones. Each has its own collection, media, backups and AnkiWeb
+  login. The last one used opens at start.
+
+### Studying
+
+- **More room for cards.** The bottom bar is gone from the review screen;
+  its button hints now sit on the right of the top bar.
+- **Sharper SVG images.** SVG pictures on cards are drawn at the size they
+  appear, so they stay crisp at any zoom.
+
+### Sync
+
+- **Media sync progress.** While media downloads in the background, the
+  sync icon turns and shows the files on the console and how far it has
+  got. The text disappears when it's done.
+- **Clearer message.** After a sync, AnkiNX now says "Collection synced",
+  since media may still be on its way.
+
+### Fixed
+
+- **Type-in answers on some shared decks.** Decks whose templates close
+  comments with `--!>` (WaniKani Ultimate, for one) no longer mark correct
+  typed answers as wrong.
+- **Faster cards with large media folders.** Missing images and fonts are
+  looked up only once per study session, instead of on every card.
+
 ## 0.8.0 (2026-10-30)
 
 Your custom scheduling code from Anki desktop now runs on the Switch, and
