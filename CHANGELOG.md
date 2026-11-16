@@ -8,6 +8,29 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.9.2 (2026-11-16)
+
+Two fixes: media files with non-English names, and icon fonts on cards.
+
+### Fixed
+
+- **Media sync failed on some file names.** A media file whose name has
+  characters such as Japanese ones could stop the sync with "Failed to
+  write … No such file or directory": the console refused to create it.
+  AnkiNX now stores these files under a plain-letter name on the SD card,
+  while your cards and AnkiWeb keep the real one.
+- **Icons from a deck's own font showed as a square.** Decks such as
+  WaniKani draw some radicals with an icon font. AnkiNX did not load the
+  font when the deck's styling listed its files in the usual way for old
+  browsers, so the icon was missing. These now show as in Anki on a
+  computer.
+
+### Good to know
+
+- On the SD card, files with such names begin with `^u^` and are not named
+  as on a computer. To take this media to a computer, sync through AnkiWeb
+  rather than copying the folder.
+
 ## 0.9.1 (2026-11-15)
 
 A fix for media sync on large collections, which could stop partway and
