@@ -171,10 +171,12 @@ struct FontFace
     int id = -2;                    // NanoVG font; -1 failed, -2 not loaded yet
 };
 
-// The value of property `name` in a declaration block (quotes and url(...)
-// may contain ';').
-std::string declaration(const std::string& block, const std::string& name)
+// The values of property `name` in a declaration block, in order (quotes and
+// url(...) may contain ';'). A property can be given more than once: the last
+// one a browser understands is the one it uses.
+std::vector<std::string> declarations(const std::string& block, const std::string& name)
 {
+    std::vector<std::string> out;
     std::string lower = lowerAscii(block);
     for (size_t at = lower.find(name); at != std::string::npos; at = lower.find(name, at + 1))
     {
@@ -205,9 +207,16 @@ std::string declaration(const std::string& block, const std::string& name)
             else if (c == ';' && parens <= 0)
                 break;
         }
-        return trimQuotes(block.substr(colon + 1, i - colon - 1));
+        out.push_back(trimQuotes(block.substr(colon + 1, i - colon - 1)));
+        at = i;
     }
-    return "";
+    return out;
+}
+
+std::string declaration(const std::string& block, const std::string& name)
+{
+    std::vector<std::string> all = declarations(block, name);
+    return all.empty() ? std::string() : all.back();
 }
 
 // The url(...)s of a src descriptor; WOFF/WOFF2 dropped (NanoVG reads
@@ -267,7 +276,12 @@ std::vector<FontFace> parseFontFaces(const std::string& html)
             face.weight = 400;
         std::string style = lowerAscii(declaration(block, "font-style"));
         face.italic       = style.find("italic") != std::string::npos || style.find("oblique") != std::string::npos;
-        face.srcs         = fontUrls(declaration(block, "src"));
+        // Icon fonts give src twice, an old browser's .eot first and then the
+        // list with the .ttf: the later one counts, the earlier is a last try.
+        std::vector<std::string> srcs = declarations(block, "src");
+        for (auto src = srcs.rbegin(); src != srcs.rend(); ++src)
+            for (std::string& url : fontUrls(*src))
+                face.srcs.push_back(std::move(url));
         if (!face.family.empty() && !face.srcs.empty())
             out.push_back(std::move(face));
     }

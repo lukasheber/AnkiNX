@@ -29,15 +29,23 @@ static int ms_exists(const char *path) {
 }
 
 /* The path to use for `path`: itself, unless it names a media file, which is
- * in its shard, or else in the media folder, or else to be created in its
- * shard. `buf` (MS_PATH bytes) holds the result when it isn't `path`. */
+ * in its shard (under its ASCII name if it has one, or else its own), or else
+ * in the media folder, or else to be created in its shard. A file in the
+ * trash is likewise under its ASCII name or its own. `buf` (MS_PATH bytes)
+ * holds the result when it isn't `path`. */
 const char *ankinx_media_path(const char *path, char *buf) {
-    if (!ms_orig || !ms_shard_path(path, buf, MS_PATH)) return path;
-    if (ms_exists(buf) || !ms_exists(path)) return buf;
-    return path;
+    char ascii[MS_PATH];
+    if (!ms_orig) return path;
+    int encoded = ms_encoded_path(path, ascii, MS_PATH);
+    if (encoded && ms_exists(ascii)) return strcpy(buf, ascii);
+    int sharded = ms_shard_path(path, buf, MS_PATH);
+    if (sharded && ms_exists(buf)) return buf;
+    if ((!encoded && !sharded) || ms_exists(path)) return path;
+    return encoded ? strcpy(buf, ascii) : buf;
 }
 
-/* Create the folders of the sharded path `shard`. Returns 1 if its folder
+/* Create the folders of the sharded path `shard` (for a path in the trash,
+ * this tries to make the trash, which is there). Returns 1 if its folder
  * was made (it was missing: worth trying again); otherwise the error of the
  * call that failed before this is left as it was. */
 static int ms_make_folders(struct _reent *r, char *shard) {
@@ -101,6 +109,7 @@ typedef struct {
     int next_shard;     /* media folder: the shard to read next; else -1 */
     int end_rc;         /* media folder: how its own listing ended, which is */
     int end_errno;      /*   how the whole listing ends */
+    int trash;          /* the trash: names in ASCII are read back */
     char root[MS_PATH]; /* media folder: where its shards are */
 } ms_dir;
 
@@ -126,22 +135,36 @@ static void ms_inner_close(struct _reent *r, ms_dir *dir) {
     dir->inner = NULL;
 }
 
+/* Give a name written in ASCII as the name it stands for. */
+static void ms_read_back(char *filename) {
+    char name[MS_NAME];
+    if (ms_decode_name(filename, name, sizeof name)) strcpy(filename, name);
+}
+
 static DIR_ITER *ms_diropen(struct _reent *r, DIR_ITER *state, const char *path) {
     ms_dir *dir = state->dirStruct;
     dir->device = state->device;
     dir->inner = ms_inner_open(r, dir->device, path);
     if (!dir->inner) return NULL;
     dir->next_shard = ms_shard_root(path, dir->root, MS_PATH) ? 0 : -1;
+    dir->trash = ms_is_trash(path, ms_trimmed(path));
     return state;
 }
 
 static int ms_dirnext(struct _reent *r, DIR_ITER *state, char *filename, struct stat *st) {
     ms_dir *dir = state->dirStruct;
-    if (dir->next_shard < 0) return ms_orig->dirnext_r(r, dir->inner, filename, st);
+    if (dir->next_shard < 0) {
+        int rc = ms_orig->dirnext_r(r, dir->inner, filename, st);
+        if (rc == 0 && dir->trash) ms_read_back(filename);
+        return rc;
+    }
     for (;;) {
         if (dir->inner) {
             int rc = ms_orig->dirnext_r(r, dir->inner, filename, st);
-            if (rc == 0) return 0;
+            if (rc == 0) {
+                if (dir->next_shard > 0) ms_read_back(filename); /* in a shard */
+                return 0;
+            }
             if (dir->next_shard == 0) {
                 dir->end_rc = rc;
                 dir->end_errno = r->_errno;

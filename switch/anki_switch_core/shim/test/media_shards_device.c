@@ -29,8 +29,22 @@ static int fail(struct _reent *r) {
     return -1;
 }
 
+/* Would the console refuse to create this name? (Here: any that isn't ASCII,
+ * unless the test put it there itself, as a file from before would be.) */
+static int refused(const char *path) {
+    struct stat st;
+    if (stat(path, &st) == 0) return 0;
+    for (const char *c = strrchr(path, '/'); *c; c++)
+        if (*c & 0x80) return 1;
+    return 0;
+}
+
 static int sd_open(struct _reent *r, void *file, const char *path, int flags, int mode) {
     struct stat st;
+    if ((flags & O_CREAT) && refused(path)) {
+        r->_errno = ENOENT;
+        return -1;
+    }
     if ((flags & O_CREAT) && stat(path, &st) != 0) {
         char dir[1024];
         snprintf(dir, sizeof dir, "%.*s", (int)(strrchr(path, '/') - path), path);
@@ -51,6 +65,10 @@ static int sd_rename(struct _reent *r, const char *from, const char *to) {
     struct stat st;
     if (stat(to, &st) == 0) {
         r->_errno = EEXIST;
+        return -1;
+    }
+    if (refused(to)) {
+        r->_errno = ENOENT;
         return -1;
     }
     return rename(from, to) ? fail(r) : 0;
@@ -205,6 +223,45 @@ int main(void) {
     assert(DEV->unlink_r(&re, P(p, "collection.media/new2.jpg")) == 0);
     assert(DEV->unlink_r(&re, P(p, "collection.media/old0.jpg")) == 0);
     assert(strcmp(list(P(p, "collection.media"), &rc, &err, 0), "moved.jpg old1.jpg old2.jpg old3.jpg") == 0);
+
+    /* Names the console refuses are kept in ASCII, and are what they were to
+     * everything above: opened, listed, renamed, trashed, restored, deleted. */
+#define YEN "\xef\xbd\x9e\xe5\x86\x86_g.opus"
+#define CAFE "caf\xc3\xa9.mp3"
+    int fd;
+    re._errno = 0;
+    assert(sd.open_r(&re, &fd, P(p, "collection.media/" YEN), O_CREAT | O_WRONLY, 0644) == -1 && re._errno == ENOENT);
+    assert(touch(P(p, "collection.media/" YEN), O_CREAT | O_WRONLY) == 0);
+    assert(touch(P(p, "collection.media/" YEN), O_CREAT | O_WRONLY | O_TRUNC) == 0);
+    assert(touch(P(p, "collection.media/" YEN), O_RDONLY) == 0);
+    assert(DEV->stat_r(&re, P(p, "collection.media/" YEN), &st) == 0 && S_ISREG(st.st_mode));
+    assert(ankinx_media_path(P(p, "collection.media/" YEN), q) == q && stat(q, &st) == 0);
+    assert(strcmp(strrchr(q, '/'), "/^u^^uff5e^u5186_g.opus") == 0 && strstr(q, "collection.media.d/"));
+    assert(touch(P(p, "collection.media/^u^odd.jpg"), O_CREAT | O_WRONLY) == 0); /* a name like the mark */
+    assert(ankinx_media_path(P(p, "collection.media/^u^odd.jpg"), q) == q && !strcmp(strrchr(q, '/'), "/^u^^^u^^odd.jpg"));
+    /* one that is on the card under its own name (from a computer) stays so */
+    fd = open(P(p, "collection.media/" CAFE), O_CREAT | O_WRONLY, 0644);
+    assert(fd >= 0 && close(fd) == 0);
+    assert(ankinx_media_path(P(p, "collection.media/" CAFE), q) == p);
+    assert(touch(P(p, "collection.media/" CAFE), O_CREAT | O_WRONLY | O_TRUNC) == 0);
+    assert(strcmp(list(P(p, "collection.media"), &rc, &err, 1),
+                  "^u^odd.jpg " CAFE " moved.jpg old1.jpg old2.jpg old3.jpg " YEN) == 0);
+    assert(DEV->rename_r(&re, P(p, "collection.media/" YEN), P(q, "collection.media/" CAFE)) == -1);
+    assert(DEV->rename_r(&re, P(p, "collection.media/" YEN), P(q, "collection.media/y" YEN)) == 0);
+    assert(DEV->stat_r(&re, P(p, "collection.media/" YEN), &st) == -1);
+    assert(DEV->rename_r(&re, P(p, "collection.media/y" YEN), P(q, "media.trash/" YEN)) == 0);
+    assert(DEV->rename_r(&re, P(p, "collection.media/" CAFE), P(q, "media.trash/" CAFE)) == 0);
+    assert(stat(P(p, "media.trash/^u^^uff5e^u5186_g.opus"), &st) == 0 && stat(P(p, "media.trash/^u^caf^0e9.mp3"), &st) == 0);
+    assert(DEV->stat_r(&re, P(p, "media.trash/" YEN), &st) == 0);
+    assert(strcmp(list(P(p, "media.trash"), &rc, &err, 0), CAFE " old4.jpg " YEN) == 0);
+    assert(rc == -1 && err == ENOENT);
+    assert(DEV->rename_r(&re, P(p, "media.trash/" YEN), P(q, "collection.media/" YEN)) == 0);
+    assert(DEV->unlink_r(&re, P(p, "media.trash/" CAFE)) == 0);
+    assert(DEV->unlink_r(&re, P(p, "collection.media/" YEN)) == 0);
+    assert(DEV->unlink_r(&re, P(p, "collection.media/^u^odd.jpg")) == 0);
+    assert(strcmp(list(P(p, "collection.media"), &rc, &err, 0), "moved.jpg old1.jpg old2.jpg old3.jpg") == 0);
+    /* elsewhere nothing is done: the name is refused as it would be */
+    assert(touch(P(p, CAFE), O_CREAT | O_WRONLY) == -1);
 
     /* A folder that doesn't exist doesn't open. */
     DIR_ITER *state = malloc(sizeof(DIR_ITER) + DEV->dirStateSize);

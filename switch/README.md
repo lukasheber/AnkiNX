@@ -124,7 +124,16 @@ new file `collection.media/NAME` in `collection.media.d/XX/NAME` (256 folders,
 by a hash of the name). Files already in `collection.media` are found there,
 and listing it gives both. Everything above (Anki, SQLite, `fopen` in the app)
 still sees one folder. To take the media to a computer, move the files of
-`collection.media.d/*/` back into `collection.media`. The tests in
+`collection.media.d/*/` back into `collection.media`.
+
+The same layer keeps **names that aren't plain ASCII in ASCII**: the console
+refuses to create some of them (seen with `～円_g.opus`, again as "No such file
+or directory"). Such a name is stored as `^u^` followed by the name with each
+non-ASCII character as its Unicode number (`^hhh`, `^uhhhh` or `^vhhhhhh`) and
+`^` as `^^`, so that file is `^u^^uff5e^u5186_g.opus` on the card; listings
+give the real name back. This applies to new files in `collection.media.d` and
+`media.trash`; files already on the card under their own names stay so. A
+computer needs these renamed back as well as moved. The tests in
 `shim/test/` run this code on a PC behind a stand-in SD card
 (`test_core_host.sh`, step 0).
 
