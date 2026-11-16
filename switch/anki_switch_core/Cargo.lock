@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "anki_switch_core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "anki",
  "anki_proto",

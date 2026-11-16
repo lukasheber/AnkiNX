@@ -8,6 +8,30 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.9.1 (2026-11-15)
+
+A fix for media sync on large collections, which could stop partway and
+never finish.
+
+### Fixed
+
+- **Media sync stuck on large collections.** With around 17,000 media files
+  or more, the sync failed at the same place every time ("Failed to write …
+  No such file or directory"): the media folder had reached the SD card's
+  limit for files in one folder. AnkiNX now spreads media over several
+  folders, so collections of any size sync. Files already on the console
+  stay where they are.
+- **Interrupted media sync picks up where it stopped.** Closing AnkiNX or
+  losing the connection no longer throws away up to 1,000 downloaded files.
+- **The console stays awake while media syncs.** It no longer goes to sleep
+  in the middle of a long download.
+
+### Good to know
+
+- New media is stored in `collection.media.d` beside `collection.media` in
+  your profile's folder. If you copy your media to a computer by hand, move
+  the files from its subfolders back into `collection.media`.
+
 ## 0.9.0 (2026-11-15)
 
 Profiles arrive, as in Anki desktop, and the review screen gives your cards
