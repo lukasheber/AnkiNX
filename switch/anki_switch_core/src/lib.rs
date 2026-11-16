@@ -78,9 +78,15 @@ unsafe fn write_result(out: *mut AnkiBuffer, result: Result<Vec<u8>, Vec<u8>>) -
 fn use_lockless_sqlite_vfs() {
     extern "C" {
         fn ankinx_register_sqlite_vfs() -> i32;
+        #[cfg(target_os = "horizon")]
+        fn ankinx_install_media_shards();
     }
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| unsafe {
+        // Media spread over folders (shim/nx_media_shards.c). Normally in
+        // place since before main(); this covers a start where it wasn't.
+        #[cfg(target_os = "horizon")]
+        ankinx_install_media_shards();
         // On failure SQLite keeps its default VFS; opening then reports the
         // problem as an error instead of the app aborting here.
         let rc = ankinx_register_sqlite_vfs();

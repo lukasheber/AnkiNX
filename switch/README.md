@@ -115,6 +115,26 @@ this rule: it writes the download through a second handle to a temp file it
 keeps open. So `api.rs` has its own `full_download` that opens and closes the
 file at each step. `horizon_emu.c` applies this rule in both of its modes.
 
+**Media is spread over folders** (`shim/nx_media_shards.c`, `media_shards.h`).
+Anki keeps all media in `collection.media`, and on FAT32 a folder holds 65,536
+entries, of which a long file name takes several: about 17,000 media files
+fill it, and creating the next one fails with "No such file or directory". So
+the SD card's entry in newlib's device table is replaced by a copy that keeps a
+new file `collection.media/NAME` in `collection.media.d/XX/NAME` (256 folders,
+by a hash of the name). Files already in `collection.media` are found there,
+and listing it gives both. Everything above (Anki, SQLite, `fopen` in the app)
+still sees one folder. To take the media to a computer, move the files of
+`collection.media.d/*/` back into `collection.media`. The tests in
+`shim/test/` run this code on a PC behind a stand-in SD card
+(`test_core_host.sh`, step 0).
+
+**Anki itself** is patched in one place (`patches/anki.patch`, applied to the
+build tree's copy by `tools/sync.sh`): the media sync records downloaded files
+after every zip (25 files at most) instead of once per batch of server changes
+(up to 1000 files). On the console a batch can take many minutes, and a sync
+cut short (app closed, sleep, connection lost) started the whole batch again,
+so a large collection could stay on the same batch forever.
+
 **Threads and memory.** libnx gives threads 128 KiB of stack by default, and
 borealis' task thread (`brls::async`) uses that default for the API calls it
 makes. `examples/sync_probe.rs` makes its calls from a thread that size, and

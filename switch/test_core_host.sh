@@ -19,6 +19,13 @@ cd "$CRATE"
 EMU="$CARGO_TARGET_DIR/horizon_emu.so"
 gcc -shared -fPIC -O2 -Wall -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -o "$EMU" shim/horizon_emu.c -ldl
 
+echo "== 0. Media spread over folders (shim/nx_media_shards.c behind a stand-in SD card)"
+for test in media_shards_paths media_shards_device; do
+    gcc -g -fsanitize=address,undefined -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
+        -Ishim/test/fake -Ishim -o "$CARGO_TARGET_DIR/$test" "shim/test/$test.c"
+    "$CARGO_TARGET_DIR/$test"
+done
+
 echo "== 1. Linux"
 cargo +"$RUST_NIGHTLY" test --release -j "${JOBS:-2}" "$@"
 cp "$CRATE/Cargo.lock" "$LOCK"

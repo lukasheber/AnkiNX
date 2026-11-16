@@ -54,6 +54,9 @@ void setMediaActive(bool active)
     if (mediaActive == active)
         return;
     mediaActive = active;
+    // A large collection's media takes longer than the console waits before
+    // sleeping, and sleep cuts the connection: stay awake until it's done.
+    brls::Application::getPlatform()->disableScreenDimming(active, "media sync", "AnkiNX");
     mediaEvent.fire(active);
 }
 

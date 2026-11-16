@@ -1,0 +1,43 @@
+--- a/rslib/src/sync/media/syncer.rs
++++ b/rslib/src/sync/media/syncer.rs
+@@ -148,7 +148,6 @@
+                 .update(false, |p| p.downloaded_deletions += to_delete.len())?;
+ 
+             // file download
+-            let mut downloaded = vec![];
+             let mut dl_fnames = to_download.as_slice();
+             while !dl_fnames.is_empty() {
+                 let batch: Vec<_> = dl_fnames
+@@ -162,11 +161,21 @@
+                     .await?
+                     .data;
+                 let download_batch =
+-                    download::extract_into_media_folder(self.mgr.media_folder.as_path(), zip_data)?
+-                        .into_iter();
++                    download::extract_into_media_folder(self.mgr.media_folder.as_path(), zip_data)?;
+                 let len = download_batch.len();
++                // AnkiNX: a zip without files would ask for the same ones forever.
++                if len == 0 {
++                    return Err(AnkiError::sync_error(
++                        "the server sent no files",
++                        SyncErrorKind::Other,
++                    ));
++                }
+                 dl_fnames = &dl_fnames[len..];
+-                downloaded.extend(download_batch);
++                // AnkiNX: record each zip as it lands, not once per batch of
++                // server changes (up to 1000 files). A sync that stops midway
++                // then finds these files in place when it goes through the
++                // batch again, instead of downloading them all once more.
++                self.mgr.db.transact(|ctx| ctx.record_additions(download_batch))?;
+ 
+                 self.progress.update(false, |p| p.downloaded_files += len)?;
+             }
+@@ -176,7 +185,6 @@
+             self.mgr.db.transact(|ctx| {
+                 ctx.record_clean(&to_remove_pending)?;
+                 ctx.record_removals(&to_delete)?;
+-                ctx.record_additions(downloaded)?;
+ 
+                 // update usn
+                 meta.last_sync_usn = last_usn;

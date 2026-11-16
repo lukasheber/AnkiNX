@@ -1,11 +1,14 @@
 // Compile the C shims into this static library so the frontend only has to
 // link libanki_switch_core.a (+ libnx on the Switch):
 // - shim/sqlite_vfs.c, everywhere (SQLite VFS, see the file);
-// - shim/nx_posix.c, on the Switch (POSIX gaps and fixes in newlib/libnx).
+// - shim/nx_posix.c, on the Switch (POSIX gaps and fixes in newlib/libnx);
+// - shim/nx_media_shards.c, on the Switch (media spread over folders).
 fn main() {
     println!("cargo:rerun-if-changed=shim/sqlite_vfs.c");
     println!("cargo:rerun-if-changed=shim/nx_posix.c");
     println!("cargo:rerun-if-changed=shim/horizon_fixes.h");
+    println!("cargo:rerun-if-changed=shim/nx_media_shards.c");
+    println!("cargo:rerun-if-changed=shim/media_shards.h");
 
     // Set by libsqlite3-sys (links = "sqlite3") for its bundled sqlite3.h.
     let sqlite_include = std::env::var("DEP_SQLITE3_INCLUDE").expect("DEP_SQLITE3_INCLUDE");
@@ -23,6 +26,7 @@ fn main() {
     let devkitpro = std::env::var("DEVKITPRO").unwrap_or_else(|_| "/opt/devkitpro".into());
     cc::Build::new()
         .file("shim/nx_posix.c")
+        .file("shim/nx_media_shards.c")
         .include(format!("{devkitpro}/libnx/include"))
         .define("__SWITCH__", None)
         .warnings(true)

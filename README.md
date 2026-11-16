@@ -204,7 +204,8 @@ bash app/build.sh                   # the app -> app/dist/AnkiNX.nro
 ```
 
 Anki's source (26.09.3) is expected, unmodified, in
-`source_code/anki-26.09.3`. `bash switch/test_core_host.sh` runs the backend's
+`source_code/anki-26.09.3`; `tools/sync.sh` applies `switch/patches/anki.patch`
+to the copy that is built. `bash switch/test_core_host.sh` runs the backend's
 tests on Linux, including under an emulation of the Switch's filesystem rules.
 
 | Path | Contents |

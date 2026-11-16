@@ -30,8 +30,28 @@ mapfile -t skip < <(excludes "${SWITCH_OWN[@]}")
 rsync -a --delete --exclude target/ --exclude '*.orig' --exclude Cargo.lock "${skip[@]}" \
     "$ANKISWITCH_SRC/switch/" "$ANKISWITCH_WORK/switch/"
 own switch "${SWITCH_OWN[@]}"
+
+# Anki's source stays unmodified on the Windows drive; our few changes to it
+# (switch/patches/anki.patch) are applied to the work tree's copy. A patched
+# file is only rewritten when its content changes, so cargo doesn't rebuild
+# Anki after every sync.
+ANKI_SRC="$ANKISWITCH_SRC/source_code/anki-26.09.3"
+ANKI_WORK="$ANKISWITCH_WORK/source_code/anki-26.09.3"
+ANKI_PATCH="$ANKISWITCH_SRC/switch/patches/anki.patch"
+mapfile -t patched < <(sed -n 's|^+++ b/||p' "$ANKI_PATCH")
 rsync -a --delete --exclude .git/ --exclude node_modules/ --exclude out/ --exclude target/ \
-    "$ANKISWITCH_SRC/source_code/anki-26.09.3/" "$ANKISWITCH_WORK/source_code/anki-26.09.3/"
+    "${patched[@]/#/--exclude=/}" "$ANKI_SRC/" "$ANKI_WORK/"
+stage=$(mktemp -d)
+for file in "${patched[@]}"; do
+    mkdir -p "$stage/$(dirname "$file")"
+    cp "$ANKI_SRC/$file" "$stage/$file"
+done
+patch -s -p1 -d "$stage" < "$ANKI_PATCH"
+for file in "${patched[@]}"; do
+    cmp -s "$stage/$file" "$ANKI_WORK/$file" || cp "$stage/$file" "$ANKI_WORK/$file"
+done
+rm -rf "$stage"
+
 if [[ -d "$ANKISWITCH_SRC/app" ]]; then
     mapfile -t skip < <(excludes "${APP_OWN[@]}")
     rsync -a --delete --exclude 'build*/' "${skip[@]}" "$ANKISWITCH_SRC/app/" "$ANKISWITCH_WORK/app/"

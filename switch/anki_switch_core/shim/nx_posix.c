@@ -159,11 +159,15 @@ int fchmodat(int dirfd, const char *path, mode_t mode, int flags) {
 #define HZ_FTRUNCATE(fd, len) ftruncate(fd, len)
 #include "horizon_fixes.h"
 
+/* Where a media file really is (nx_media_shards.c); other paths as given. */
+const char *ankinx_media_path(const char *path, char *buf);
+
 /* Entry type without opening the file: ask the filesystem directly. */
 static int hz_entry_type(const char *path) {
     FsFileSystem *fs = NULL;
-    char fspath[FS_MAX_PATH];
+    char fspath[FS_MAX_PATH], media[0x340];
     FsDirEntryType type;
+    path = ankinx_media_path(path, media);
     if (fsdevTranslatePath(path, &fs, fspath) == -1 || R_FAILED(fsFsGetEntryType(fs, fspath, &type)))
         return 0;
     return type == FsDirEntryType_Dir ? 2 : 1;
