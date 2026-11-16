@@ -8,6 +8,18 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.9.3 (2026-11-16)
+
+Faster reviews on decks with their own fonts.
+
+### Fixed
+
+- **Pause before the answer on decks with their own fonts.** Decks that
+  bring a font (such as a Japanese font in WaniKani decks) had it read from
+  the SD card again for every card side, so showing the answer could hang
+  for a moment, and memory use grew as you reviewed. Each font is now read
+  once per session.
+
 ## 0.9.2 (2026-11-16)
 
 Two fixes: media files with non-English names, and icon fonts on cards.
