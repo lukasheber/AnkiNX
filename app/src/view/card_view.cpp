@@ -689,6 +689,16 @@ class NvgContainer : public document_container
         return id;
     }
 
+    // NanoVG's name for a card font. It keeps 63 characters of a name, fewer
+    // than a media path has: a longer name is never found again, and the font
+    // would be read and added once more each time a card is laid out.
+    static std::string fontKey(const std::string& source)
+    {
+        char key[40];
+        std::snprintf(key, sizeof key, "card-font:%016zx", std::hash<std::string> {}(source));
+        return key;
+    }
+
     int loadFaceFiles(FontFace& face)
     {
         face.id = -1;
@@ -698,15 +708,17 @@ class NvgContainer : public document_container
             std::string data, name;
             if (src.rfind("data:", 0) == 0)
             {
+                name = fontKey(src);
+                if (int known = nvgFindFont(vg, name.c_str()); known >= 0)
+                    return face.id = known;
                 data = decodeDataUri(src);
-                name = "card-font:" + std::to_string(std::hash<std::string> {}(data));
             }
             else
             {
                 std::string path = resolve(src);
                 if (path.empty())
                     continue;
-                name = "card-font:" + path;
+                name = fontKey(path);
                 if (int known = nvgFindFont(vg, name.c_str()); known >= 0)
                     return face.id = known;
                 struct stat st;
@@ -1723,6 +1735,7 @@ void darkenTextOnLightBackgrounds(const document::ptr& doc)
 CardScript::Layout CardView::measure(const std::string& page)
 {
     CardScript::Layout boxes;
+    auto start = std::chrono::steady_clock::now();
     if (!container->vg)
         container->vg = brls::Application::getNVGContext(); // not drawn yet
     if (!container->vg)
@@ -1774,6 +1787,8 @@ CardScript::Layout CardView::measure(const std::string& page)
     };
     if (auto root = doc->root())
         visit(root);
+    brls::Logger::debug("card measured for its scripts: {} ms",
+                        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
     return boxes;
 }
 

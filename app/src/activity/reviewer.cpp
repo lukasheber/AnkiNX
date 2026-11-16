@@ -1058,7 +1058,11 @@ void ReviewerActivity::showAnswer()
         });
         return;
     }
-    state     = State::Answer;
+    state      = State::Answer;
+    auto start = std::chrono::steady_clock::now();
+    auto since = [](std::chrono::steady_clock::time_point t) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count();
+    };
     shownBody = card["answer"].get<std::string>();
     if (card.value("type_answer", false) && !typed.empty())
     {
@@ -1071,12 +1075,16 @@ void ReviewerActivity::showAnswer()
             brls::Application::notify(e.what());
         }
     }
+    auto compared = since(start);
     runScripts();
     prepareScript();
+    auto scripted = since(start);
     cardView->setOcclusions(occlusionsFor(card, "answer"));
     cardView->setMasksHidden(false);
     cardView->setHtml(documentFor(shownBody));
     cardView->scrollToAnswerAfterLayout();
+    brls::Logger::info("answer side: typed answer compared in {} ms, scripts done at {} ms, page set at {} ms", compared,
+                       scripted, since(start));
     const anki::json& buttons = card["buttons"];
     for (int ease = 1; ease <= 4 && ease <= (int)buttons.size(); ease++)
         ((brls::Label*)this->getView("ease" + std::to_string(ease) + "Time"))
