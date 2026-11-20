@@ -44,6 +44,9 @@ pub fn states_json(states: &SchedulingStates, custom_data: &str) -> Value {
         "hard": state_json(&states.hard.into()),
         "good": state_json(&states.good.into()),
         "easy": state_json(&states.easy.into()),
+        // The FSRS-7 fork's dynamic desired retention: one per answer, or none.
+        "dynamicDesiredRetentions": states.dynamic_desired_retentions.map_or(vec![], |r| r.map(float).to_vec()),
+        "dynamicDesiredRetentionEnabled": states.dynamic_desired_retention_enabled,
     })
 }
 
@@ -63,7 +66,16 @@ pub fn context_json(context: &SchedulingContext) -> Value {
 /// The states the page handed back, in the form `states_json` writes (a
 /// number left out is zero, as in protobuf), and each answer's custom data.
 pub fn read_states(json: &Value) -> Result<(SchedulingStates, CustomData), String> {
-    let fields = message(json, "SchedulingStates", &["current", "again", "hard", "good", "easy"])?;
+    let keys = [
+        "current",
+        "again",
+        "hard",
+        "good",
+        "easy",
+        "dynamicDesiredRetentions",
+        "dynamicDesiredRetentionEnabled",
+    ];
+    let fields = message(json, "SchedulingStates", &keys)?;
     let read = |key: &str| fields.get(key).map(read_state).transpose();
     let mut states = anki_proto::scheduler::SchedulingStates {
         current: read("current")?,
@@ -71,6 +83,8 @@ pub fn read_states(json: &Value) -> Result<(SchedulingStates, CustomData), Strin
         hard: read("hard")?,
         good: read("good")?,
         easy: read("easy")?,
+        dynamic_desired_retentions: floats(fields, "dynamicDesiredRetentions")?,
+        dynamic_desired_retention_enabled: boolean(fields, "dynamicDesiredRetentionEnabled")?,
     };
     let custom_data = [&mut states.again, &mut states.hard, &mut states.good, &mut states.easy]
         .map(|state| state.as_mut().and_then(|state| state.custom_data.take()));
@@ -136,6 +150,8 @@ fn review_json(review: &Review) -> Value {
     if let Some(memory) = &review.memory_state {
         out["memoryState"] = memory_json(memory);
     }
+    // The FSRS-7 fork: the days fuzz added to the interval (shown on the button).
+    out["fuzzDeltaDays"] = review.fuzz_delta_days.into();
     out
 }
 
@@ -156,7 +172,16 @@ fn filtered_json(filtered: &Filtered) -> Value {
 }
 
 fn memory_json(memory: &FsrsMemoryState) -> Value {
-    json!({ "stability": float(memory.stability), "difficulty": float(memory.difficulty) })
+    let mut json = json!({ "stability": float(memory.stability), "difficulty": float(memory.difficulty) });
+    // FSRS-7's two stabilities (optional fields: left out when unset). A script
+    // that keeps the memory state must hand them back, or the card loses them.
+    if let Some(value) = memory.stability_internal {
+        json["stabilityInternal"] = float(value);
+    }
+    if let Some(value) = memory.stability_fast {
+        json["stabilityFast"] = float(value);
+    }
+    json
 }
 
 /// A float as protobuf's JSON has it: a number, or "NaN", "Infinity" or
@@ -241,7 +266,7 @@ fn read_learning(json: &Value) -> Result<Learning, String> {
 }
 
 fn read_review(json: &Value) -> Result<Review, String> {
-    let keys = ["scheduledDays", "elapsedDays", "easeFactor", "lapses", "leeched", "memoryState"];
+    let keys = ["scheduledDays", "elapsedDays", "easeFactor", "lapses", "leeched", "memoryState", "fuzzDeltaDays"];
     let fields = message(json, "Review", &keys)?;
     Ok(Review {
         scheduled_days: uint32(fields, "scheduledDays")?,
@@ -250,6 +275,7 @@ fn read_review(json: &Value) -> Result<Review, String> {
         lapses: uint32(fields, "lapses")?,
         leeched: boolean(fields, "leeched")?,
         memory_state: fields.get("memoryState").map(read_memory).transpose()?,
+        fuzz_delta_days: int32(fields, "fuzzDeltaDays")?,
     })
 }
 
@@ -276,10 +302,17 @@ fn read_filtered(json: &Value) -> Result<Filtered, String> {
 }
 
 fn read_memory(json: &Value) -> Result<FsrsMemoryState, String> {
-    let fields = message(json, "FsrsMemoryState", &["stability", "difficulty"])?;
+    let fields = message(
+        json,
+        "FsrsMemoryState",
+        &["stability", "difficulty", "stabilityInternal", "stabilityFast"],
+    )?;
+    let optional = |key| fields.get(key).map(|_| float32(fields, key)).transpose();
     Ok(FsrsMemoryState {
         stability: float32(fields, "stability")?,
         difficulty: float32(fields, "difficulty")?,
+        stability_internal: optional("stabilityInternal")?,
+        stability_fast: optional("stabilityFast")?,
     })
 }
 
@@ -290,6 +323,32 @@ fn uint32(fields: &Map<String, Value>, key: &str) -> Result<u32, String> {
             .as_u64()
             .and_then(|n| u32::try_from(n).ok())
             .ok_or_else(|| format!("{key}: {value} is not a whole number from 0 to 4294967295")),
+    }
+}
+
+fn int32(fields: &Map<String, Value>, key: &str) -> Result<i32, String> {
+    match fields.get(key) {
+        None => Ok(0),
+        Some(value) => value
+            .as_i64()
+            .and_then(|n| i32::try_from(n).ok())
+            .ok_or_else(|| format!("{key}: {value} is not a whole number from -2147483648 to 2147483647")),
+    }
+}
+
+/// A repeated float: a list (left out: empty).
+fn floats(fields: &Map<String, Value>, key: &str) -> Result<Vec<f32>, String> {
+    match fields.get(key) {
+        None => Ok(vec![]),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| {
+                let mut one = Map::new();
+                one.insert(key.to_string(), item.clone());
+                float32(&one, key)
+            })
+            .collect(),
+        Some(other) => Err(format!("{key}: {other} is not a list")),
     }
 }
 
@@ -344,7 +403,10 @@ mod tests {
             memory_state: Some(FsrsMemoryState {
                 stability: 12.5,
                 difficulty: 5.25,
+                stability_internal: Some(11.75),
+                stability_fast: None,
             }),
+            fuzz_delta_days: -2,
         }
     }
 
@@ -381,6 +443,8 @@ mod tests {
                 scheduled_secs: 0,
                 finished: true,
             }))),
+            dynamic_desired_retentions: vec![0.8, 0.85, 0.9, 0.95],
+            dynamic_desired_retention_enabled: true,
         }
         .into()
     }
@@ -388,6 +452,8 @@ mod tests {
     fn states_equal(a: &SchedulingStates, b: &SchedulingStates) -> bool {
         let all = |s: &SchedulingStates| -> [CardState; 5] { [s.current, s.again, s.hard, s.good, s.easy] };
         all(a) == all(b)
+            && a.dynamic_desired_retentions == b.dynamic_desired_retentions
+            && a.dynamic_desired_retention_enabled == b.dynamic_desired_retention_enabled
     }
 
     #[test]
@@ -403,7 +469,10 @@ mod tests {
         assert_eq!(relearning["learning"]["scheduledSecs"], 600);
         // A float as JavaScript reads the protobuf float: 1.85f32, not 1.85.
         assert_eq!(relearning["review"]["easeFactor"], json!(1.850000023841858));
-        assert_eq!(relearning["review"]["memoryState"], json!({ "stability": 12.5, "difficulty": 5.25 }));
+        assert_eq!(
+            relearning["review"]["memoryState"],
+            json!({ "stability": 12.5, "difficulty": 5.25, "stabilityInternal": 11.75 })
+        );
         let original = &json["good"]["filtered"]["rescheduling"]["originalState"];
         assert_eq!(original["review"]["scheduledDays"], 4);
         assert_eq!(json["easy"], json!({ "filtered": { "preview": { "scheduledSecs": 0, "finished": true } } }));
@@ -443,7 +512,8 @@ mod tests {
                     ease_factor: 0.0,
                     lapses: 0,
                     leeched: false,
-                    memory_state: None
+                    memory_state: None,
+                    fuzz_delta_days: 0,
                 }))
             }))
         );

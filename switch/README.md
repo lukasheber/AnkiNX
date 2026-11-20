@@ -1,6 +1,7 @@
 # Anki for Nintendo Switch: native port
 
-Phase 2 output: Anki's Rust backend (`rslib`, Anki 26.09.3) cross-compiled for
+Phase 2 output: Anki's Rust backend (`rslib`; on this branch the FSRS-7 fork of
+Anki 26.09.4, see `tools/env.sh`) cross-compiled for
 Horizon OS as a C static library, `dist/libanki_switch_core.a`, with
 `dist/anki_switch_core.h`.
 
@@ -74,7 +75,8 @@ redundant for this target but harmless.
 `getrandom` (libnx `randomGet`, ChaCha20 seeded from kernel entropy),
 `sysconf` (cores from the process core mask, page size), `pread`/`pwrite`
 (lseek-emulated, **not atomic**), `*at()` calls for `AT_FDCWD`/absolute paths,
-and `ENOSYS` for ownership, `chroot`, FIFOs, `pipe`, `fstatvfs`. It also
+`lutimes` (= `utimes`: no symbolic links on FAT/exFAT),
+and `ENOSYS` for ownership, `chroot`, FIFOs, `pipe`, `fstatvfs`, `futimes`. It also
 **replaces newlib's `stat`, `lstat`, `read`, `write` and `rename`** with POSIX
 behaviour on top of Horizon's filesystem (`shim/horizon_fixes.h`):
 - `stat`/`lstat`: libnx opens the file to read its size, and Horizon refuses to
@@ -184,7 +186,8 @@ Horizon exposes no OS certificate store to homebrew. switch-curl and
 switch-mbedtls remain installed for the frontend if it needs them.
 
 **Translations.** `tools/fetch_ftl.sh` fetches `ftl/core-repo` and `ftl/qt-repo`
-at the commits pinned by the Anki 26.09.3 tag; source archives ship them empty.
+at the commits the pinned Anki source (`tools/env.sh`) records; source archives
+and shallow clones ship them empty.
 
 ## JSON API for the frontend (Phase 3)
 

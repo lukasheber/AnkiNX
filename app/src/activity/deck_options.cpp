@@ -155,8 +155,36 @@ void DeckOptionsActivity::fill(const anki::json& options)
     list->addView(fsrsCell);
     // Both sets of rows exist; FSRS shows one or the other (rebuilding the
     // list would delete the focused row).
+    size_t firstFsrsRow = list->getChildren().size();
+    // Presets set to RWKV in Anki desktop (the FSRS-7 fork) keep the setting;
+    // AnkiNX schedules them with their FSRS version.
+    rwkvNote = new brls::Label();
+    rwkvNote->setFontSize(16);
+    rwkvNote->setMarginLeft(16);
+    rwkvNote->setMarginBottom(8);
+    list->addView(rwkvNote);
+    // FSRS-7 or FSRS-6, per preset; FSRS-5 and FSRS-4 only for a preset that
+    // already uses one (Anki desktop's fork offers 7 and 6).
+    std::vector<std::string> versions = { "7", "6" }, versionNames = { "FSRS-7", "FSRS-6" };
+    std::string version = values.value("fsrs_version", "7");
+    if (version == "5" || version == "4")
+    {
+        versions.push_back(version);
+        versionNames.push_back("FSRS-" + version);
+    }
+    choice(t("fsrs_version"), "fsrs_version", versions, versionNames);
     number(t("desired_retention"), "desired_retention", true);
-    fsrsRows.push_back(list->getChildren().back());
+    paramsRow();
+    steps(t("fsrs_minimum_interval"), "fsrs_minimum_interval", "1s 10m 1h 1d");
+    collectionToggle(t("fsrs_short_term_with_steps"), "fsrs_short_term_with_steps",
+                     options.value("fsrs_short_term_with_steps", false));
+    collectionToggle(t("fsrs_skip_learning_queues"), "fsrs_skip_learning_queues",
+                     options.value("fsrs_skip_learning_queues", false));
+    for (size_t i = firstFsrsRow; i < list->getChildren().size(); i++)
+        fsrsRows.push_back(list->getChildren()[i]);
+    fsrsParams = options.value("fsrs_params", 0);
+    rwkv       = options.value("rwkv", "off");
+    showParams();
     for (const char* key : { "starting_ease", "easy_bonus", "interval_modifier", "hard_interval", "new_interval" })
     {
         number(t(key), key, true);
@@ -215,13 +243,13 @@ void DeckOptionsActivity::number(const std::string& title, const std::string& ke
     list->addView(cell);
 }
 
-void DeckOptionsActivity::steps(const std::string& title, const std::string& key)
+void DeckOptionsActivity::steps(const std::string& title, const std::string& key, const std::string& format)
 {
     auto* cell = new brls::DetailCell();
     cell->setText(title);
     cell->setDetailText(values.value(key, ""));
-    cell->registerClickAction([this, title, key](brls::View*) {
-        keyboard::text(title + " (1m 10m 1d)", values.value(key, ""), 60, [this, key](const std::string& text) {
+    cell->registerClickAction([this, title, key, format](brls::View*) {
+        keyboard::text(title + " (" + format + ")", values.value(key, ""), 60, [this, key](const std::string& text) {
             apply({ { "values", { { key, text } } } });
         });
         return true;
@@ -254,12 +282,55 @@ void DeckOptionsActivity::toggle(const std::string& title, const std::string& ke
     list->addView(cell);
 }
 
+brls::BooleanCell* DeckOptionsActivity::collectionToggle(const std::string& title, const std::string& arg, bool on)
+{
+    auto* cell = new brls::BooleanCell();
+    cell->init(title, on, [this, arg](bool on) { apply({ { arg, on } }); });
+    collectionToggles[arg] = cell;
+    list->addView(cell);
+    return cell;
+}
+
+void DeckOptionsActivity::paramsRow()
+{
+    paramsCell = new brls::DetailCell();
+    paramsCell->setText(t("fsrs_params"));
+    paramsCell->registerClickAction([this](brls::View*) {
+        if (fsrsParams == 0)
+        {
+            brls::Application::notify(t("fsrs_params_note"));
+            return true;
+        }
+        auto* dialog = new brls::Dialog(t("fsrs_params_reset_confirm"));
+        dialog->addButton("hints/cancel"_i18n, [] {});
+        dialog->addButton(t("fsrs_params_reset"), [this, token = alive] {
+            if (*token)
+                apply({ { "reset_fsrs_params", true } });
+        });
+        dialog->open();
+        return true;
+    });
+    list->addView(paramsCell);
+}
+
+// The parameters row and the RWKV note follow the preset's values.
+void DeckOptionsActivity::showParams()
+{
+    paramsCell->setDetailText(t(fsrsParams == 0 ? "fsrs_params_default" : "fsrs_params_optimized"));
+    std::string version = "FSRS-" + values.value("fsrs_version", "7");
+    if (rwkv == "instant" || rwkv == "curve")
+        rwkvNote->setText(brls::getStr("ankinx/options/rwkv_note_" + rwkv, version));
+}
+
 void DeckOptionsActivity::showSchedulerRows()
 {
     for (brls::View* row : fsrsRows)
         row->setVisibility(fsrs ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     for (brls::View* row : sm2Rows)
         row->setVisibility(fsrs ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    // The note only for presets set to RWKV.
+    if (fsrs && rwkv == "off")
+        rwkvNote->setVisibility(brls::Visibility::GONE);
 }
 
 // Every row shows what the backend saved (a refused change goes back too);
@@ -277,6 +348,11 @@ void DeckOptionsActivity::refresh(const anki::json& options)
             if (values.value(key, "") == choice.second[i])
                 choice.first->setSelection((int)i, true);
     fsrsCell->setOn(fsrs, false);
+    for (auto& [arg, cell] : collectionToggles)
+        cell->setOn(options.value(arg, false), false);
+    fsrsParams = options.value("fsrs_params", 0);
+    rwkv       = options.value("rwkv", "off");
+    showParams();
     customScheduling = options.value("custom_scheduling", false);
     customSchedulingCell->setDetailText(customScheduling ? "hints/on"_i18n : "hints/off"_i18n);
     showSchedulerRows();

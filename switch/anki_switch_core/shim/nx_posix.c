@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -294,6 +295,13 @@ NX_ENOSYS(int chroot(const char *p))
 NX_ENOSYS(int mkfifo(const char *p, mode_t m))
 NX_ENOSYS(int pipe(int fds[2]))
 NX_ENOSYS(int fstatvfs(int fd, struct statvfs *buf))
+
+/* File times (filetime, under tar in the FSRS-7 fork of Anki; only its
+ * desktop updater unpacks archives). devkitA64 declares these but only
+ * libsysbase's utimes exists. FAT/exFAT has no symbolic links, so lutimes is
+ * utimes; an open file can't be named back to its path, so futimes can't. */
+int lutimes(const char *path, const struct timeval times[2]) { return utimes(path, times); }
+NX_ENOSYS(int futimes(int fd, const struct timeval times[2]))
 
 /* Single-user system without a process tree. */
 uid_t getuid(void) { return 0; }

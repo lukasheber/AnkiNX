@@ -696,7 +696,7 @@ fn restore_colpkg(colpkg: &Path, col_path: &Path) -> Result<()> {
     let written = (|| -> Result<()> {
         let mut zip = zip::ZipArchive::new(std::fs::File::open(colpkg).map_err(io)?).map_err(zip_err)?;
         let mut out = std::fs::File::create(&temp).map_err(io)?;
-        if zip.file_names().any(|n| n == "collection.anki21b") {
+        if zip.index_for_name("collection.anki21b").is_some() {
             let mut entry = zip.by_name("collection.anki21b").map_err(zip_err)?;
             zstd::stream::copy_decode(&mut entry, &mut out).map_err(io)?;
         } else {
@@ -1238,23 +1238,40 @@ impl State {
         let info = self.col()?.get_deck_configs_for_update(did).map_err(|e| ApiError::anki(e, &tr))?;
         let (config, use_count) = current_preset(&info)?;
         let inner = config.config.clone().unwrap_or_default();
+        // RWKV is set per preset in the desktop fork; AnkiNX keeps the setting
+        // and, until it runs RWKV itself, schedules with the FSRS version.
+        let rwkv = if inner.rwkv_review_instant_order_enabled {
+            "instant"
+        } else if inner.rwkv_review_enabled {
+            "curve"
+        } else {
+            "off"
+        };
         Ok(json!({
             "preset": config.name,
             "deck_count": use_count,
             "fsrs": info.fsrs,
             "custom_scheduling": !info.card_state_customizer.is_empty(),
             "values": deck_option_values(&inner),
+            "rwkv": rwkv,
+            // How many parameters the preset's FSRS version has (none: the defaults).
+            "fsrs_params": fsrs_params(&inner).len(),
+            // Collection-wide, like FSRS itself.
+            "fsrs_short_term_with_steps": info.fsrs_short_term_with_steps_enabled,
+            "fsrs_skip_learning_queues": info.fsrs_learning_queues_disabled,
         }))
     }
 
-    /// `set_deck_options {deck_id, values?, fsrs?, custom_scheduling?}`:
-    /// change some values of the deck's preset (the keys `deck_options`
-    /// returns), turn FSRS on or off and/or turn custom scheduling off
-    /// (`false` deletes the code, as the reset button in Anki's deck options
-    /// does; it is written in Anki desktop, so it can't be turned on here),
-    /// through Anki's own update (undoable, FSRS memory states updated).
+    /// `set_deck_options {deck_id, values?, fsrs?, custom_scheduling?,
+    /// fsrs_short_term_with_steps?, fsrs_skip_learning_queues?,
+    /// reset_fsrs_params?}`: change some values of the deck's preset (the
+    /// keys `deck_options` returns), turn FSRS on or off and/or turn custom
+    /// scheduling off (`false` deletes the code, as the reset button in Anki's
+    /// deck options does; it is written in Anki desktop, so it can't be turned
+    /// on here), the FSRS-7 fork's collection-wide same-day options, and go
+    /// back to the default parameters of the preset's FSRS version, through
+    /// Anki's own update (undoable, FSRS memory states updated).
     fn set_deck_options(&mut self, args: &Value) -> ApiResult {
-        use anki::deckconfig::UpdateDeckConfigsRequest;
         use anki_proto::deck_config::UpdateDeckConfigsMode;
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
@@ -1274,21 +1291,21 @@ impl State {
             Some(Value::Bool(false)) => String::new(),
             Some(_) => return Err(ApiError::new("args", "custom scheduling can only be turned off")),
         };
-        let current = info.current_deck.clone().unwrap_or_default();
-        col.update_deck_configs(UpdateDeckConfigsRequest {
-            target_deck_id: did,
-            configs: vec![config],
-            removed_config_ids: vec![],
-            mode: UpdateDeckConfigsMode::Normal,
-            card_state_customizer,
-            limits: current.limits.unwrap_or_default(),
-            new_cards_ignore_review_limit: info.new_cards_ignore_review_limit,
-            apply_all_parent_limits: info.apply_all_parent_limits,
-            fsrs,
-            fsrs_reschedule: false,
-            fsrs_health_check: info.fsrs_health_check,
-        })
-        .map_err(err)?;
+        if args.get("reset_fsrs_params").and_then(Value::as_bool) == Some(true) {
+            fsrs_params_mut(&mut config.inner).clear();
+        }
+        let flag = |key: &str, current: bool| match args.get(key) {
+            None => Ok(current),
+            Some(value) => value.as_bool().ok_or_else(|| ApiError::new("args", format!("{key} is not a boolean"))),
+        };
+        let short_term_with_steps = flag("fsrs_short_term_with_steps", info.fsrs_short_term_with_steps_enabled)?;
+        let skip_learning_queues = flag("fsrs_skip_learning_queues", info.fsrs_learning_queues_disabled)?;
+        let mut request = crate::presets::update_request(&info, did, vec![config], UpdateDeckConfigsMode::Normal);
+        request.fsrs = fsrs;
+        request.card_state_customizer = card_state_customizer;
+        request.fsrs_short_term_with_steps_enabled = short_term_with_steps;
+        request.fsrs_learning_queues_disabled = skip_learning_queues;
+        col.update_deck_configs(request).map_err(err)?;
         Ok(json!({}))
     }
 
@@ -1548,7 +1565,7 @@ impl State {
             .col
             .as_mut()
             .ok_or_else(|| ApiError::new("not_open", "the collection is not open"))?;
-        let queued = col.get_queued_cards(1, false).map_err(err)?;
+        let queued = col.get_queued_cards(1, false, false).map_err(err)?;
         let counts = json!({
             "new": queued.new_count,
             "learn": queued.learning_count,
@@ -1582,6 +1599,12 @@ impl State {
         let card_id = card.card.id();
         let note_id = card.card.note_id();
         let ord = card.card.template_idx();
+        // The FSRS-7 fork can queue a card without its states (only when asked
+        // to skip them, which we don't); work them out then.
+        let states = match card.states.clone() {
+            Some(states) => states,
+            None => col.get_scheduling_states(card_id).map_err(err)?,
+        };
         let proto_card = anki_proto::cards::Card::from(card.card.clone());
         let flag = proto_card.flags;
         // The home deck's "Don't play audio automatically" (filtered decks use
@@ -1636,7 +1659,7 @@ impl State {
         // Anki when Show Answer is pressed with an empty box.
         let shown_answer = compare_type_answer(col, &answer, typing.as_ref(), "").map_err(err)?;
         let buttons: Vec<String> = col
-            .describe_next_states(&card.states)
+            .describe_next_states(&states)
             .map_err(err)?
             .iter()
             .map(|label| without_bidi_isolates(label))
@@ -1645,7 +1668,7 @@ impl State {
         // states and context it runs on, as Anki's reviewer page gets them.
         let custom_scheduling = col.get_config_string(StringKey::CardStateCustomizer);
         let scheduling = json!({
-            "states": crate::scheduling::states_json(&card.states, &proto_card.custom_data),
+            "states": crate::scheduling::states_json(&states, &proto_card.custom_data),
             "context": crate::scheduling::context_json(&card.context),
         });
 
@@ -1657,7 +1680,7 @@ impl State {
         let type_answer = typing.is_some();
         self.shown = Some(Shown {
             card_id,
-            states: card.states,
+            states,
             custom_data: Default::default(),
             shown_at: Instant::now(),
             typing,
@@ -1778,6 +1801,13 @@ impl State {
             milliseconds_taken: shown.shown_at.elapsed().as_millis().min(u32::MAX as u128) as u32,
             // Set by custom scheduling code; None keeps the card's.
             custom_data: shown.custom_data[button].clone(),
+            // The FSRS-7 fork's desktop overrides (an add-on's desired
+            // retention) and RWKV's predictions: none here yet.
+            desired_retention_override: None,
+            desired_retention_override_is_final: false,
+            rwkv_s90: None,
+            rwkv_retrievability: None,
+            rwkv_review_kind: None,
             from_queue: true,
         };
         let tr = self.tr.clone();
@@ -2468,7 +2498,72 @@ fn deck_option_values(c: &DeckConfigInner) -> Value {
         "wait_for_audio": c.wait_for_audio,
         "question_action": question_action_name(c.question_action),
         "answer_action": answer_action_name(c.answer_action),
+        "fsrs_version": fsrs_version_name(c.fsrs_version),
+        "fsrs_minimum_interval": minimum_interval_text(c.fsrs_minimum_interval_secs),
     })
+}
+
+/// The FSRS-7 fork's FSRS version of a preset: "7" (the default), "6", "5", "4".
+fn fsrs_version_name(version: i32) -> &'static str {
+    use anki_proto::deck_config::deck_config::config::FsrsVersion;
+    match FsrsVersion::try_from(version).unwrap_or(FsrsVersion::Seven) {
+        FsrsVersion::Seven => "7",
+        FsrsVersion::Six => "6",
+        FsrsVersion::Five => "5",
+        FsrsVersion::Four => "4",
+    }
+}
+
+fn parse_fsrs_version(name: &str) -> Option<anki_proto::deck_config::deck_config::config::FsrsVersion> {
+    use anki_proto::deck_config::deck_config::config::FsrsVersion;
+    Some(match name {
+        "7" => FsrsVersion::Seven,
+        "6" => FsrsVersion::Six,
+        "5" => FsrsVersion::Five,
+        "4" => FsrsVersion::Four,
+        _ => return None,
+    })
+}
+
+/// The parameters of the preset's FSRS version (empty: the defaults).
+fn fsrs_params(c: &DeckConfigInner) -> &Vec<f32> {
+    use anki_proto::deck_config::deck_config::config::FsrsVersion;
+    match FsrsVersion::try_from(c.fsrs_version).unwrap_or(FsrsVersion::Seven) {
+        FsrsVersion::Seven => &c.fsrs_params_7,
+        FsrsVersion::Six => &c.fsrs_params_6,
+        FsrsVersion::Five => &c.fsrs_params_5,
+        FsrsVersion::Four => &c.fsrs_params_4,
+    }
+}
+
+fn fsrs_params_mut(c: &mut DeckConfigInner) -> &mut Vec<f32> {
+    use anki_proto::deck_config::deck_config::config::FsrsVersion;
+    match FsrsVersion::try_from(c.fsrs_version).unwrap_or(FsrsVersion::Seven) {
+        FsrsVersion::Seven => &mut c.fsrs_params_7,
+        FsrsVersion::Six => &mut c.fsrs_params_6,
+        FsrsVersion::Five => &mut c.fsrs_params_5,
+        FsrsVersion::Four => &mut c.fsrs_params_4,
+    }
+}
+
+const MINIMUM_INTERVAL_UNITS: [(&str, u32); 4] = [("d", 86_400), ("h", 3_600), ("m", 60), ("s", 1)];
+
+/// The minimum interval of FSRS same-day (re)learning, as the fork writes it:
+/// the largest unit that divides it (90 -> "90s", 600 -> "10m"). 0 is the
+/// fork's "unset", which means 1 second.
+fn minimum_interval_text(secs: u32) -> String {
+    let secs = secs.max(1);
+    let (suffix, unit) = MINIMUM_INTERVAL_UNITS.iter().find(|(_, unit)| secs % unit == 0).unwrap();
+    format!("{}{suffix}", secs / unit)
+}
+
+/// "10m" -> 600: a whole number and one unit (d, h, m, s), at most 100 years.
+fn parse_minimum_interval(text: &str) -> Option<u32> {
+    let text = text.trim().to_ascii_lowercase();
+    let split = text.find(|c: char| !c.is_ascii_digit())?;
+    let amount: u64 = text[..split].parse().ok().filter(|&n| n > 0)?;
+    let (_, unit) = MINIMUM_INTERVAL_UNITS.iter().find(|(suffix, _)| *suffix == &text[split..])?;
+    Some((amount * *unit as u64).min(36_500 * 86_400) as u32)
 }
 
 fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::result::Result<(), ApiError> {
@@ -2539,6 +2634,12 @@ fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::re
                 Some("reminder") => AnswerAction::ShowReminder as i32,
                 _ => return Err(bad()),
             }
+        }
+        "fsrs_version" => {
+            c.fsrs_version = value.as_str().and_then(parse_fsrs_version).ok_or_else(bad)? as i32;
+        }
+        "fsrs_minimum_interval" => {
+            c.fsrs_minimum_interval_secs = value.as_str().and_then(parse_minimum_interval).ok_or_else(bad)?;
         }
         _ => return Err(ApiError::new("args", format!("unknown deck option {key}"))),
     }
@@ -2691,6 +2792,40 @@ mod test {
         assert_eq!(media_downloads("None"), None);
         // And the collection's shared state starts empty.
         assert_eq!(SharedProgress::new().media_downloads(), None);
+    }
+
+    #[test]
+    fn fsrs_minimum_interval_as_the_fork_writes_it() {
+        assert_eq!(minimum_interval_text(0), "1s");
+        assert_eq!(minimum_interval_text(90), "90s");
+        assert_eq!(minimum_interval_text(600), "10m");
+        assert_eq!(minimum_interval_text(7_200), "2h");
+        assert_eq!(minimum_interval_text(86_400), "1d");
+        for text in ["1s", "90s", "10m", "2h", "1d"] {
+            assert_eq!(minimum_interval_text(parse_minimum_interval(text).unwrap()), text);
+        }
+        assert_eq!(parse_minimum_interval(" 10M "), Some(600));
+        for bad in ["", "0m", "10", "m", "1.5h", "10 m", "-1s", "3w"] {
+            assert_eq!(parse_minimum_interval(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn fsrs_versions_and_their_parameters() {
+        let mut c = DeckConfigInner::default();
+        // FSRS-7 is the fork's default (0).
+        assert_eq!(fsrs_version_name(c.fsrs_version), "7");
+        c.fsrs_params_6 = vec![0.5; 21];
+        assert!(fsrs_params(&c).is_empty());
+        for name in ["7", "6", "5", "4"] {
+            c.fsrs_version = parse_fsrs_version(name).unwrap() as i32;
+            assert_eq!(fsrs_version_name(c.fsrs_version), name);
+        }
+        assert_eq!(parse_fsrs_version("8"), None);
+        c.fsrs_version = parse_fsrs_version("6").unwrap() as i32;
+        assert_eq!(fsrs_params(&c).len(), 21);
+        fsrs_params_mut(&mut c).clear();
+        assert!(c.fsrs_params_6.is_empty());
     }
 
     #[test]

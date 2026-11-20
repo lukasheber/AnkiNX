@@ -23,7 +23,7 @@ LOCK="$ANKISWITCH_SRC/switch/anki_switch_core/Cargo.lock"
 if [[ -f "$LOCK" ]]; then
     cp "$LOCK" "$CRATE/Cargo.lock"
 else
-    cp "$ANKISWITCH_WORK/source_code/anki-26.09.3/Cargo.lock" "$CRATE/Cargo.lock"
+    cp "$ANKISWITCH_WORK/source_code/$ANKI_DIR/Cargo.lock" "$CRATE/Cargo.lock"
 fi
 # Move every crates.io copy of a vendored crate to the vendored version, so the
 # [patch] applies (cargo otherwise parks it under [[patch.unused]]). Idempotent.

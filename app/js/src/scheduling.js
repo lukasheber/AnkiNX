@@ -20,7 +20,10 @@ import { describe } from "./errors.js";
 
 // The messages under SchedulingStates, fields in number order: [JSON name,
 // type, "kind" for the members of the message's oneof]. Types are uint32,
-// float, bool, "optional string", or a message here (which can be unset).
+// sint32, float, bool, "optional float", "optional string", "repeated
+// float", or a message here (which can be unset). The FSRS-7 fork of Anki
+// (26.09.4+fsrs7) adds the dynamic desired retention fields, a review's
+// fuzzDeltaDays and FSRS-7's two stabilities.
 const SCHEMA = {
     "anki.scheduler.SchedulingStates": [
         ["current", "anki.scheduler.SchedulingState"],
@@ -28,6 +31,8 @@ const SCHEMA = {
         ["hard", "anki.scheduler.SchedulingState"],
         ["good", "anki.scheduler.SchedulingState"],
         ["easy", "anki.scheduler.SchedulingState"],
+        ["dynamicDesiredRetentions", "repeated float"],
+        ["dynamicDesiredRetentionEnabled", "bool"],
     ],
     "anki.scheduler.SchedulingState": [
         ["normal", "anki.scheduler.SchedulingState.Normal", "kind"],
@@ -54,6 +59,7 @@ const SCHEMA = {
         ["lapses", "uint32"],
         ["leeched", "bool"],
         ["memoryState", "anki.cards.FsrsMemoryState"],
+        ["fuzzDeltaDays", "sint32"],
     ],
     "anki.scheduler.SchedulingState.Relearning": [
         ["review", "anki.scheduler.SchedulingState.Review"],
@@ -71,6 +77,8 @@ const SCHEMA = {
     "anki.cards.FsrsMemoryState": [
         ["stability", "float"],
         ["difficulty", "float"],
+        ["stabilityInternal", "optional float"],
+        ["stabilityFast", "optional float"],
     ],
 };
 const STATES = "anki.scheduler.SchedulingStates";
@@ -84,15 +92,20 @@ for (const [type, fields] of Object.entries(SCHEMA)) {
         FIELDS[type].set(field.json, field).set(field.name, field);
     }
 }
-const ZERO = { uint32: 0, float: 0, bool: false };
+const ZERO = { uint32: 0, sint32: 0, float: 0, bool: false };
 const UINT32_MAX = 0xffffffff;
+const INT32_MAX = 0x7fffffff;
+const INT32_MIN = -0x80000000;
 const FLOAT32_MAX = 3.4028234663852886e38;
 
 // A message is a plain object: its scalars always there (zero by default),
 // the rest only when set; at most one member of a oneof.
 function newMessage(type) {
     const message = {};
-    for (const [json, kind] of SCHEMA[type]) if (kind in ZERO) message[json] = ZERO[kind];
+    for (const [json, kind] of SCHEMA[type]) {
+        if (kind in ZERO) message[json] = ZERO[kind];
+        else if (kind === "repeated float") message[json] = [];
+    }
     return message;
 }
 
@@ -141,6 +154,25 @@ function readField(message, jsonValue, field, type) {
         message[field.json] = readMessage(field.type, jsonValue);
         return;
     }
+    if (field.type === "repeated float") {
+        // protobuf-es readField for a list: null empties it; each item a float.
+        if (jsonValue === null) {
+            message[field.json] = [];
+            return;
+        }
+        if (!Array.isArray(jsonValue))
+            throw new Error(`cannot decode field ${type}.${field.name} from JSON: ${debugJson(jsonValue)}`);
+        message[field.json] = jsonValue.map(item => {
+            try {
+                return readScalar("float", item);
+            } catch (e) {
+                let m = `cannot decode field ${type}.${field.name} from JSON: ${debugJson(item)}`;
+                if (e instanceof Error && e.message.length > 0) m += `: ${e.message}`;
+                throw new Error(m);
+            }
+        });
+        return;
+    }
     try {
         if (jsonValue === null) {
             // Back to its default (an optional field: unset).
@@ -160,7 +192,8 @@ function readField(message, jsonValue, field, type) {
 // and in range for uint32; "NaN", "Infinity" and "-Infinity" for floats).
 function readScalar(type, json) {
     switch (type) {
-        case "float": {
+        case "float":
+        case "optional float": {
             if (json === "NaN") return Number.NaN;
             if (json === "Infinity") return Number.POSITIVE_INFINITY;
             if (json === "-Infinity") return Number.NEGATIVE_INFINITY;
@@ -178,6 +211,14 @@ function readScalar(type, json) {
             else if (typeof json == "string" && json.length > 0 && json.trim().length === json.length) int32 = Number(json);
             if (int32 === undefined) break;
             if (!Number.isInteger(int32) || int32 > UINT32_MAX || int32 < 0) throw new Error("invalid uint 32: " + int32);
+            return int32;
+        }
+        case "sint32": {
+            let int32;
+            if (typeof json == "number") int32 = json;
+            else if (typeof json == "string" && json.length > 0 && json.trim().length === json.length) int32 = Number(json);
+            if (int32 === undefined) break;
+            if (!Number.isInteger(int32) || int32 > INT32_MAX || int32 < INT32_MIN) throw new Error("invalid int 32: " + int32);
             return int32;
         }
         case "bool":
@@ -208,7 +249,8 @@ function writeMessage(type, message) {
 }
 
 function writeScalar(type, value) {
-    if (type === "float") {
+    if (type === "repeated float") return value.map(item => writeScalar("float", item));
+    if (type === "float" || type === "optional float") {
         if (Number.isNaN(value)) return "NaN";
         if (value === Number.POSITIVE_INFINITY) return "Infinity";
         if (value === Number.NEGATIVE_INFINITY) return "-Infinity";

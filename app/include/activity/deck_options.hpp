@@ -12,7 +12,8 @@
 #include "anki/api.hpp"
 
 // A deck's options (Y on the deck overview), as Anki's deck options screen:
-// daily limits, steps, lapses, burying, audio, timer, auto advance, FSRS or
+// daily limits, steps, lapses, burying, audio, timer, auto advance, FSRS
+// (version, retention, parameters and the FSRS-7 fork's same-day options) or
 // SM-2 values, and whether there is custom scheduling (which can be turned
 // off here). Changes apply at once to the deck's preset (shared presets say
 // so at the top).
@@ -39,7 +40,13 @@ class DeckOptionsActivity : public brls::Activity
 
     // Rows.
     void number(const std::string& title, const std::string& key, bool decimal);
-    void steps(const std::string& title, const std::string& key);
+    // Text such as "1m 10m 1d"; `format` is shown on the keyboard as an example.
+    void steps(const std::string& title, const std::string& key, const std::string& format = "1m 10m 1d");
+    // A collection-wide switch sent as `arg` (not one of the preset's values).
+    brls::BooleanCell* collectionToggle(const std::string& title, const std::string& arg, bool on);
+    // FSRS parameters: whether they are the defaults; offers to reset them.
+    void paramsRow();
+    void showParams();
     void toggle(const std::string& title, const std::string& key);
     // A choice among `options` (backend values), shown as `names`.
     void choice(const std::string& title, const std::string& key, const std::vector<std::string>& options,
@@ -54,6 +61,13 @@ class DeckOptionsActivity : public brls::Activity
     std::map<std::string, std::pair<brls::SelectorCell*, std::vector<std::string>>> choices;
     brls::BooleanCell* fsrsCell = nullptr;
     std::vector<brls::View*> fsrsRows, sm2Rows;
+    // The FSRS-7 fork's options: collection-wide switches (arg -> cell), the
+    // parameters row, and the note on presets set to RWKV in Anki desktop.
+    std::map<std::string, brls::BooleanCell*> collectionToggles;
+    int fsrsParams = 0;
+    brls::DetailCell* paramsCell = nullptr;
+    std::string rwkv = "off";
+    brls::Label* rwkvNote = nullptr;
     // Whether the collection has custom scheduling code (written in Anki
     // desktop; selecting the row offers to delete it).
     bool customScheduling = false;

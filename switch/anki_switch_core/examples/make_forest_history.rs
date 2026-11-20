@@ -73,11 +73,11 @@ fn main() {
     let mut rid = 0i64;
     for &(cid, nid, first) in &cards {
         // reviews at noon of their day, a few ms apart so ids stay unique
-        let mut at = |ago: i64, rid: &mut i64| {
+        let at = |ago: i64, rid: &mut i64| {
             *rid += 1;
             cutoff_ms - ago * DAY_MS - DAY_MS / 2 + *rid
         };
-        let mut log = |id: i64, ease: i64, ivl: i64, last: i64, kind: i64| {
+        let log = |id: i64, ease: i64, ivl: i64, last: i64, kind: i64| {
             db.execute(
                 "insert into revlog (id, cid, usn, ease, ivl, lastIvl, factor, time, type) values (?1, ?2, -1, ?3, ?4, ?5, 2500, ?6, ?7)",
                 [id, cid, ease, ivl, last, 4000 + (id % 9000), kind],

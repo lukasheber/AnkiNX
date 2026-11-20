@@ -149,7 +149,7 @@ diff -ruN a/src/unix/mod.rs b/src/unix/mod.rs
 diff -ruN a/src/unix/newlib/libnx/mod.rs b/src/unix/newlib/libnx/mod.rs
 --- a/src/unix/newlib/libnx/mod.rs
 +++ b/src/unix/newlib/libnx/mod.rs
-@@ -0,0 +1,283 @@
+@@ -0,0 +1,288 @@
 +//! AArch64 Nintendo Switch (Horizon OS) definitions: devkitA64 newlib + libnx.
 +//!
 +//! libnx provides a FreeBSD-derived BSD socket API (`sa_len` sockaddrs, FreeBSD
@@ -432,6 +432,11 @@ diff -ruN a/src/unix/newlib/libnx/mod.rs b/src/unix/newlib/libnx/mod.rs
 +
 +    pub fn seekdir(dirp: *mut crate::DIR, loc: c_long);
 +    pub fn telldir(dirp: *mut crate::DIR) -> c_long;
++
++    // devkitA64's <sys/time.h>; filetime's fallback backend (used by tar in
++    // the FSRS-7 fork of Anki) calls them.
++    pub fn futimes(fd: c_int, times: *const crate::timeval) -> c_int;
++    pub fn lutimes(file: *const c_char, times: *const crate::timeval) -> c_int;
 +}
 diff -ruN a/src/unix/newlib/mod.rs b/src/unix/newlib/mod.rs
 --- a/src/unix/newlib/mod.rs

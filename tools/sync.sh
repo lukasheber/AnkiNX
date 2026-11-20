@@ -35,8 +35,8 @@ own switch "${SWITCH_OWN[@]}"
 # (switch/patches/anki.patch) are applied to the work tree's copy. A patched
 # file is only rewritten when its content changes, so cargo doesn't rebuild
 # Anki after every sync.
-ANKI_SRC="$ANKISWITCH_SRC/source_code/anki-26.09.3"
-ANKI_WORK="$ANKISWITCH_WORK/source_code/anki-26.09.3"
+ANKI_SRC="$ANKISWITCH_SRC/source_code/$ANKI_DIR"
+ANKI_WORK="$ANKISWITCH_WORK/source_code/$ANKI_DIR"
 ANKI_PATCH="$ANKISWITCH_SRC/switch/patches/anki.patch"
 mapfile -t patched < <(sed -n 's|^+++ b/||p' "$ANKI_PATCH")
 rsync -a --delete --exclude .git/ --exclude node_modules/ --exclude out/ --exclude target/ \

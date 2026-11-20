@@ -197,16 +197,19 @@ sets these up. Then:
 
 ```sh
 bash tools/fetch_frontend_deps.sh   # borealis, litehtml, lunasvg, QuickJS at pinned commits
-bash tools/fetch_ftl.sh             # Anki's translations
+bash tools/fetch_anki.sh            # Anki's source (pinned fork) and its translations
 bash switch/tools/vendor.sh apply   # patched crates from switch/patches/
 bash switch/build_core.sh           # Anki's Rust backend -> switch/dist/libanki_switch_core.a
 bash app/build.sh                   # the app -> app/dist/AnkiNX.nro
 ```
 
-Anki's source (26.09.3) is expected, unmodified, in
-`source_code/anki-26.09.3`; `tools/sync.sh` applies `switch/patches/anki.patch`
-to the copy that is built. `bash switch/test_core_host.sh` runs the backend's
-tests on Linux, including under an emulation of the Switch's filesystem rules.
+On this branch (`experimental/fsrs7`) the backend is built from the unofficial
+FSRS-7 fork of Anki 26.09.4 ([JSchoreels/anki](https://github.com/JSchoreels/anki)),
+pinned in `tools/env.sh`; `bash tools/fetch_anki.sh` puts it, unmodified, in
+`source_code/anki-fsrs7` (see [docs/fsrs7-plan.md](docs/fsrs7-plan.md)).
+`tools/sync.sh` applies `switch/patches/anki.patch` to the copy that is built.
+`bash switch/test_core_host.sh` runs the backend's tests on Linux, including
+under an emulation of the Switch's filesystem rules.
 
 | Path | Contents |
 | --- | --- |

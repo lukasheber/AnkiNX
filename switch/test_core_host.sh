@@ -10,7 +10,7 @@ source "$(dirname "$0")/../tools/env.sh"
 bash "$ANKISWITCH_SRC/tools/sync.sh"
 CRATE="$ANKISWITCH_WORK/switch/anki_switch_core"
 LOCK="$ANKISWITCH_SRC/switch/anki_switch_core/Cargo.lock"
-[[ -f "$LOCK" ]] && cp "$LOCK" "$CRATE/Cargo.lock"
+if [[ -f "$LOCK" ]]; then cp "$LOCK" "$CRATE/Cargo.lock"; else cp "$ANKISWITCH_WORK/source_code/$ANKI_DIR/Cargo.lock" "$CRATE/Cargo.lock"; fi
 export PROTOC=/usr/bin/protoc
 export CARGO_TARGET_DIR="$ANKISWITCH_WORK/target-host"
 export DESCRIPTORS_BIN="$CARGO_TARGET_DIR/anki_descriptors.bin"

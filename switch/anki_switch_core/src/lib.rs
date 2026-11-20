@@ -9,6 +9,7 @@ pub mod forest;
 mod math;
 mod mhchem;
 mod occlusion;
+pub mod presets;
 mod scheduling;
 mod update;
 pub mod weather;

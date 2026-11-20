@@ -117,6 +117,11 @@ impl Deck {
                 answered_at: TimestampMillis::now(),
                 milliseconds_taken: 5_000,
                 custom_data: None,
+                desired_retention_override: None,
+                desired_retention_override_is_final: false,
+                rwkv_s90: None,
+                rwkv_retrievability: None,
+                rwkv_review_kind: None,
                 from_queue: false,
             })
             .unwrap();
@@ -849,18 +854,11 @@ fn deck_options(d: &mut Deck) {
     config.inner.reviews_per_day = 9999;
     config.inner.learn_steps = vec![1.0, 10.0];
     d.col
-        .update_deck_configs(anki::deckconfig::UpdateDeckConfigsRequest {
-            target_deck_id: root,
-            configs: vec![config],
-            removed_config_ids: vec![],
-            mode: anki_proto::deck_config::UpdateDeckConfigsMode::ApplyToChildren,
-            card_state_customizer: info.card_state_customizer.clone(),
-            limits: info.current_deck.clone().unwrap_or_default().limits.unwrap_or_default(),
-            new_cards_ignore_review_limit: info.new_cards_ignore_review_limit,
-            apply_all_parent_limits: info.apply_all_parent_limits,
-            fsrs: info.fsrs,
-            fsrs_reschedule: false,
-            fsrs_health_check: info.fsrs_health_check,
-        })
+        .update_deck_configs(anki_switch_core::presets::update_request(
+            &info,
+            root,
+            vec![config],
+            anki_proto::deck_config::UpdateDeckConfigsMode::ApplyToChildren,
+        ))
         .unwrap();
 }

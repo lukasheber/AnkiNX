@@ -224,19 +224,12 @@ fn main() {
         config.inner.seconds_to_show_question = 2.0;
         config.inner.seconds_to_show_answer = 3.0;
         config.inner.answer_action = anki_proto::deck_config::deck_config::config::AnswerAction::AnswerGood as i32;
-        col.update_deck_configs(anki::deckconfig::UpdateDeckConfigsRequest {
-            target_deck_id: default_deck,
-            configs: vec![config],
-            removed_config_ids: vec![],
-            mode: anki_proto::deck_config::UpdateDeckConfigsMode::Normal,
-            card_state_customizer: info.card_state_customizer.clone(),
-            limits: info.current_deck.clone().unwrap_or_default().limits.unwrap_or_default(),
-            new_cards_ignore_review_limit: info.new_cards_ignore_review_limit,
-            apply_all_parent_limits: info.apply_all_parent_limits,
-            fsrs: info.fsrs,
-            fsrs_reschedule: false,
-            fsrs_health_check: info.fsrs_health_check,
-        })
+        col.update_deck_configs(anki_switch_core::presets::update_request(
+            &info,
+            default_deck,
+            vec![config],
+            anki_proto::deck_config::UpdateDeckConfigsMode::Normal,
+        ))
         .unwrap();
     }
 
@@ -267,6 +260,11 @@ fn main() {
                     answered_at: TimestampMillis(now - day * 86_400_000 + i as i64 * 10_000),
                     milliseconds_taken: 8_000,
                     custom_data: None,
+                    desired_retention_override: None,
+                    desired_retention_override_is_final: false,
+                    rwkv_s90: None,
+                    rwkv_retrievability: None,
+                    rwkv_review_kind: None,
                     from_queue: false,
                 })
                 .unwrap();

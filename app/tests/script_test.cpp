@@ -580,16 +580,17 @@ const char* REVIEW_STATES = R"({"context": {"deckName": "hello", "seed": "123"},
 // What a transform that changes nothing hands back: protobuf's field order,
 // zero values written out, and current's custom data in each answer's.
 const char* REVIEW_UNCHANGED =
-    R"({"current":{"normal":{"review":{"scheduledDays":1,"elapsedDays":2,"easeFactor":1.850000023841858,"lapses":4,"leeched":false}},)"
+    R"({"current":{"normal":{"review":{"scheduledDays":1,"elapsedDays":2,"easeFactor":1.850000023841858,"lapses":4,"leeched":false,"fuzzDeltaDays":0}},)"
     R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
-    R"("again":{"normal":{"relearning":{"review":{"scheduledDays":1,"elapsedDays":0,"easeFactor":1.649999976158142,"lapses":5,"leeched":false},)"
+    R"("again":{"normal":{"relearning":{"review":{"scheduledDays":1,"elapsedDays":0,"easeFactor":1.649999976158142,"lapses":5,"leeched":false,"fuzzDeltaDays":0},)"
     R"("learning":{"remainingSteps":1,"scheduledSecs":600,"elapsedSecs":0}}},"customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
-    R"("hard":{"normal":{"review":{"scheduledDays":2,"elapsedDays":0,"easeFactor":1.7000000476837158,"lapses":4,"leeched":false}},)"
+    R"("hard":{"normal":{"review":{"scheduledDays":2,"elapsedDays":0,"easeFactor":1.7000000476837158,"lapses":4,"leeched":false,"fuzzDeltaDays":0}},)"
     R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
-    R"("good":{"normal":{"review":{"scheduledDays":4,"elapsedDays":0,"easeFactor":1.850000023841858,"lapses":4,"leeched":false}},)"
+    R"("good":{"normal":{"review":{"scheduledDays":4,"elapsedDays":0,"easeFactor":1.850000023841858,"lapses":4,"leeched":false,"fuzzDeltaDays":0}},)"
     R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
-    R"("easy":{"normal":{"review":{"scheduledDays":6,"elapsedDays":0,"easeFactor":2,"lapses":4,"leeched":false}},)"
-    R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"}})";
+    R"("easy":{"normal":{"review":{"scheduledDays":6,"elapsedDays":0,"easeFactor":2,"lapses":4,"leeched":false,"fuzzDeltaDays":0}},)"
+    R"("customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"},)"
+    R"("dynamicDesiredRetentions":[],"dynamicDesiredRetentionEnabled":false})";
 
 // A new card's: learning steps, Easy graduating it.
 const char* NEW_STATES = R"({"context": {"deckName": "Spanish::Verbs", "seed": "18446744073709551615", "desiredRetention": 0.8999999761581421},
@@ -650,8 +651,8 @@ void scheduling()
     check(run("") && handedKey == "k42" && handed == REVIEW_UNCHANGED,
           "states handed back with the key, as protobuf-es writes them; custom data in each answer", handed);
     check(run("customData.easy = { foo: 'hello world' };") &&
-              has(handed, R"("easeFactor":2,"lapses":4,"leeched":false}},"customData":"{\"foo\":\"hello world\"}"})") &&
-              has(handed, R"("hard":{"normal":{"review":{"scheduledDays":2,"elapsedDays":0,"easeFactor":1.7000000476837158,"lapses":4,"leeched":false}},"customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"})"),
+              has(handed, R"("easeFactor":2,"lapses":4,"leeched":false,"fuzzDeltaDays":0}},"customData":"{\"foo\":\"hello world\"}"})") &&
+              has(handed, R"("hard":{"normal":{"review":{"scheduledDays":2,"elapsedDays":0,"easeFactor":1.7000000476837158,"lapses":4,"leeched":false,"fuzzDeltaDays":0}},"customData":"{\"v\":\"v3.20.0\",\"seed\":2104}"})"),
           "custom data changed for one answer", handed);
     check(run("states.good.normal.review.scheduledDays = 10;") &&
               has(handed, R"("good":{"normal":{"review":{"scheduledDays":10,)"),
@@ -667,8 +668,21 @@ void scheduling()
 
     // What protobuf-es reads, and what it refuses (the states then stay).
     check(run("states.good.normal.review = { scheduled_days: '3', easeFactor: 'NaN', memoryState: null };") &&
-              has(handed, R"("good":{"normal":{"review":{"scheduledDays":3,"elapsedDays":0,"easeFactor":"NaN","lapses":0,"leeched":false}},)"),
+              has(handed, R"("good":{"normal":{"review":{"scheduledDays":3,"elapsedDays":0,"easeFactor":"NaN","lapses":0,"leeched":false,"fuzzDeltaDays":0}},)"),
           "proto names, numbers as strings, NaN, null for an unset message", handed);
+    // The FSRS-7 fork's fields: two optional stabilities, signed fuzz days and
+    // one desired retention per answer.
+    check(run("states.good.normal.review.fuzzDeltaDays = -3;"
+              "states.good.normal.review.memoryState = { stability: 10, difficulty: 5, stabilityInternal: 9.5 };"
+              "states.dynamicDesiredRetentions = [0.8, '0.85', 0.9, 0.95];") &&
+              has(handed, R"("leeched":false,"memoryState":{"stability":10,"difficulty":5,"stabilityInternal":9.5},"fuzzDeltaDays":-3}},)") &&
+              has(handed, R"("dynamicDesiredRetentions":[0.8,0.85,0.9,0.95],"dynamicDesiredRetentionEnabled":false})"),
+          "FSRS-7 fields: stabilities, fuzz days, dynamic desired retention", handed);
+    check(run("states.good.normal.review.memoryState = { stability: 1, difficulty: 2, stabilityFast: 3, stabilityInternal: null };"
+              "states.dynamicDesiredRetentions = null;") &&
+              has(handed, R"("memoryState":{"stability":1,"difficulty":2,"stabilityFast":3},)") &&
+              has(handed, R"("dynamicDesiredRetentions":[],)"),
+          "an unset stability is left out; null empties the list", handed);
     for (const char* refused : {
              "states.good.normal.review.scheduledDays = 1.5;",
              "states.good.normal.review.scheduledDays = -1;",
@@ -678,6 +692,11 @@ void scheduling()
              "states.good.normal.review.leeched = 0;",
              "states.good.normal.review.easeFactor = 1e39;",
              "states.good.normal.review.memoryState = undefined;",
+             "states.good.normal.review.fuzzDeltaDays = 1.5;",
+             "states.good.normal.review.fuzzDeltaDays = 2147483648;",
+             "states.good.normal.review.memoryState = { stability: 1, difficulty: 2, stabilityFast: 'x' };",
+             "states.dynamicDesiredRetentions = 0.9;",
+             "states.dynamicDesiredRetentions = [0.9, 'x'];",
              "states.good.normal.learning = {};",
              "states.good.normal = null;",
              "states.good.bogus = 1;",
