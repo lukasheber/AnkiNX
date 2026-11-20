@@ -402,6 +402,24 @@ void ReviewerActivity::loadNext()
                 else
                     showQuestion();
             });
+            // RWKV-Instant: the queue re-scoring the last answer left for later
+            // (Anki desktop's "Precompute next card", on by default), done
+            // while this card is shown. The next answer waits only if sooner.
+            if (!next["done"].get<bool>())
+            {
+                try
+                {
+                    anki::json refresh = anki::call("rwkv_refresh");
+                    if (refresh.value("refreshed", false))
+                        brls::Logger::info("RWKV queue re-scored while the card is shown: {} ms",
+                                           refresh.value("ms", 0));
+                }
+                catch (const anki::Error& e)
+                {
+                    // (the next queue build re-scores instead)
+                    brls::Logger::warning("RWKV queue re-scoring: {}", e.what());
+                }
+            }
         }
         catch (const anki::Error& e)
         {

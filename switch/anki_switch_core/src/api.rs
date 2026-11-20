@@ -559,6 +559,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "optimize_status" => state.optimize_status(),
         "optimize_cancel" => state.optimize_cancel(),
         "rwkv_status" => state.rwkv_status(),
+        "rwkv_refresh" => state.rwkv_refresh(),
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
         "forest" => state.forest(&args),
@@ -2611,6 +2612,25 @@ impl State {
         };
         status["memory"] = memory.unwrap_or(Value::Null);
         Ok(status)
+    }
+
+    /// `rwkv_refresh`: the background half of the desktop's "Precompute next
+    /// card" (on by default): an answer that made the RWKV-Instant queue due
+    /// for re-scoring left it as it was, so the next card came at once; the
+    /// study screen calls this once that card is shown. `refreshed`: whether
+    /// there was a re-scoring to do; `ms`, how long it took.
+    fn rwkv_refresh(&mut self) -> ApiResult {
+        if !matches!(self.rwkv, Some(Ok(_))) {
+            return Ok(json!({ "refreshed": false }));
+        }
+        let tr = self.tr.clone();
+        let started = Instant::now();
+        let refreshed = self.col()?.rwkv_offline_refresh_pending_queue().map_err(|e| ApiError::anki(e, &tr))?;
+        let ms = started.elapsed().as_millis() as u64;
+        if refreshed {
+            tracing::info!(ms, memory = %crate::sysinfo::memory_text(), "RWKV: queue re-scored after the card was shown");
+        }
+        Ok(json!({ "refreshed": refreshed, "ms": ms }))
     }
 
     /// `optimize_cancel`: stop the optimization running, if any; it ends as

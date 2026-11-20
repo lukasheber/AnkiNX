@@ -129,11 +129,18 @@ fn rwkv_presets_from_the_desktop_run_on_the_console() {
     // minutes for 75k reviews on the console).
     let deck = json!({ "deck_id": 1 });
     ok("select_deck", deck.clone());
+    // As Anki desktop's "Precompute next card" (on by default): an answer
+    // leaves the queue's re-scoring for later, so the next card comes at once,
+    // and the study screen has it done while that card is shown.
     let mut answered = 0;
+    let mut refreshed = 0;
     for _ in 0..3 {
         let card = ok("next_card", json!({}));
         if !card["card_id"].is_i64() {
             break;
+        }
+        if ok("rwkv_refresh", json!({}))["refreshed"] == true {
+            refreshed += 1;
         }
         ok("answer", json!({ "ease": 3 }));
         answered += 1;
@@ -142,6 +149,10 @@ fn rwkv_presets_from_the_desktop_run_on_the_console() {
     assert!(answered > 0, "RWKV-Instant showed no review\ncore.log:\n{log}");
     assert_eq!(log.matches("RWKV answer absorbed=true").count(), answered, "core.log:\n{log}");
     assert!(!log.contains("history changed"), "an answer made RWKV replay everything\ncore.log:\n{log}");
+    if answered > 1 {
+        assert!(log.contains("deferred=true"), "the re-scoring waits for the next card\ncore.log:\n{log}");
+        assert!(refreshed > 0, "rwkv_refresh re-scored the queue\ncore.log:\n{log}");
+    }
     assert_eq!(ok("rwkv_status", json!({}))["state"], "ready");
     ok("close", json!({}));
     assert_eq!(ok("rwkv_status", json!({}))["state"], "closed");

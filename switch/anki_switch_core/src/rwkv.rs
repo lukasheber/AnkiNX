@@ -245,14 +245,21 @@ impl Run {
     /// when it changes: every 10% of a replay, and once when ready, with the
     /// time it took, the memory and the state file.
     pub fn status(&mut self, col: &mut Collection) -> Value {
-        let progress = match SchedulerService::rwkv_offline_instant_pass_step(
-            col,
-            RwkvOfflineInstantPassStepRequest { restart: false, status_only: true },
-        ) {
+        let request = RwkvOfflineInstantPassStepRequest { restart: false, status_only: true };
+        let progress = match SchedulerService::rwkv_offline_instant_pass_step(col, request) {
             Ok(progress) => progress,
             Err(e) => {
-                tracing::warn!(error = ?e, "RWKV: status failed");
-                return json!({ "state": "failed", "error": format!("{e:?}") });
+                // kuma3 reports a history that changed under the model state
+                // (an undo, a sync, a full download) once, having started a
+                // rebuild: asked again, it reports that rebuild.
+                tracing::info!(error = ?e, "RWKV: the model state is rebuilt");
+                match SchedulerService::rwkv_offline_instant_pass_step(col, request) {
+                    Ok(progress) => progress,
+                    Err(e) => {
+                        tracing::warn!(error = ?e, "RWKV: status failed");
+                        return json!({ "state": "failed", "error": format!("{e:?}") });
+                    }
+                }
             }
         };
         if progress.available {

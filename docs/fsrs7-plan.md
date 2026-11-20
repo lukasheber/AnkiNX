@@ -129,12 +129,40 @@ RWKV-Instant + Curve, Tiny model, full-memory mode (heap ~2.9-3.0 GB):
 | an answer into the model state | 1 ms |
 
 RWKV-Instant picks the reviews (200 due per deck, the daily limit, where FSRS
-showed 0). Open questions: the fork's default re-scores the queue after every
-answer ("Update the RWKV queue every 1 answers"): 3.6 s per card here, to
-measure and probably space out on the console; start from the state file, to
-measure; applet mode (far less memory) not tried. Synthetic histories must not
-have reviews dated in the future: an answer then isn't the newest review, and
-RWKV takes the history as changed and replays it all.
+showed 0). Synthetic histories must not have reviews dated in the future: an
+answer then isn't the newest review, and RWKV takes the history as changed and
+replays it all.
+
+**Re-scoring the queue after answers.** The desktop fork re-scores the
+RWKV-Instant queue after every answer ("Update the RWKV queue every 1
+answers"), and by default does it in the background: "Precompute next card
+before this card answer" (on by default) shows the next card from the scores
+as they were and updates them afterwards ("faster, approximate queue updates",
+which recheck only the likeliest next cards, are opt-in). kuma3 doesn't read
+that option: it always re-scores before showing the next card, the desktop's
+behaviour with precompute off: 3.7 s of waiting per card on the console. The
+patch implements the desktop's default: an answer leaves a due re-scoring
+pending, the next card comes at once (the answered card's own score patched),
+and the study screen has the queue re-scored while that card is shown
+(`rwkv_refresh`). With precompute off, or when the queue ran out, the next card
+waits, as before; the other options apply as synced. An answer that comes
+before the re-scoring is done waits for its end. (kuma3 is a port, not the
+reference: its choices are checked against the desktop fork's code.)
+
+Both sizes on the console, same collection, precompute (default settings):
+
+| | Tiny (sm106 + sm101) | Small (sm92 + sm98) |
+| --- | --- | --- |
+| full replay | 123-126 s | 139 s |
+| start from the state file | 3.1 s | (to measure) |
+| heap after loading | ~240-290 MB | ~340 MB |
+| an answer (into the model state, its score patched) | ~20 ms | ~25 ms |
+| background re-scoring of 6.5k cards after each answer | 3.8 s | 5.0 s |
+
+At a normal pace (7-9 s per card) the re-scoring is done before the next
+answer with either size; answering faster waits for it (with Tiny, cards came
+every ~5 s at most). Whether Small predicts better than Tiny is not something
+we measured; the sizes' comparisons we have are kuma3's.
 
 ## Status (2026-11-20)
 
