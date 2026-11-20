@@ -44,6 +44,7 @@ fn main() {
         .build()
         .unwrap();
     let cutoff_ms = col.timing_today().unwrap().next_day_at.0 * 1000;
+    let now_ms = anki::prelude::TimestampMillis::now().0;
     let deck = col.get_or_create_normal_deck("Forest").unwrap();
     // (a quarter of the cards in another deck, under a parent: for leaving decks out)
     let other = col.get_or_create_normal_deck("Languages::Spanish").unwrap();
@@ -72,10 +73,17 @@ fn main() {
     db.execute_batch("begin").unwrap();
     let mut rid = 0i64;
     for &(cid, nid, first) in &cards {
-        // reviews at noon of their day, a few ms apart so ids stay unique
+        // reviews at noon of their day, a few ms apart so ids stay unique;
+        // today's halfway to now, never in the future (an answer given now
+        // must be the newest review, as RWKV expects of real histories)
         let at = |ago: i64, rid: &mut i64| {
             *rid += 1;
-            cutoff_ms - ago * DAY_MS - DAY_MS / 2 + *rid
+            if ago == 0 {
+                let day_start = cutoff_ms - DAY_MS;
+                day_start + (now_ms - day_start) / 2 + *rid
+            } else {
+                cutoff_ms - ago * DAY_MS - DAY_MS / 2 + *rid
+            }
         };
         let log = |id: i64, ease: i64, ivl: i64, last: i64, kind: i64| {
             db.execute(

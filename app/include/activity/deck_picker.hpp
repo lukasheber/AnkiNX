@@ -119,4 +119,11 @@ class DeckPickerActivity : public brls::Activity
     // Woken from sleep: refresh and sync once this screen is showing.
     bool syncAfterWake = false;
     void wakeSync();
+
+    // RWKV loads its model state in the background once a collection is
+    // open (presets set to RWKV in Anki desktop): followed here, logged, and
+    // the counts refreshed once it's ready (RWKV-Instant picks the reviews).
+    bool rwkvWatching = false;
+    void watchRwkv();
+    void pollRwkv();
 };

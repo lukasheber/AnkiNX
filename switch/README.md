@@ -139,8 +139,20 @@ computer needs these renamed back as well as moved. The tests in
 `shim/test/` run this code on a PC behind a stand-in SD card
 (`test_core_host.sh`, step 0).
 
-**Anki itself** is patched in one place (`patches/anki.patch`, applied to the
-build tree's copy by `tools/sync.sh`): the media sync records downloaded files
+**Anki itself** is patched by `patches/anki-rwkv.patch` and
+`patches/anki.patch`, applied in that order to the build tree's copy by
+`tools/sync.sh` (`ANKI_PATCHES` in `tools/env.sh`).
+
+`anki-rwkv.patch` is [kuma3-anki-core](https://github.com/Pedrubik2000/kuma3-anki-core)'s
+RWKV layer (its `rwkv` branch, a8cf880: RWKV without the desktop's Python,
+as AnkiDroid/Kuma runs it) merged with the pinned FSRS-7 fork, plus making
+the FSRS-7 repair callable (AnkiNX opens collections without Anki's backend,
+which runs it). To update it: merge the new commits in a clone of
+kuma3-anki-core, then `git diff <ANKI_COMMIT> HEAD -- rslib proto ftl/core
+Cargo.toml Cargo.lock > switch/patches/anki-rwkv.patch` (details in
+`docs/fsrs7-plan.md`).
+
+`anki.patch`: the media sync records downloaded files
 after every zip (25 files at most) instead of once per batch of server changes
 (up to 1000 files). On the console a batch can take many minutes, and a sync
 cut short (app closed, sleep, connection lost) started the whole batch again,

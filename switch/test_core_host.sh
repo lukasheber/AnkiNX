@@ -34,7 +34,7 @@ cp "$CRATE/Cargo.lock" "$LOCK"
 RUNNER_VAR=CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER
 echo "== 2. Horizon emulation + fixes (must pass)"
 env "$RUNNER_VAR=env LD_PRELOAD=$EMU" \
-    cargo +"$RUST_NIGHTLY" test --release -j "${JOBS:-2}" --test api "$@"
+    cargo +"$RUST_NIGHTLY" test --release -j "${JOBS:-2}" --test api --test rwkv "$@"
 
 echo "== 3. Horizon emulation without fixes (must fail)"
 if env "$RUNNER_VAR=timeout 120 env LD_PRELOAD=$EMU HORIZON_EMU_RAW=1" \

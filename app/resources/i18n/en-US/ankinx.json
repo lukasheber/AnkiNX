@@ -18,6 +18,7 @@
     "due_one": "{} card due",
     "due_other": "{} cards due",
     "due_none": "No cards due",
+    "rwkv_ready": "RWKV is ready: it now picks the reviews of RWKV presets",
     "estimate": "about {} min",
     "estimate_short": "under 1 min",
     "streak_one": "{}-day streak",

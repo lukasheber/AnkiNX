@@ -18,6 +18,7 @@
     "due_one": "{} tarjeta pendiente",
     "due_other": "{} tarjetas pendientes",
     "due_none": "Ninguna tarjeta pendiente",
+    "rwkv_ready": "RWKV está listo: ahora elige los repasos de los preajustes RWKV",
     "estimate": "unos {} min",
     "estimate_short": "menos de 1 min",
     "streak_one": "{} día seguido",

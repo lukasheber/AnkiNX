@@ -31,23 +31,26 @@ rsync -a --delete --exclude target/ --exclude '*.orig' --exclude Cargo.lock "${s
     "$ANKISWITCH_SRC/switch/" "$ANKISWITCH_WORK/switch/"
 own switch "${SWITCH_OWN[@]}"
 
-# Anki's source stays unmodified on the Windows drive; our few changes to it
-# (switch/patches/anki.patch) are applied to the work tree's copy. A patched
-# file is only rewritten when its content changes, so cargo doesn't rebuild
-# Anki after every sync.
+# Anki's source stays unmodified on the Windows drive; our changes to it
+# (ANKI_PATCHES, in order, from switch/patches/) are applied to the work
+# tree's copy. A patched file is only rewritten when its content changes, so
+# cargo doesn't rebuild Anki after every sync. Patches may add files (not
+# delete them).
 ANKI_SRC="$ANKISWITCH_SRC/source_code/$ANKI_DIR"
 ANKI_WORK="$ANKISWITCH_WORK/source_code/$ANKI_DIR"
-ANKI_PATCH="$ANKISWITCH_SRC/switch/patches/anki.patch"
-mapfile -t patched < <(sed -n 's|^+++ b/||p' "$ANKI_PATCH")
+patches=()
+for name in "${ANKI_PATCHES[@]}"; do patches+=("$ANKISWITCH_SRC/switch/patches/$name"); done
+mapfile -t patched < <(sed -n 's|^+++ b/||p' "${patches[@]}" | sort -u)
 rsync -a --delete --exclude .git/ --exclude node_modules/ --exclude out/ --exclude target/ \
     "${patched[@]/#/--exclude=/}" "$ANKI_SRC/" "$ANKI_WORK/"
 stage=$(mktemp -d)
 for file in "${patched[@]}"; do
     mkdir -p "$stage/$(dirname "$file")"
-    cp "$ANKI_SRC/$file" "$stage/$file"
+    if [[ -f "$ANKI_SRC/$file" ]]; then cp "$ANKI_SRC/$file" "$stage/$file"; fi
 done
-patch -s -p1 -d "$stage" < "$ANKI_PATCH"
+for p in "${patches[@]}"; do patch -s -p1 -d "$stage" < "$p"; done
 for file in "${patched[@]}"; do
+    mkdir -p "$ANKI_WORK/$(dirname "$file")"
     cmp -s "$stage/$file" "$ANKI_WORK/$file" || cp "$stage/$file" "$ANKI_WORK/$file"
 done
 rm -rf "$stage"

@@ -10,6 +10,8 @@ mod math;
 mod mhchem;
 mod occlusion;
 mod optimize;
+mod rwkv;
+mod sysinfo;
 pub mod presets;
 mod scheduling;
 mod update;

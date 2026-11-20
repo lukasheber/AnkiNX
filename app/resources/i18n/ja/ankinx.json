@@ -18,6 +18,7 @@
     "due_one": "期日のカード {} 枚",
     "due_other": "期日のカード {} 枚",
     "due_none": "期日のカードはありません",
+    "rwkv_ready": "RWKV の準備ができました。RWKV プリセットの復習を選びます",
     "estimate": "約{}分",
     "estimate_short": "1分未満",
     "streak_one": "{}日連続",

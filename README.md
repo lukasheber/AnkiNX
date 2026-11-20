@@ -207,7 +207,9 @@ On this branch (`experimental/fsrs7`) the backend is built from the unofficial
 FSRS-7 fork of Anki 26.09.4 ([JSchoreels/anki](https://github.com/JSchoreels/anki)),
 pinned in `tools/env.sh`; `bash tools/fetch_anki.sh` puts it, unmodified, in
 `source_code/anki-fsrs7` (see [docs/fsrs7-plan.md](docs/fsrs7-plan.md)).
-`tools/sync.sh` applies `switch/patches/anki.patch` to the copy that is built.
+`tools/sync.sh` applies the patches in `switch/patches/` (`anki-rwkv.patch`:
+kuma3-anki-core's RWKV layer; `anki.patch`: media sync) to the copy that is
+built.
 `bash switch/test_core_host.sh` runs the backend's tests on Linux, including
 under an emulation of the Switch's filesystem rules.
 

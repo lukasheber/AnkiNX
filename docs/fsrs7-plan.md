@@ -80,6 +80,62 @@ already at or above the fork's versions.
 - Measure on the console: full replay time, memory per 10k cards, the time
   added to building a queue and to each answer. Decide defaults from that.
 
+#### How it is done (2026-11-20)
+
+- **Source**: kuma3's `rwkv` branch (a8cf880) merged with our fork pin, carried
+  as `switch/patches/anki-rwkv.patch` (applied before `anki.patch`, see
+  `ANKI_PATCHES` in `tools/env.sh`). The merge lives on a local branch of a
+  clone of kuma3-anki-core (`source_code/kuma3-anki-core`, branch
+  `ankinx-merge`); the patch is `git diff <ANKI_COMMIT> HEAD -- rslib proto
+  ftl/core Cargo.toml Cargo.lock`. Conflicts: answering (kuma3's Curve
+  intervals and add-on retention rules on top of the fork's
+  `next_answer_states`), FSRS repair and preset helpers (both kept). Our
+  commits on top of the merge:
+  - the FSRS-7 repair made callable (AnkiNX opens collections without the
+    backend, which runs it on open and after a full sync);
+  - undoing a non-answer op (bury, suspend, set due) shows the restored card
+    first again, and an op that changes the shown card ends kuma3's keeping
+    it first (it compared whole-second mtimes);
+  - the state file closed before it is renamed (Horizon refuses to rename an
+    open file: every save failed with EIO), with the failing step in errors;
+  - `answer_card_updating_rwkv`: the backend's AnswerCard (answer, then the
+    answer into the model state) for direct callers; without it every answer
+    in AnkiNX made the next queue build replay the whole history.
+- **AnkiNX** (`switch/anki_switch_core/src/rwkv.rs`): after open (and a full
+  sync), if presets use RWKV (set on the desktop: AnkiNX never turns it on),
+  start kuma3's prepare with the bundled models (`app/resources/rwkv`: Tiny
+  sm106/sm101 by default, Small sm92/sm98 with `"rwkv_size": "small"` in
+  settings.json), after checking the memory free; `rwkv_status` for the app,
+  which polls it while loading, logs it, and refreshes the deck list when
+  ready. Leftover temporary saves are removed at start.
+- **Logging**: `core.log` next to `ankinx.log` (the previous run's kept as
+  `core.old.log`), opened and closed for each line so it can be read while the
+  app runs: memory (the malloc heap: libnx reserves it all at startup, so
+  Horizon's own counters always show the process full), sizes, timings,
+  kuma3's own lines (history read, runtime built, queue scores, each answer).
+
+#### Measured on the console (2026-11-20)
+
+8,921 cards, 75,625 reviews (500 days, `make_forest_history`), presets on
+RWKV-Instant + Curve, Tiny model, full-memory mode (heap ~2.9-3.0 GB):
+
+| | |
+| --- | --- |
+| history read at start | 0.44 s |
+| full replay (own thread; FSRS meanwhile) | 123-126 s (PC: ~12 s) |
+| heap: start / peak while replaying / after | 150 / 410-509 / ~290 MB |
+| state file | 61 MB (~7 KB per card) |
+| scoring the review queue (3,600 cards) | 3.6 s |
+| an answer into the model state | 1 ms |
+
+RWKV-Instant picks the reviews (200 due per deck, the daily limit, where FSRS
+showed 0). Open questions: the fork's default re-scores the queue after every
+answer ("Update the RWKV queue every 1 answers"): 3.6 s per card here, to
+measure and probably space out on the console; start from the state file, to
+measure; applet mode (far less memory) not tried. Synthetic histories must not
+have reviews dated in the future: an answer then isn't the newest review, and
+RWKV takes the history as changed and replays it all.
+
 ## Status (2026-11-20)
 
 - **Phase 1 done** except the console check: the core builds for the Switch

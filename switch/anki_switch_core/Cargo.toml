@@ -29,6 +29,9 @@ prost = "0.13"
 zip = { version = "9.0.0", default-features = false, features = ["deflate", "time"] }
 zstd = "0.14.3"
 regex = "1.11.1"
+# The backend's log, core.log (RWKV on the console: memory, timings).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "std"] }
 # Memory Forest (src/forest.rs): its trees' seeds and the day's rolls, as the add-on hashes them.
 sha1 = "0.10"
 # Card maths (src/math.rs): LaTeX -> Typst (MiTeX) -> SVG.

@@ -395,12 +395,19 @@ void DeckPickerActivity::openCollection()
         try
         {
             anki::json langs = { locale, locale.substr(0, locale.find('-')), "en" };
-            anki::call("init", { { "base_dir", anki::dataDir() }, { "langs", langs } });
+            // RWKV's models are in the app's resources (romfs on the console);
+            // settings.json's "rwkv_size" ("small") picks the bigger pair.
+            anki::json size = settings::get("rwkv_size");
+            anki::call("init", { { "base_dir", anki::dataDir() },
+                                 { "langs", langs },
+                                 { "rwkv_models", BRLS_ASSET("rwkv") },
+                                 { "rwkv_size", size.is_string() ? size.get<std::string>() : "tiny" } });
             anki::json status = anki::call("open");
             brls::sync([this, status] {
                 ready = true;
                 enterProfile(status);
                 refresh();
+                watchRwkv();
                 // Bring in what was studied on other devices, as Anki desktop
                 // does on startup.
                 sync_flow::autoSync([this] { afterSync(); }, sync_flow::Mode::Automatic, true);
@@ -531,8 +538,52 @@ void DeckPickerActivity::afterSync()
     {
     }
     refresh();
+    // (a full download opened the collection again: RWKV starts over)
+    watchRwkv();
     if (switched)
         sync_flow::autoSync([this] { afterSync(); }, sync_flow::Mode::Automatic, true);
+}
+
+void DeckPickerActivity::watchRwkv()
+{
+    if (rwkvWatching)
+        return;
+    rwkvWatching = true;
+    pollRwkv();
+}
+
+void DeckPickerActivity::pollRwkv()
+{
+    brls::delay(2000, [this] {
+        brls::async([this] {
+            anki::json status;
+            try
+            {
+                status = anki::call("rwkv_status");
+            }
+            catch (const anki::Error& e)
+            {
+                status = { { "state", "error" }, { "error", e.what() } };
+            }
+            brls::sync([this, status] {
+                std::string state = status.value("state", "");
+                if (state == "loading")
+                {
+                    brls::Logger::info("RWKV: loading, {} of {} reviews replayed", status.value("done", 0),
+                                       status.value("total", 0));
+                    pollRwkv();
+                    return;
+                }
+                rwkvWatching = false;
+                brls::Logger::info("RWKV: {}", status.dump());
+                if (state == "ready")
+                {
+                    brls::Application::notify("ankinx/decks/rwkv_ready"_i18n);
+                    refresh();
+                }
+            });
+        });
+    });
 }
 
 // What the status says of the profile in use and its account, for the

@@ -54,6 +54,9 @@ const FOREST_STATE_FILE: &str = "forest-state.json";
 /// Memory Forest's live weather (src/weather.rs).
 const FOREST_WEATHER_FILE: &str = "forest-weather.json";
 const CRASH_LOG: &str = "crash.log";
+/// The backend's own log (Anki's and kuma3's messages, and ours on RWKV),
+/// next to the app's ankinx.log.
+const CORE_LOG: &str = "core.log";
 /// The other profiles' folders, in the data folder. The first profile is the
 /// data folder itself, where everything was before there were profiles.
 const PROFILES_FOLDER: &str = "profiles";
@@ -407,6 +410,12 @@ struct State {
     /// Its optimized parameters, until applied (`set_deck_options`
     /// `apply_optimized`) or another one starts: (deck, preset, outcome).
     optimized: Option<(DeckId, DeckConfigId, crate::optimize::Outcome)>,
+    /// The RWKV models (romfs:/rwkv on the console), if the app has them,
+    /// and the size to run (`init`'s `rwkv_size`: "tiny", the default, or "small").
+    rwkv_models: Option<PathBuf>,
+    rwkv_size: crate::rwkv::ModelSize,
+    /// RWKV for the open collection: running (`Ok`), or why not.
+    rwkv: Option<std::result::Result<crate::rwkv::Run, crate::rwkv::Off>>,
     runtime: tokio::runtime::Runtime,
     client: Client,
 }
@@ -549,6 +558,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "optimize" => state.optimize(&args),
         "optimize_status" => state.optimize_status(),
         "optimize_cancel" => state.optimize_cancel(),
+        "rwkv_status" => state.rwkv_status(),
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
         "forest" => state.forest(&args),
@@ -595,6 +605,7 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
             .map_err(|e| ApiError::new("io", format!("{}: {e}", dir.display())))?;
     }
     log_panics_to(root.join(CRASH_LOG));
+    start_core_log(&root);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
@@ -626,6 +637,9 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         optimizing: None,
         optimize_report: None,
         optimized: None,
+        rwkv_models: args.get("rwkv_models").and_then(Value::as_str).filter(|p| !p.is_empty()).map(PathBuf::from),
+        rwkv_size: crate::rwkv::ModelSize::parse(args.get("rwkv_size").and_then(Value::as_str).unwrap_or("")),
+        rwkv: None,
         runtime,
         client,
     });
@@ -797,6 +811,41 @@ fn sqlite_exec(path: &Path, sql: &str) -> Result<()> {
     }
 }
 
+/// Write the backend's log messages to CORE_LOG in `root` (Anki rotates it at
+/// 50 MB): warnings and errors from Anki, and information from RWKV (kuma3's
+/// timings, and ours: memory, sizes), unless RUST_LOG says otherwise.
+fn start_core_log(root: &Path) {
+    use tracing_subscriber::layer::SubscriberExt;
+    let path = root.join(CORE_LOG);
+    // (the previous run's, as the app keeps ankinx.old.log)
+    let _ = std::fs::rename(&path, root.join("core.old.log"));
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,anki::scheduler::rwkv=info,anki_switch_core=info"));
+    let subscriber = tracing_subscriber::registry().with(filter).with(
+        tracing_subscriber::fmt::layer().with_ansi(false).with_writer(AppendFile(path)),
+    );
+    if tracing::subscriber::set_global_default(subscriber).is_err() {
+        return; // (already started: init after shutdown)
+    }
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), memory = %crate::sysinfo::memory_text(), process = %crate::sysinfo::process_memory().map_or("unknown".into(), |m| m.to_string()), "AnkiNX core started");
+}
+
+/// The log file, opened for each message and closed after it: on the console
+/// a file open for writing can't be opened by anyone else, so a log kept
+/// open can't be read (over the network, say) until the app exits.
+struct AppendFile(PathBuf);
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for AppendFile {
+    type Writer = Box<dyn std::io::Write + 'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        match std::fs::OpenOptions::new().create(true).append(true).open(&self.0) {
+            Ok(file) => Box::new(file),
+            Err(_) => Box::new(std::io::sink()),
+        }
+    }
+}
+
 /// Append panics to `path` before the default report. On the Switch, panics
 /// abort the process (panic=abort) and the system only says "The software was
 /// closed because an error occurred", so this file is the only trace.
@@ -895,8 +944,33 @@ impl State {
         self.collect_optimize();
         if self.col.is_none() && self.optimizing.is_none() {
             self.col = Some(self.builder().build().map_err(|e| self.err(e))?);
+            self.after_open();
         }
         self.status()
+    }
+
+    /// What Anki's backend does once it has opened a collection, and RWKV:
+    /// FSRS-7 states written by other clients repaired (skipped while the
+    /// collection hasn't changed since the last scan), then RWKV started for
+    /// presets set to it on the desktop (src/rwkv.rs). Neither stops the
+    /// collection from opening.
+    fn after_open(&mut self) {
+        let collection = self.base.join(COLLECTION_FILE);
+        let models = self.rwkv_models.clone();
+        let size = self.rwkv_size;
+        let Some(col) = self.col.as_mut() else {
+            return;
+        };
+        let started = Instant::now();
+        match col.repair_foreign_fsrs_memory_states_on_open() {
+            Ok(0) => {}
+            Ok(repaired) => tracing::info!(repaired, ms = started.elapsed().as_millis() as u64, "FSRS states repaired"),
+            Err(e) => tracing::warn!(error = ?e, "repairing FSRS states on open failed"),
+        }
+        self.rwkv = Some(match models {
+            Some(models) => crate::rwkv::start(col, &collection, &models, size),
+            None => Err(crate::rwkv::Off::Failed("this build has no RWKV models".into())),
+        });
     }
 
     /// Close cleanly, making a backup if one is due. Safe to call when closed.
@@ -910,6 +984,7 @@ impl State {
         self.stop_optimize();
         self.optimized = None;
         self.optimize_report = None;
+        self.rwkv = None;
         self.stop_media_sync();
         self.shown = None;
         self.forest = None;
@@ -1900,7 +1975,8 @@ impl State {
             Some(nid) => note_has_tag(col, nid, "leech").map_err(err)?,
             None => false,
         };
-        col.answer_card(&mut answer).map_err(err)?;
+        // (through RWKV too: the answer goes into its model state at once)
+        col.answer_card_updating_rwkv(&mut answer).map_err(err)?;
         let leech = match note_id {
             Some(nid) => !was_leech && note_has_tag(col, nid, "leech").map_err(err)?,
             None => false,
@@ -2160,6 +2236,7 @@ impl State {
         self.stop_optimize();
         self.stop_media_sync();
         self.shown = None;
+        self.rwkv = None;
         let col = self
             .col
             .take()
@@ -2175,6 +2252,7 @@ impl State {
         };
         // Re-open regardless of the outcome, as Anki's backend does.
         self.col = Some(builder.build().map_err(|e| self.err(e))?);
+        self.after_open();
         result.map_err(|e| self.err(e))?;
         self.synced = true;
         self.start_media_sync()?;
@@ -2491,6 +2569,48 @@ impl State {
             _ => String::new(),
         };
         Ok(json!({ "active": true, "progress": without_bidi_isolates(&progress) }))
+    }
+
+    /// `rwkv_status`: RWKV for the open collection (src/rwkv.rs), with this
+    /// process's memory (`memory`: used, total, in MB). `state`: "closed",
+    /// "off" (`reason` "not_used", "memory" with `need_mb` and `free_mb`, or
+    /// "failed" with `error`: RWKV presets are scheduled with FSRS),
+    /// "loading" (`done` of `total` reviews replayed; total 0 while reading
+    /// the state file), "ready" (`reviews`, `secs` it took), or "failed".
+    fn rwkv_status(&mut self) -> ApiResult {
+        use crate::rwkv::Off;
+        let memory = crate::sysinfo::memory()
+            .map(|m| json!({ "used_mb": crate::sysinfo::mb(m.used), "total_mb": crate::sysinfo::mb(m.total) }));
+        let mut status = match self.rwkv.take() {
+            None => json!({ "state": "closed" }),
+            Some(Err(off)) => {
+                let status = match &off {
+                    Off::NotUsed => json!({ "state": "off", "reason": "not_used" }),
+                    Off::Memory { need, free } => json!({
+                        "state": "off",
+                        "reason": "memory",
+                        "need_mb": crate::sysinfo::mb(*need),
+                        "free_mb": crate::sysinfo::mb(*free),
+                    }),
+                    Off::Failed(error) => json!({ "state": "off", "reason": "failed", "error": error }),
+                };
+                self.rwkv = Some(Err(off));
+                status
+            }
+            Some(Ok(mut run)) => {
+                let status = match self.col() {
+                    Ok(col) => run.status(col),
+                    Err(e) => {
+                        self.rwkv = Some(Ok(run));
+                        return Err(e);
+                    }
+                };
+                self.rwkv = Some(Ok(run));
+                status
+            }
+        };
+        status["memory"] = memory.unwrap_or(Value::Null);
+        Ok(status)
     }
 
     /// `optimize_cancel`: stop the optimization running, if any; it ends as
