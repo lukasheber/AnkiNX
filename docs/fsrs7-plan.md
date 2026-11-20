@@ -88,16 +88,37 @@ already at or above the fork's versions.
   build working: socket2 0.6.5 (0.6.3 lacks Horizon), tempfile 3.21.0 +
   rustix 1.0.8 (rustix 1.1 needs `dirfd`). The fork's new `tar` dependency
   (desktop updater) needed `futimes`/`lutimes` in our libc port and shim.
-- **Phase 2 started**: deck options show and change the FSRS version, reset
+- **Phase 2 mostly done**: deck options show and change the FSRS version, reset
   parameters, the same-day minimum interval and the two collection-wide
   FSRS-7 options; saves keep the desktop's collection-wide settings
   (`presets.rs`); custom scheduling carries the fork's new fields both ways
   (`scheduling.rs`, `app/js/src/scheduling.js`). RWKV presets show a note and
   are scheduled with their FSRS version (tested: their reviews still show).
-- **Next**: on-console check with a collection from the desktop fork, then
-  Optimize on the console (background task with progress and cancel, like
-  media sync; the fork's `ComputeFsrsParams` with `fsrs_version` and the
-  same-day option), then phase 3.
+- **Optimize on the console** (`src/optimize.rs`; API `optimize`,
+  `optimize_status`, `optimize_cancel`, `set_deck_options {apply_optimized}`):
+  the fork's `ComputeFsrsParams`, started as its deck options page starts it
+  (the preset's search or its own, FSRS version, relearning steps within a
+  day, ignore-before date, health check, the FSRS-7 options "same-day
+  reviews" and "scheduling penalties" kept in the preset's extra JSON as the
+  fork keeps them, dynamic desired retention when on). It runs on its own
+  thread, which has the collection meanwhile (Anki opens it in exclusive
+  mode: there can't be a second connection); every other call gets "busy".
+  Cancel sets Anki's abort flag, again on each poll since the optimizer
+  clears it when it starts. Not while the media sync runs: both report
+  through the collection's one progress. When the parameters changed, the
+  current and optimized ones are evaluated (`EvaluateParamsLegacy`: log loss,
+  RMSE) and the user chooses, as on the desktop; applying saves through
+  Anki's update (memory states updated). A new dynamic-retention calibration
+  with unchanged parameters is saved at once, as the desktop keeps it.
+  Tested on the host with a year of made-up reviews (changed, applied,
+  cancelled, stopped by closing).
+- **Not ported** (desktop-only extras of the fork's page): "Optimize all
+  presets", the custom decay table, "Same-day reviews: Help me decide",
+  the evaluation search box (its saved value is used), the workload
+  simulator. Card info `extra_rows` (filled by the desktop's Python).
+- **Next**: on-console check with a collection from the desktop fork (also:
+  how long Optimize takes on the console's CPU, and its memory), then
+  phase 3.
 
 ## Risks
 

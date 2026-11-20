@@ -39,6 +39,53 @@ fn add_due_reviews(col: &mut Collection) {
     col.set_due_date(&cids, "0", None).unwrap();
 }
 
+/// A year of made-up reviews of 300 cards in the default deck (learned, then
+/// reviewed at growing intervals, with some lapses): enough for the optimizer.
+fn add_review_history(col: &mut Collection) {
+    let basic = col.get_notetype_by_name("Basic").unwrap().unwrap();
+    let next_day_ms = col.timing_today().unwrap().next_day_at.0 * 1000;
+    let day_ms = 86_400_000;
+    let mut seed: u64 = 20261120;
+    let mut random = move || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let mut cards = vec![];
+    for i in 0..300 {
+        let mut note = basic.new_note();
+        note.set_field(0, format!("history {i}")).unwrap();
+        note.set_field(1, "back").unwrap();
+        col.add_note(&mut note, DeckId(1)).unwrap();
+        cards.push(col.storage.all_card_ids_of_note_in_template_order(note.id).unwrap()[0]);
+    }
+    let db = col.storage.db();
+    db.execute_batch("begin").unwrap();
+    for (i, cid) in cards.iter().enumerate() {
+        let mut ago = 365 - (i as i64 % 250);
+        let mut ivl = 0i64;
+        let mut kind = 0; // learning, then review / relearning
+        while ago > 0 {
+            let lapse = kind != 0 && random() < 0.12;
+            let ease = if lapse { 1 } else if random() < 0.1 { 2 } else { 3 };
+            let last = ivl;
+            ivl = match (kind, lapse) {
+                (0, _) => 1,
+                (_, true) => 1,
+                _ => ((ivl as f64) * if ease == 2 { 1.2 } else { 2.5 }).ceil() as i64,
+            };
+            let id = next_day_ms - (ago + 1) * day_ms + 3_600_000 + i as i64 * 10;
+            db.execute(
+                "insert into revlog (id, cid, usn, ease, ivl, lastIvl, factor, time, type) values (?1, ?2, -1, ?3, ?4, ?5, 2500, 6000, ?6)",
+                rusqlite::params![id, cid.0, ease, ivl, last, if lapse { 2 } else { kind }],
+            )
+            .unwrap();
+            kind = 1;
+            ago -= ivl;
+        }
+    }
+    db.execute_batch("commit").unwrap();
+}
+
 /// Save the default preset with `change`, FSRS on, through our own update.
 fn save_default_preset(col: &mut Collection, change: impl FnOnce(&mut anki::deckconfig::DeckConfig)) {
     let info = col.get_deck_configs_for_update(DeckId(1)).unwrap();
@@ -114,8 +161,22 @@ fn error_kind(cmd: &str, args: Value) -> String {
     v["kind"].as_str().unwrap_or_else(|| panic!("{cmd} unexpectedly succeeded: {v}")).into()
 }
 
-/// Deck options on the console: the FSRS-7 values round-trip, and a save
-/// keeps the collection-wide settings made on the desktop.
+/// Wait for the optimization running to end; its report.
+fn optimize_result() -> Value {
+    let start = std::time::Instant::now();
+    loop {
+        let status = ok("optimize_status", json!({}));
+        if status["active"] == false {
+            return status["result"].clone();
+        }
+        assert!(start.elapsed().as_secs() < 300, "still optimizing: {status}");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// Deck options on the console: the FSRS-7 values round-trip, a save keeps
+/// the collection-wide settings made on the desktop, and the preset's
+/// parameters can be optimized.
 #[test]
 fn deck_options_keep_desktop_settings() {
     let dir = tempfile::tempdir().unwrap();
@@ -123,6 +184,7 @@ fn deck_options_keep_desktop_settings() {
     {
         let mut col = collection(base);
         add_due_reviews(&mut col);
+        add_review_history(&mut col);
         // Desktop choices that differ from the defaults.
         col.set_config_bool(BoolKey::LoadBalancerEnabled, false, false).unwrap();
         col.set_config_bool(BoolKey::FsrsShortTermWithStepsEnabled, false, false).unwrap();
@@ -170,7 +232,48 @@ fn deck_options_keep_desktop_settings() {
     // Back to the defaults of the preset's version (FSRS-6 here).
     ok("set_deck_options", json!({ "deck_id": 1, "reset_fsrs_params": true }));
     assert_eq!(ok("deck_options", deck.clone())["fsrs_params"], 0);
+
+    // FSRS-7's optimizer options, kept in the preset as the fork keeps them.
+    let values = ok("deck_options", deck.clone())["values"].clone();
+    assert_eq!(values["fsrs_include_same_day"], true);
+    assert_eq!(values["fsrs_scheduling_penalties"], false);
+    ok(
+        "set_deck_options",
+        json!({ "deck_id": 1, "values": { "fsrs_version": "7", "fsrs_include_same_day": false } }),
+    );
+    assert_eq!(ok("deck_options", deck.clone())["values"]["fsrs_include_same_day"], false);
+
+    // Optimize on the console: in the background, the collection busy
+    // meanwhile, then the current and optimized parameters compared.
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true })), "args");
+    ok("optimize", deck.clone());
+    assert_eq!(error_kind("deck_options", deck.clone()), "busy");
+    assert_eq!(error_kind("optimize", deck.clone()), "busy");
+    assert_eq!(ok("status", json!({}))["open"], true);
+    ok("open", json!({}));
+    let result = optimize_result();
+    assert_eq!(result["outcome"], "changed", "{result}");
+    for side in ["current", "optimized"] {
+        assert!(result[side]["log_loss"].as_str().unwrap().parse::<f64>().unwrap() > 0.0, "{result}");
+        assert!(result[side]["rmse"].as_str().unwrap().ends_with('%'), "{result}");
+    }
+    assert!(result["reviews"].as_u64().unwrap() > 1000, "{result}");
+    assert_eq!(ok("optimize_status", json!({})), json!({ "active": false, "result": null }), "reported once");
+    assert_eq!(ok("deck_options", deck.clone())["fsrs_params"], 0, "not applied before asked");
+    ok("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true }));
+    assert_eq!(ok("deck_options", deck.clone())["fsrs_params"], 34, "FSRS-7's parameters");
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true })), "args");
+
+    // Stopped by the user.
+    ok("optimize", deck.clone());
+    ok("optimize_cancel", json!({}));
+    assert_eq!(optimize_result()["outcome"], "cancelled");
+    assert_eq!(ok("deck_options", deck.clone())["fsrs_params"], 34);
+
+    // Closing stops one.
+    ok("optimize", deck.clone());
     ok("close", json!({}));
+    assert_eq!(ok("status", json!({}))["open"], false);
 
     let col = collection(base);
     assert!(!col.get_config_bool(BoolKey::LoadBalancerEnabled), "the load balancer stays off");

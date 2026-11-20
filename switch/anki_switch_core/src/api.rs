@@ -263,6 +263,9 @@ struct MediaSync {
 struct SharedProgress {
     attach: Box<dyn Fn(&mut CollectionBuilder) + Send + Sync>,
     read: Box<dyn Fn() -> String + Send + Sync>,
+    /// Ask the operation running to stop (Anki's `want_abort`): it ends with
+    /// [AnkiError::Interrupted] at its next progress update.
+    abort: Box<dyn Fn() + Send + Sync>,
 }
 
 impl SharedProgress {
@@ -272,11 +275,17 @@ impl SharedProgress {
         let attach = Box::new(move |builder: &mut CollectionBuilder| {
             builder.set_shared_progress_state(shared.clone());
         });
+        let aborted = state.clone();
+        let abort = Box::new(move || {
+            if let Ok(mut guard) = aborted.lock() {
+                guard.want_abort = true;
+            }
+        });
         let read = Box::new(move || match state.lock() {
             Ok(guard) => format!("{:?}", guard.last_progress),
             Err(_) => String::new(),
         });
-        SharedProgress { attach, read }
+        SharedProgress { attach, read, abort }
     }
 
     /// The media sync's (downloaded files, downloaded deletions), if it is
@@ -284,6 +293,19 @@ impl SharedProgress {
     fn media_downloads(&self) -> Option<(i64, i64)> {
         media_downloads(&(self.read)())
     }
+
+    /// The optimizer's (current iteration, total iterations, reviews, whether
+    /// it is calibrating dynamic desired retention), if it reported last.
+    fn optimizing(&self) -> Option<(i64, i64, i64, bool)> {
+        optimizing(&(self.read)())
+    }
+}
+
+/// A number in Anki's Debug form of a progress: `name: 12`.
+fn debug_field(debug: &str, name: &str) -> Option<i64> {
+    let rest = &debug[debug.find(&format!("{name}: "))? + name.len() + 2..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
 }
 
 /// Reads `Some(MediaSync(MediaSyncProgress { .., downloaded_files: 12,
@@ -292,12 +314,32 @@ fn media_downloads(debug: &str) -> Option<(i64, i64)> {
     if !debug.starts_with("Some(MediaSync(") {
         return None;
     }
-    let field = |name: &str| -> Option<i64> {
-        let rest = &debug[debug.find(&format!("{name}: "))? + name.len() + 2..];
-        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-        digits.parse().ok()
-    };
-    Some((field("downloaded_files")?, field("downloaded_deletions")?))
+    Some((debug_field(debug, "downloaded_files")?, debug_field(debug, "downloaded_deletions")?))
+}
+
+/// Reads `Some(ComputeParams(ComputeParamsProgress { current_iteration: 3,
+/// total_iterations: 10, reviews: 1200, .., phase: OptimizingFsrsParams }))`.
+fn optimizing(debug: &str) -> Option<(i64, i64, i64, bool)> {
+    if !debug.starts_with("Some(ComputeParams(") {
+        return None;
+    }
+    Some((
+        debug_field(debug, "current_iteration")?,
+        debug_field(debug, "total_iterations")?,
+        debug_field(debug, "reviews")?,
+        debug.contains("phase: TrainingDynamicDesiredRetention"),
+    ))
+}
+
+/// An FSRS optimization (`optimize`) on its own thread, which has the
+/// collection until it ends (Anki's optimizer needs it the whole time; the
+/// collection is opened in exclusive mode, so there can't be a second one).
+struct Optimizing {
+    task: JoinHandle<(Collection, Result<crate::optimize::Outcome>)>,
+    deck_id: DeckId,
+    config_id: DeckConfigId,
+    stage: Arc<std::sync::atomic::AtomicU8>,
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Ask AnkiWeb where its media history ends (the media sync's first
@@ -358,6 +400,13 @@ struct State {
     synced: bool,
     /// A download of a newer .nro (see update.rs), while or after it runs.
     update: Option<crate::update::Progress>,
+    /// An FSRS optimization while it runs (it has the collection).
+    optimizing: Option<Optimizing>,
+    /// How the last one ended, until `optimize_status` has reported it.
+    optimize_report: Option<Value>,
+    /// Its optimized parameters, until applied (`set_deck_options`
+    /// `apply_optimized`) or another one starts: (deck, preset, outcome).
+    optimized: Option<(DeckId, DeckConfigId, crate::optimize::Outcome)>,
     runtime: tokio::runtime::Runtime,
     client: Client,
 }
@@ -497,6 +546,9 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "full_sync" => state.full_sync(&args),
         "media_sync_status" => state.media_sync_status(),
         "media_sync_progress" => state.media_sync_progress(),
+        "optimize" => state.optimize(&args),
+        "optimize_status" => state.optimize_status(),
+        "optimize_cancel" => state.optimize_cancel(),
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
         "forest" => state.forest(&args),
@@ -571,6 +623,9 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         forest: None,
         synced: false,
         update: None,
+        optimizing: None,
+        optimize_report: None,
+        optimized: None,
         runtime,
         client,
     });
@@ -791,6 +846,10 @@ impl State {
     }
 
     fn col(&mut self) -> std::result::Result<&mut Collection, ApiError> {
+        self.collect_optimize();
+        if self.optimizing.is_some() {
+            return Err(ApiError::new("busy", "the collection is busy optimizing FSRS parameters"));
+        }
         self.col
             .as_mut()
             .ok_or_else(|| ApiError::new("not_open", "the collection is not open"))
@@ -824,7 +883,8 @@ impl State {
             "profile_count": self.profile_count,
             "media_dir": self.base.join(MEDIA_FOLDER).to_string_lossy(),
             "collection_exists": self.base.join(COLLECTION_FILE).exists(),
-            "open": self.col.is_some(),
+            // (an optimization has it meanwhile: still open)
+            "open": self.col.is_some() || self.optimizing.is_some(),
             "username": self.login.as_ref().map(|l| l.username.clone()),
             "sync_needed": sync_needed,
         }))
@@ -832,7 +892,8 @@ impl State {
 
     /// Open (or create) the collection.
     fn open(&mut self) -> ApiResult {
-        if self.col.is_none() {
+        self.collect_optimize();
+        if self.col.is_none() && self.optimizing.is_none() {
             self.col = Some(self.builder().build().map_err(|e| self.err(e))?);
         }
         self.status()
@@ -846,6 +907,9 @@ impl State {
     /// Close; `force` backs up even when no backup is due, `prune` then
     /// keeps only the newest [MAX_BACKUPS].
     fn close_with(&mut self, force: bool, prune: bool) -> ApiResult {
+        self.stop_optimize();
+        self.optimized = None;
+        self.optimize_report = None;
         self.stop_media_sync();
         self.shown = None;
         self.forest = None;
@@ -1255,7 +1319,7 @@ impl State {
             "values": deck_option_values(&inner),
             "rwkv": rwkv,
             // How many parameters the preset's FSRS version has (none: the defaults).
-            "fsrs_params": fsrs_params(&inner).len(),
+            "fsrs_params": crate::optimize::params(&inner).len(),
             // Collection-wide, like FSRS itself.
             "fsrs_short_term_with_steps": info.fsrs_short_term_with_steps_enabled,
             "fsrs_skip_learning_queues": info.fsrs_learning_queues_disabled,
@@ -1276,6 +1340,18 @@ impl State {
         let did = DeckId(i64_arg(args, "deck_id")?);
         let tr = self.tr.clone();
         let err = |e| ApiError::anki(e, &tr);
+        if args.get("apply_optimized").and_then(Value::as_bool) == Some(true) {
+            // The parameters `optimize` found for this deck's preset.
+            let Some((deck, config_id, outcome)) = self.optimized.take().filter(|(deck, ..)| *deck == did) else {
+                return Err(ApiError::new("args", "no optimized parameters for this deck"));
+            };
+            let saved = crate::optimize::save(self.col()?, did, config_id, &outcome, true);
+            if saved.is_err() {
+                self.optimized = Some((deck, config_id, outcome));
+            }
+            saved.map_err(err)?;
+            return Ok(json!({}));
+        }
         let col = self.col()?;
         let info = col.get_deck_configs_for_update(did).map_err(err)?;
         let (config, _) = current_preset(&info)?;
@@ -1292,7 +1368,7 @@ impl State {
             Some(_) => return Err(ApiError::new("args", "custom scheduling can only be turned off")),
         };
         if args.get("reset_fsrs_params").and_then(Value::as_bool) == Some(true) {
-            fsrs_params_mut(&mut config.inner).clear();
+            crate::optimize::params_mut(&mut config.inner).clear();
         }
         let flag = |key: &str, current: bool| match args.get(key) {
             None => Ok(current),
@@ -2081,6 +2157,7 @@ impl State {
             .require_login()?
             .auth()
             .map_err(|e| self.err(e))?;
+        self.stop_optimize();
         self.stop_media_sync();
         self.shown = None;
         let col = self
@@ -2327,6 +2404,174 @@ impl State {
             "usn_error": usn_error,
         }))
     }
+
+    /// `optimize {deck_id}`: optimize the FSRS parameters of the deck's
+    /// preset in the background, as the FSRS-7 fork's deck options do (see
+    /// src/optimize.rs); `optimize_status` follows it, `optimize_cancel`
+    /// stops it. Meanwhile the collection is busy (kind "busy"). Not while
+    /// the media sync runs (kind "media_sync"): both report through the
+    /// collection's one progress, so stopping one could stop the other.
+    fn optimize(&mut self, args: &Value) -> ApiResult {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::atomic::AtomicU8;
+        let did = DeckId(i64_arg(args, "deck_id")?);
+        self.collect_media_sync();
+        if self.media_sync.is_some() {
+            return Err(ApiError::new("media_sync", "wait for the media sync to finish"));
+        }
+        let tr = self.tr.clone();
+        let info = self.col()?.get_deck_configs_for_update(did).map_err(|e| ApiError::anki(e, &tr))?;
+        let (config, _) = current_preset(&info)?;
+        let config: anki::deckconfig::DeckConfig = config.clone().into();
+        let job = crate::optimize::job(did, &config, info.fsrs_health_check);
+        let mut col = self.col.take().expect("checked by col()");
+        self.optimized = None;
+        self.optimize_report = None;
+        let stage = Arc::new(AtomicU8::new(crate::optimize::OPTIMIZING));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (at, stop) = (stage.clone(), cancelled.clone());
+        let spawned = std::thread::Builder::new()
+            .name("optimize".into())
+            // (training runs here; the desktop runs it on an 8 MB thread too)
+            .stack_size(8 << 20)
+            .spawn(move || {
+                let result = crate::optimize::run(&mut col, &job, &at, &stop);
+                (col, result)
+            });
+        match spawned {
+            Ok(task) => {
+                self.optimizing = Some(Optimizing { task, deck_id: did, config_id: config.id, stage, cancelled });
+                Ok(json!({}))
+            }
+            Err(e) => {
+                // The collection went with the closure (closed): open it again.
+                self.col = Some(self.builder().build().map_err(|e| self.err(e))?);
+                Err(ApiError::new("backend", format!("could not start the optimizer: {e}")))
+            }
+        }
+    }
+
+    /// `optimize_status`: while an optimization runs, `active` and
+    /// `progress` (Anki's text: "42.0% of 1200 reviews", "Checking for
+    /// improvement..."; empty before it is known). Once it has ended, once:
+    /// `result` with `outcome` "changed" (with `current` and `optimized`, the
+    /// fit of each, `note` and `health`: apply with `set_deck_options
+    /// {apply_optimized}`), "optimal" or "no_reviews" (with `message`),
+    /// "cancelled", or "error" (with `message`).
+    fn optimize_status(&mut self) -> ApiResult {
+        use crate::optimize::CHECKING;
+        use crate::optimize::OPTIMIZING;
+        self.collect_optimize();
+        let Some(run) = &self.optimizing else {
+            return Ok(json!({ "active": false, "result": self.optimize_report.take() }));
+        };
+        if run.cancelled.load(Ordering::Relaxed) {
+            // (again: Anki clears the request when the optimizer starts)
+            (self.progress.abort)();
+            return Ok(json!({ "active": true, "cancelling": true, "progress": "" }));
+        }
+        let tr = &self.tr;
+        let checking = || tr.deck_config_checking_for_improvement().to_string();
+        let progress = match run.stage.load(Ordering::Relaxed) {
+            CHECKING => checking(),
+            OPTIMIZING => match self.progress.optimizing() {
+                Some((current, total, reviews, calibrating)) if total > 0 => {
+                    let pct = format!("{:.1}", current as f64 * 100.0 / total as f64);
+                    if calibrating {
+                        // (the desktop's "Compute ADR values", in English only)
+                        format!("{pct}%")
+                    } else if current >= total {
+                        checking()
+                    } else {
+                        tr.deck_config_percent_of_reviews(reviews, pct).to_string()
+                    }
+                }
+                _ => String::new(),
+            },
+            _ => String::new(),
+        };
+        Ok(json!({ "active": true, "progress": without_bidi_isolates(&progress) }))
+    }
+
+    /// `optimize_cancel`: stop the optimization running, if any; it ends as
+    /// "cancelled" (at the optimizer's next progress update).
+    fn optimize_cancel(&mut self) -> ApiResult {
+        if let Some(run) = &self.optimizing {
+            run.cancelled.store(true, Ordering::Relaxed);
+            (self.progress.abort)();
+        }
+        Ok(json!({}))
+    }
+
+    /// If the optimization has ended: the collection back, and its report.
+    fn collect_optimize(&mut self) {
+        if !self.optimizing.as_ref().is_some_and(|run| run.task.is_finished()) {
+            return;
+        }
+        let run = self.optimizing.take().unwrap();
+        let cancelled = run.cancelled.load(Ordering::Relaxed);
+        let result = match run.task.join() {
+            Ok((col, result)) => {
+                self.col = Some(col);
+                result
+            }
+            Err(_) => {
+                // (a panic, on the host: the console aborts) The collection
+                // was dropped with the thread: open it again.
+                self.col = self.builder().build().ok();
+                self.optimize_report = Some(json!({ "outcome": "error", "message": "the optimizer crashed" }));
+                return;
+            }
+        };
+        let tr = &self.tr;
+        let text = |s: std::borrow::Cow<str>| without_bidi_isolates(&s);
+        let fit = |fit: Option<crate::optimize::Fit>| {
+            fit.map(|f| json!({ "log_loss": format!("{:.4}", f.log_loss), "rmse": format!("{:.2}%", f.rmse_bins * 100.0) }))
+        };
+        let report = match result {
+            Err(_) if cancelled => json!({ "outcome": "cancelled" }),
+            Err(AnkiError::Interrupted) => json!({ "outcome": "cancelled" }),
+            Err(e) => json!({ "outcome": "error", "message": without_bidi_isolates(&e.message(tr)) }),
+            Ok(outcome) if outcome.response.fsrs_items == 0 => {
+                json!({ "outcome": "no_reviews", "message": text(tr.deck_config_fsrs_params_no_reviews()) })
+            }
+            Ok(outcome) if !outcome.changed => {
+                json!({ "outcome": "optimal", "message": text(tr.deck_config_fsrs_params_optimal()) })
+            }
+            Ok(outcome) => {
+                // (the fork shows only a good fit after optimizing)
+                let health = (outcome.response.health_check_passed == Some(true))
+                    .then(|| text(tr.deck_config_fsrs_good_fit()));
+                let report = json!({
+                    "outcome": "changed",
+                    "reviews": outcome.response.fsrs_items,
+                    "current": fit(outcome.current),
+                    "optimized": fit(outcome.optimized),
+                    "note": text(tr.deck_config_smaller_is_better()),
+                    "health": health,
+                });
+                self.optimized = Some((run.deck_id, run.config_id, outcome));
+                report
+            }
+        };
+        self.optimize_report = Some(report);
+    }
+
+    /// Stop an optimization and wait for it (closing, full sync).
+    fn stop_optimize(&mut self) {
+        let Some(run) = self.optimizing.take() else {
+            return;
+        };
+        run.cancelled.store(true, Ordering::Relaxed);
+        while !run.task.is_finished() {
+            (self.progress.abort)();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        match run.task.join() {
+            Ok((col, _)) => self.col = Some(col),
+            Err(_) => self.col = self.builder().build().ok(),
+        }
+    }
 }
 
 /// Back up when the collection changed after the newest backup, and that
@@ -2500,6 +2745,9 @@ fn deck_option_values(c: &DeckConfigInner) -> Value {
         "answer_action": answer_action_name(c.answer_action),
         "fsrs_version": fsrs_version_name(c.fsrs_version),
         "fsrs_minimum_interval": minimum_interval_text(c.fsrs_minimum_interval_secs),
+        // FSRS-7 optimizing (kept in the preset's extra JSON, as the fork does)
+        "fsrs_include_same_day": crate::optimize::include_same_day(c),
+        "fsrs_scheduling_penalties": crate::optimize::scheduling_penalties(c),
     })
 }
 
@@ -2523,27 +2771,6 @@ fn parse_fsrs_version(name: &str) -> Option<anki_proto::deck_config::deck_config
         "4" => FsrsVersion::Four,
         _ => return None,
     })
-}
-
-/// The parameters of the preset's FSRS version (empty: the defaults).
-fn fsrs_params(c: &DeckConfigInner) -> &Vec<f32> {
-    use anki_proto::deck_config::deck_config::config::FsrsVersion;
-    match FsrsVersion::try_from(c.fsrs_version).unwrap_or(FsrsVersion::Seven) {
-        FsrsVersion::Seven => &c.fsrs_params_7,
-        FsrsVersion::Six => &c.fsrs_params_6,
-        FsrsVersion::Five => &c.fsrs_params_5,
-        FsrsVersion::Four => &c.fsrs_params_4,
-    }
-}
-
-fn fsrs_params_mut(c: &mut DeckConfigInner) -> &mut Vec<f32> {
-    use anki_proto::deck_config::deck_config::config::FsrsVersion;
-    match FsrsVersion::try_from(c.fsrs_version).unwrap_or(FsrsVersion::Seven) {
-        FsrsVersion::Seven => &mut c.fsrs_params_7,
-        FsrsVersion::Six => &mut c.fsrs_params_6,
-        FsrsVersion::Five => &mut c.fsrs_params_5,
-        FsrsVersion::Four => &mut c.fsrs_params_4,
-    }
 }
 
 const MINIMUM_INTERVAL_UNITS: [(&str, u32); 4] = [("d", 86_400), ("h", 3_600), ("m", 60), ("s", 1)];
@@ -2641,6 +2868,8 @@ fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::re
         "fsrs_minimum_interval" => {
             c.fsrs_minimum_interval_secs = value.as_str().and_then(parse_minimum_interval).ok_or_else(bad)?;
         }
+        "fsrs_include_same_day" => crate::optimize::set_include_same_day(c, flag()?),
+        "fsrs_scheduling_penalties" => crate::optimize::set_scheduling_penalties(c, flag()?),
         _ => return Err(ApiError::new("args", format!("unknown deck option {key}"))),
     }
     Ok(())
@@ -2816,15 +3045,15 @@ mod test {
         // FSRS-7 is the fork's default (0).
         assert_eq!(fsrs_version_name(c.fsrs_version), "7");
         c.fsrs_params_6 = vec![0.5; 21];
-        assert!(fsrs_params(&c).is_empty());
+        assert!(crate::optimize::params(&c).is_empty());
         for name in ["7", "6", "5", "4"] {
             c.fsrs_version = parse_fsrs_version(name).unwrap() as i32;
             assert_eq!(fsrs_version_name(c.fsrs_version), name);
         }
         assert_eq!(parse_fsrs_version("8"), None);
         c.fsrs_version = parse_fsrs_version("6").unwrap() as i32;
-        assert_eq!(fsrs_params(&c).len(), 21);
-        fsrs_params_mut(&mut c).clear();
+        assert_eq!(crate::optimize::params(&c).len(), 21);
+        crate::optimize::params_mut(&mut c).clear();
         assert!(c.fsrs_params_6.is_empty());
     }
 

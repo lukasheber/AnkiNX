@@ -6,6 +6,7 @@
 
 #include "app.hpp"
 #include "util/keyboard.hpp"
+#include "util/sync_flow.hpp"
 
 using namespace brls::literals;
 
@@ -32,6 +33,80 @@ std::string formatValue(const anki::json& value, bool decimal)
     else
         std::snprintf(buf, sizeof buf, "%lld", (long long)value.get<double>());
     return buf;
+}
+
+// A dialog whose button doesn't close it (borealis' buttons do): it stays
+// until its owner closes it, so only one place ever does.
+class StayingDialog : public brls::Dialog
+{
+  public:
+    StayingDialog(brls::Box* content, const std::string& button, std::function<void()> onPress)
+        : brls::Dialog(content)
+    {
+        setCancelable(false);
+        addButton(button, [] {});
+        button1->registerClickAction([onPress](brls::View*) {
+            onPress();
+            return true;
+        });
+    }
+};
+
+// An optimization's progress dialog.
+struct OptimizeRun
+{
+    StayingDialog* dialog = nullptr;
+    brls::Label* label    = nullptr;
+    bool cancelling       = false;
+};
+
+// Text styled as borealis' text dialogs; `label` gets the label, to update.
+brls::Box* dialogText(const std::string& text, brls::Label** label)
+{
+    brls::Style style = brls::Application::getStyle();
+    auto* textLabel   = new brls::Label();
+    textLabel->setText(text);
+    textLabel->setFontSize(style["brls/dialog/fontSize"]);
+    textLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    textLabel->setSingleLine(false);
+    auto* box = new brls::Box();
+    box->addView(textLabel);
+    box->setAlignItems(brls::AlignItems::CENTER);
+    box->setJustifyContent(brls::JustifyContent::CENTER);
+    box->setPadding(style["brls/dialog/paddingTopBottom"], style["brls/dialog/paddingLeftRight"],
+                    style["brls/dialog/paddingTopBottom"], style["brls/dialog/paddingLeftRight"]);
+    *label = textLabel;
+    return box;
+}
+
+// Follow the optimization until it ends, then close the dialog and pass on
+// its result (on the UI thread).
+void watchOptimize(std::shared_ptr<OptimizeRun> run, std::function<void(const anki::json&)> done)
+{
+    brls::delay(500, [run, done] {
+        anki::json status;
+        try
+        {
+            status = anki::call("optimize_status");
+        }
+        catch (const anki::Error& e)
+        {
+            status = { { "active", false }, { "result", { { "outcome", "error" }, { "message", e.what() } } } };
+        }
+        if (status.value("active", false))
+        {
+            if (!run->cancelling)
+            {
+                std::string progress = status.value("progress", "");
+                run->label->setText(progress.empty() ? t("optimizing") : t("optimizing") + "\n\n" + progress);
+            }
+            watchOptimize(run, done);
+            return;
+        }
+        brls::Application::getPlatform()->disableScreenDimming(false, "optimize", "AnkiNX");
+        anki::json result = status["result"].is_object() ? status["result"] : anki::json::object();
+        run->dialog->close([done, result] { done(result); });
+    });
 }
 
 } // namespace
@@ -175,6 +250,19 @@ void DeckOptionsActivity::fill(const anki::json& options)
     choice(t("fsrs_version"), "fsrs_version", versions, versionNames);
     number(t("desired_retention"), "desired_retention", true);
     paramsRow();
+    auto* optimizeCell = new brls::DetailCell();
+    optimizeCell->setText(t("optimize"));
+    optimizeCell->registerClickAction([this](brls::View*) {
+        optimize();
+        return true;
+    });
+    list->addView(optimizeCell);
+    // FSRS-7's optimizer options, per preset (as in the fork's deck options).
+    for (const char* key : { "fsrs_include_same_day", "fsrs_scheduling_penalties" })
+    {
+        toggle(t(key), key);
+        fsrs7Rows.push_back(list->getChildren().back());
+    }
     steps(t("fsrs_minimum_interval"), "fsrs_minimum_interval", "1s 10m 1h 1d");
     collectionToggle(t("fsrs_short_term_with_steps"), "fsrs_short_term_with_steps",
                      options.value("fsrs_short_term_with_steps", false));
@@ -328,6 +416,9 @@ void DeckOptionsActivity::showSchedulerRows()
         row->setVisibility(fsrs ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     for (brls::View* row : sm2Rows)
         row->setVisibility(fsrs ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    bool seven = values.value("fsrs_version", "7") == "7";
+    for (brls::View* row : fsrs7Rows)
+        row->setVisibility(fsrs && seven ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
     // The note only for presets set to RWKV.
     if (fsrs && rwkv == "off")
         rwkvNote->setVisibility(brls::Visibility::GONE);
@@ -356,6 +447,92 @@ void DeckOptionsActivity::refresh(const anki::json& options)
     customScheduling = options.value("custom_scheduling", false);
     customSchedulingCell->setDetailText(customScheduling ? "hints/on"_i18n : "hints/off"_i18n);
     showSchedulerRows();
+}
+
+void DeckOptionsActivity::optimize()
+{
+    try
+    {
+        anki::call("optimize", { { "deck_id", deckId } });
+    }
+    catch (const anki::Error& e)
+    {
+        // Both report through the collection's one progress.
+        sync_flow::showMessage(e.kind == "media_sync" ? t("optimize_wait_media") : std::string(e.what()));
+        return;
+    }
+    auto run   = std::make_shared<OptimizeRun>();
+    auto* text = dialogText(t("optimizing"), &run->label);
+    run->dialog = new StayingDialog(text, "hints/cancel"_i18n, [run] {
+        if (run->cancelling)
+            return;
+        run->cancelling = true;
+        run->label->setText(t("optimize_stopping"));
+        try
+        {
+            anki::call("optimize_cancel");
+        }
+        catch (const anki::Error&)
+        {
+        }
+    });
+    run->dialog->open();
+    // It can take minutes: don't dim the screen meanwhile.
+    brls::Application::getPlatform()->disableScreenDimming(true, "optimize", "AnkiNX");
+    watchOptimize(run, [this, token = alive](const anki::json& result) {
+        if (*token)
+            showOptimized(result);
+    });
+}
+
+void DeckOptionsActivity::showOptimized(const anki::json& result)
+{
+    std::string outcome = result.value("outcome", "");
+    if (outcome == "cancelled")
+        return;
+    if (outcome != "changed")
+    {
+        // "Already optimal", "no reviews" (Anki's texts), or an error. An
+        // optimal one may have saved a calibration of dynamic retention.
+        sync_flow::showMessage(result.value("message", ""));
+        load();
+        return;
+    }
+    auto fit = [&result](const char* side, const char* key) {
+        return result.contains(side) && result[side].is_object() ? result[side].value(key, "") : std::string();
+    };
+    std::string text = brls::getStr("ankinx/options/optimize_compare", fit("current", "log_loss"),
+                                    fit("optimized", "log_loss"), fit("current", "rmse"), fit("optimized", "rmse"));
+    text += "\n\n" + result.value("note", "");
+    if (result["health"].is_string())
+        text += "\n\n" + result["health"].get<std::string>();
+    auto* dialog = new brls::Dialog(text);
+    dialog->addButton(t("optimize_keep"), [] {});
+    dialog->addButton(t("optimize_use"), [this, token = alive] {
+        // (after the dialog has gone: another one opens)
+        brls::sync([this, token] {
+            if (*token)
+                applyOptimized();
+        });
+    });
+    dialog->open();
+}
+
+// Saving updates the memory state of the preset's cards: it can take a while.
+void DeckOptionsActivity::applyOptimized()
+{
+    sync_flow::blocking(
+        t("optimize_saving"),
+        [id = deckId] { return anki::call("set_deck_options", { { "deck_id", id }, { "apply_optimized", true } }); },
+        [this, token = alive](const anki::json*, const anki::Error* error) {
+            if (!*token)
+                return;
+            if (error)
+                sync_flow::showMessage(error->what());
+            else
+                brls::Application::notify(t("optimize_saved"));
+            load();
+        });
 }
 
 // Rows show the backend's values: after a change, the saved values are shown
