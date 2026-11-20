@@ -8,6 +8,25 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.10.0 (2026-11-20)
+
+Type your answers without letting go of the console.
+
+### Added
+
+- **Thumb keyboard.** An optional on-screen keyboard for type-answer cards,
+  made for typing while you hold the console in both hands. Choose it in
+  **Settings › Study › Keyboard for typed answers**: split in two halves
+  under your thumbs, or stacked at the right or left edge for one thumb.
+  The card stays visible while you type.
+- **Accents and symbols.** Hold a letter for its accented forms (é, ñ, ü,
+  ç…), and tap **123** for digits and punctuation.
+- **Buttons work too.** B deletes, Y types a space, + confirms and −
+  cancels; the D-pad and A pick keys.
+
+The thumb keyboard is used in handheld mode. On a TV, the system keyboard
+opens as before.
+
 ## 0.9.3 (2026-11-16)
 
 Faster reviews on decks with their own fonts.
