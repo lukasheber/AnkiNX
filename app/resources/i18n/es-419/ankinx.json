@@ -325,6 +325,12 @@
     "tap_zones_sides": "Izquierda: Otra vez · derecha: Bien",
     "tap_zones_four": "Otra vez · Difícil · Bien · Fácil, de izquierda a derecha",
     "rumble": "Vibrar al responder",
+    "typing_keyboard": "Teclado para respuestas escritas",
+    "typing_keyboard_system": "Teclado del sistema",
+    "typing_keyboard_split": "Dividido, para ambos pulgares",
+    "typing_keyboard_right": "Un pulgar, a la derecha",
+    "typing_keyboard_left": "Un pulgar, a la izquierda",
+    "typing_keyboard_note": "Solo en modo portátil (en la TV se abre el teclado del sistema). Mantén presionada una letra para ver sus acentos.",
     "tv": "En la TV",
     "tv_card_size": "Texto de las tarjetas",
     "tv_same": "Igual que en modo portátil",
@@ -406,6 +412,12 @@
     "hints": "Mostrar pistas / máscaras",
     "zoom_out": "Alejar",
     "zoom_in": "Acercar"
+  },
+  "keyboard": {
+    "delete": "Borrar",
+    "space": "Espacio",
+    "done": "Listo",
+    "cancel": "Cancelar"
   },
   "login": {
     "title": "Iniciar sesión en AnkiWeb",

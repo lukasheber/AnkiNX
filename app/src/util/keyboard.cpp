@@ -1,6 +1,11 @@
 #include "util/keyboard.hpp"
 
+#include "app.hpp"
+#include "util/settings.hpp"
+#include "view/thumb_keyboard.hpp"
+
 #include <borealis.hpp>
+#include <utility>
 #include <vector>
 
 #ifdef __SWITCH__
@@ -68,3 +73,22 @@ void password(const std::string& prompt, int maxLength, Callback onText)
 } // namespace keyboard
 
 #endif
+
+namespace keyboard
+{
+
+void answer(const std::string& prompt, const std::string& initial, int maxLength, Callback onText)
+{
+    anki::json choice = settings::get("typing_keyboard");
+    if (app::isHandheld() && choice.is_string() && choice != "system")
+    {
+        ThumbKeyboard::open(choice == "thumb_right"  ? ThumbKeyboard::Layout::RightThumb
+                            : choice == "thumb_left" ? ThumbKeyboard::Layout::LeftThumb
+                                                     : ThumbKeyboard::Layout::Split,
+                            prompt, initial, maxLength, std::move(onText));
+        return;
+    }
+    text(prompt, initial, maxLength, std::move(onText));
+}
+
+} // namespace keyboard

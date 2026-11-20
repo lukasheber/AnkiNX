@@ -884,9 +884,9 @@ void ReviewerActivity::afterScript()
         });
 }
 
-// The system keyboard for a text field in the template that a tap focused
-// ("keyboard:" command, a JSON description of the field); confirming hands
-// the text to the page, which fills the field and presses Enter.
+// The keyboard of typed answers for a text field in the template that a tap
+// focused ("keyboard:" command, a JSON description of the field); confirming
+// hands the text to the page, which fills the field and presses Enter.
 void ReviewerActivity::typeIntoField(const std::string& description)
 {
     anki::json field = anki::json::parse(description, nullptr, false);
@@ -895,14 +895,14 @@ void ReviewerActivity::typeIntoField(const std::string& description)
     int serial         = field.value("serial", 0);
     std::string prompt = field.value("prompt", "");
     int maxLength      = field.value("maxLength", 0);
-    keyboard::text(prompt.empty() ? "ankinx/review/your_answer"_i18n : prompt, field.value("value", ""),
-                   maxLength > 0 ? std::min(maxLength, 500) : 500,
-                   [this, token = alive, generation = scriptGeneration, serial](const std::string& text) {
-                       if (!*token || !script || generation != scriptGeneration)
-                           return;
-                       script->typed(serial, text);
-                       afterScript();
-                   });
+    keyboard::answer(prompt.empty() ? "ankinx/review/your_answer"_i18n : prompt, field.value("value", ""),
+                     maxLength > 0 ? std::min(maxLength, 500) : 500,
+                     [this, token = alive, generation = scriptGeneration, serial](const std::string& text) {
+                         if (!*token || !script || generation != scriptGeneration)
+                             return;
+                         script->typed(serial, text);
+                         afterScript();
+                     });
 }
 
 // One pending delay for the page's next timer; a later call replaces it.
@@ -1025,13 +1025,13 @@ std::string ReviewerActivity::questionBody() const
     return body;
 }
 
-// Type the answer with the system keyboard (Anki's answer box). Confirming
-// shows the answer, compared with what was typed, as Enter does in Anki.
+// Type the answer (Anki's answer box) with the keyboard chosen in Settings.
+// Confirming shows the answer, compared with what was typed, as Enter does.
 void ReviewerActivity::typeAnswer()
 {
     if (state != State::Question || !card.value("type_answer", false))
         return;
-    keyboard::text("ankinx/review/your_answer"_i18n, typed, 500, [this, token = alive](const std::string& text) {
+    keyboard::answer("ankinx/review/your_answer"_i18n, typed, 500, [this, token = alive](const std::string& text) {
         if (!*token || state != State::Question)
             return;
         typed = text;

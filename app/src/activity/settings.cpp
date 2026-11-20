@@ -421,6 +421,29 @@ brls::View* SettingsActivity::studyTab()
     rumble->init("ankinx/settings/rumble"_i18n, settings::get("rumble") == true,
                  [](bool on) { settings::set("rumble", on); });
     box->addView(rumble);
+    // A keyboard under the thumbs for type-answer cards (view/thumb_keyboard).
+    static const char* KEYBOARDS[] = { "system", "split", "thumb_right", "thumb_left" };
+    anki::json keyboardChoice = settings::get("typing_keyboard");
+    int keyboardIndex         = 0;
+    for (int i = 1; i < 4; i++)
+        if (keyboardChoice == KEYBOARDS[i])
+            keyboardIndex = i;
+    auto* keyboard = new brls::SelectorCell();
+    keyboard->init("ankinx/settings/typing_keyboard"_i18n,
+                   { "ankinx/settings/typing_keyboard_system"_i18n, "ankinx/settings/typing_keyboard_split"_i18n,
+                     "ankinx/settings/typing_keyboard_right"_i18n, "ankinx/settings/typing_keyboard_left"_i18n },
+                   keyboardIndex, [](int index) {
+                       if (index >= 0 && index < 4)
+                           settings::set("typing_keyboard", KEYBOARDS[index]);
+                   });
+    box->addView(keyboard);
+    auto* keyboardNote = new brls::Label();
+    keyboardNote->setFontSize(16);
+    keyboardNote->setMarginTop(8);
+    keyboardNote->setMarginLeft(16);
+    keyboardNote->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+    keyboardNote->setText("ankinx/settings/typing_keyboard_note"_i18n);
+    box->addView(keyboardNote);
 
     // Docked: card text a size up by default, for reading from the couch.
     box->addView(header("ankinx/settings/tv"_i18n));

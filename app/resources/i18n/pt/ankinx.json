@@ -325,6 +325,12 @@
     "tap_zones_sides": "Esquerda: De novo · direita: Bom",
     "tap_zones_four": "De novo · Difícil · Bom · Fácil, da esquerda para a direita",
     "rumble": "Vibrar ao responder",
+    "typing_keyboard": "Teclado para respostas escritas",
+    "typing_keyboard_system": "Teclado do sistema",
+    "typing_keyboard_split": "Dividido, para os dois polegares",
+    "typing_keyboard_right": "Um polegar, à direita",
+    "typing_keyboard_left": "Um polegar, à esquerda",
+    "typing_keyboard_note": "Apenas no modo portátil (na TV abre-se o teclado do sistema). Mantenha premida uma letra para ver os acentos.",
     "tv": "Na TV",
     "tv_card_size": "Texto dos cartões",
     "tv_same": "Igual ao portátil",
@@ -406,6 +412,12 @@
     "hints": "Mostrar dicas / máscaras",
     "zoom_out": "Diminuir zoom",
     "zoom_in": "Aumentar zoom"
+  },
+  "keyboard": {
+    "delete": "Apagar",
+    "space": "Espaço",
+    "done": "Concluído",
+    "cancel": "Cancelar"
   },
   "login": {
     "title": "Entrar no AnkiWeb",

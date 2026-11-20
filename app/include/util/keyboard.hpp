@@ -19,4 +19,9 @@ using Callback = std::function<void(const std::string&)>;
 void text(const std::string& prompt, const std::string& initial, int maxLength, Callback onText);
 void password(const std::string& prompt, int maxLength, Callback onText);
 
+// Text typed as an answer (type-answer cards, text fields in card
+// templates): the thumb keyboard chosen in Settings > Study (view/
+// thumb_keyboard) in handheld mode, else the system keyboard.
+void answer(const std::string& prompt, const std::string& initial, int maxLength, Callback onText);
+
 } // namespace keyboard

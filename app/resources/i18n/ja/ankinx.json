@@ -325,6 +325,12 @@
     "tap_zones_sides": "左: もう一度 · 右: 正解",
     "tap_zones_four": "左から もう一度 · 難しい · 正解 · 簡単",
     "rumble": "回答時に振動",
+    "typing_keyboard": "回答入力のキーボード",
+    "typing_keyboard_system": "システムのキーボード",
+    "typing_keyboard_split": "分割（両手の親指で）",
+    "typing_keyboard_right": "片手の親指（右）",
+    "typing_keyboard_left": "片手の親指（左）",
+    "typing_keyboard_note": "携帯モードのみ（TVではシステムのキーボードが開きます）。文字を長押しするとアクセント付きの文字を選べます。",
     "tv": "テレビ",
     "tv_card_size": "カードの文字",
     "tv_same": "携帯モードと同じ",
@@ -406,6 +412,12 @@
     "hints": "ヒント表示 / マスク切替",
     "zoom_out": "縮小",
     "zoom_in": "拡大"
+  },
+  "keyboard": {
+    "delete": "削除",
+    "space": "スペース",
+    "done": "決定",
+    "cancel": "キャンセル"
   },
   "login": {
     "title": "AnkiWebにログイン",
