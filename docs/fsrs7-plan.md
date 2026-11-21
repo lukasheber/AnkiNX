@@ -189,7 +189,7 @@ we measured; the sizes' comparisons we have are kuma3's.
   a PC, minutes on the console, starving the system (Horizon doesn't
   time-slice equal priorities). The lookup now runs only when a reset key
   exists (`anki-rwkv.patch`): history read 9,620 → 181 ms, same queue and
-  buttons. The desktop fork has the same lookup (to report).
+  buttons. The desktop fork has the same lookup: reported, JSchoreels/anki#31.
 - Still to do: check on the console; Tiny and "one model" against the desktop;
   safeguards (RWKV's start off the open path, a start that never finished
   skips RWKV next time, a way to keep RWKV off on a console).
