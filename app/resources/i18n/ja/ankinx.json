@@ -115,6 +115,8 @@
     "title": "デッキのオプション",
     "preset": "オプションのプリセット",
     "shared": "このプリセットは{}個のデッキで使われています: 変更はすべてに反映されます。",
+    "preset_menu": "プリセットを管理",
+    "preset_saved_to_subdecks": "すべてのサブデッキにプリセットを保存しました",
     "daily_limits": "1日の上限",
     "new_per_day": "新規カード/日",
     "reviews_per_day": "最大復習数/日",

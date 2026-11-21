@@ -115,6 +115,8 @@
     "title": "Opções do baralho",
     "preset": "Predefinição de opções",
     "shared": "Esta predefinição é usada por {} baralhos: as mudanças valem para todos eles.",
+    "preset_menu": "Gerir predefinições",
+    "preset_saved_to_subdecks": "Predefinição guardada em todos os sub-baralhos",
     "daily_limits": "Limites diários",
     "new_per_day": "Cartões novos/dia",
     "reviews_per_day": "Máximo de revisões/dia",

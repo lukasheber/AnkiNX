@@ -115,6 +115,8 @@
     "title": "Deck options",
     "preset": "Options preset",
     "shared": "This preset is used by {} decks: changes apply to all of them.",
+    "preset_menu": "Manage presets",
+    "preset_saved_to_subdecks": "Preset saved to all subdecks",
     "daily_limits": "Daily limits",
     "new_per_day": "New cards/day",
     "reviews_per_day": "Maximum reviews/day",

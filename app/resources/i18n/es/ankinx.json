@@ -115,6 +115,8 @@
     "title": "Opciones del mazo",
     "preset": "Preajuste de opciones",
     "shared": "Este preajuste lo usan {} mazos: los cambios se aplican a todos.",
+    "preset_menu": "Gestionar ajustes",
+    "preset_saved_to_subdecks": "Ajuste guardado en todos los submazos",
     "daily_limits": "Límites diarios",
     "new_per_day": "Tarjetas nuevas/día",
     "reviews_per_day": "Máximo de repasos/día",
