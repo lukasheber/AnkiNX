@@ -41,7 +41,7 @@ fn models() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../app/resources/rwkv")
 }
 
-/// 200 cards with half a year of reviews ending over a month ago, presets set to RWKV-Instant and
+/// 200 cards studied for a few weeks about half a year ago (long overdue), presets set to RWKV-Instant and
 /// Curve as the fork's desktop saves them.
 fn make_collection(base: &std::path::Path) {
     let mut col = CollectionBuilder::new(base.join("collection.anki2"))
@@ -61,9 +61,9 @@ fn make_collection(base: &std::path::Path) {
     let db = col.storage.db();
     db.execute_batch("begin").unwrap();
     for (i, cid) in cards.iter().enumerate() {
-        let (mut ago, mut ivl, mut kind) = (180 - (i as i64 % 150), 0i64, 0);
-        // (studied until 40+ days ago: overdue now, so RWKV-Instant shows them)
-        while ago > 40 {
+        let (mut ago, mut ivl, mut kind) = (200 - (i as i64 % 20), 0i64, 0);
+        // (studied a few weeks, until ~150 days ago: long overdue, so any model shows them)
+        while ago > 150 {
             let lapse = kind != 0 && (i as i64 + ago) % 9 == 0;
             let last = ivl;
             ivl = if kind == 0 || lapse { 1 } else { (ivl as f64 * 2.4).ceil() as i64 };

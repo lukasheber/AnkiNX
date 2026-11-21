@@ -243,6 +243,80 @@ fn deck_options_keep_desktop_settings() {
     );
     assert_eq!(ok("deck_options", deck.clone())["values"]["fsrs_include_same_day"], false);
 
+    // The desktop's scheduler choice: Review scheduler and Due dates, kept in
+    // the FSRS version and the two RWKV switches; choosing turns FSRS on.
+    ok("set_deck_options", json!({ "deck_id": 1, "fsrs": false }));
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "scheduler": "rwkv-instant" } }));
+    let options = ok("deck_options", deck.clone());
+    assert_eq!(options["fsrs"], true, "choosing a scheduler turns FSRS on");
+    assert_eq!(options["values"]["scheduler"], "rwkv-instant");
+    assert_eq!(options["values"]["due_dates"], "fsrs-7", "Instant keeps its due-date companion");
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "due_dates": "rwkv-curve" } }));
+    let options = ok("deck_options", deck.clone());
+    assert_eq!((options["values"]["scheduler"].clone(), options["values"]["due_dates"].clone()), (json!("rwkv-instant"), json!("rwkv-curve")));
+    assert_eq!(options["rwkv"], "instant");
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "scheduler": "fsrs-6" } }));
+    let options = ok("deck_options", deck.clone());
+    assert_eq!(options["values"]["scheduler"], "fsrs-6");
+    assert_eq!(options["rwkv"], "off", "an FSRS scheduler turns both RWKV switches off");
+    for bad in [json!({ "scheduler": "rwkv" }), json!({ "due_dates": "rwkv-instant" })] {
+        assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "values": bad })), "args");
+    }
+    // RWKV options, with the desktop's limits.
+    let rwkv = json!({
+        "rwkv_minimum_reviews_per_day": 30,
+        "rwkv_min_intervening_reviews": 7,
+        "rwkv_min_elapsed_secs": 600,
+        "rwkv_enforce_grade_order": true,
+        "rwkv_precompute_next_card": false,
+        "rwkv_candidate_refresh": true,
+        "rwkv_refresh_interval": 5,
+    });
+    ok("set_deck_options", json!({ "deck_id": 1, "values": rwkv.clone() }));
+    let values = ok("deck_options", deck.clone())["values"].clone();
+    for (key, value) in rwkv.as_object().unwrap() {
+        assert_eq!(&values[key], value, "{key}");
+    }
+    for bad in [
+        json!({ "rwkv_refresh_interval": 0 }),
+        json!({ "rwkv_min_elapsed_secs": 86_401 }),
+        json!({ "rwkv_minimum_reviews_per_day": 10_000 }),
+    ] {
+        assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "values": bad })), "args");
+    }
+    // The deck's own options: "Deck only" desired retention, subdeck minimums.
+    ok("set_deck_options", json!({ "deck_id": 1, "deck": { "desired_retention": 0.85, "rwkv_respect_subdeck_minimums": true } }));
+    let options = ok("deck_options", deck.clone());
+    assert!((options["deck"]["desired_retention"].as_f64().unwrap() - 0.85).abs() < 1e-6);
+    assert_eq!(options["deck"]["rwkv_respect_subdeck_minimums"], true);
+    ok("set_deck_options", json!({ "deck_id": 1, "deck": { "desired_retention": null } }));
+    assert!(ok("deck_options", deck.clone())["deck"]["desired_retention"].is_null(), "back to the preset's");
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "deck": { "desired_retention": 0.5 } })), "args");
+    assert!(ok("deck_options", deck.clone())["labels"]["review_scheduler"].as_str().is_some_and(|s| !s.is_empty()));
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "scheduler": "fsrs-7", "rwkv_precompute_next_card": true, "rwkv_candidate_refresh": false, "rwkv_refresh_interval": 1 } }));
+
+    // The FSRS Advanced settings: the optimizer's searches, the clamp, the
+    // health check (collection-wide) and a save that reschedules.
+    let advanced = json!({
+        "param_search": "deck:Default",
+        "evaluation_search": "deck:Default is:review",
+        "fsrs_dynamic_retention_clamp": true,
+    });
+    ok("set_deck_options", json!({ "deck_id": 1, "values": advanced.clone(), "fsrs_health_check": true, "reschedule": true }));
+    let options = ok("deck_options", deck.clone());
+    for (key, value) in advanced.as_object().unwrap() {
+        assert_eq!(&options["values"][key], value, "{key}");
+    }
+    assert_eq!(options["fsrs_health_check"], true);
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "param_search": "", "evaluation_search": "" }, "fsrs_health_check": false }));
+    // Dynamic DR: refused without a calibration (Anki couldn't schedule with it).
+    assert_eq!(options["values"]["fsrs_dynamic_retention"], false);
+    assert_eq!(options["values"]["fsrs_dynamic_retention_calibrated"], false);
+    assert_eq!(
+        error_kind("set_deck_options", json!({ "deck_id": 1, "values": { "fsrs_dynamic_retention": true } })),
+        "needs_calibration"
+    );
+
     // Optimize on the console: in the background, the collection busy
     // meanwhile, then the current and optimized parameters compared.
     assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true })), "args");
@@ -263,6 +337,23 @@ fn deck_options_keep_desktop_settings() {
     ok("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true }));
     assert_eq!(ok("deck_options", deck.clone())["fsrs_params"], 34, "FSRS-7's parameters");
     assert_eq!(error_kind("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true })), "args");
+
+    // Optimizing to calibrate Dynamic DR turns it on once saved; the cards
+    // can then be studied with it.
+    ok("optimize", json!({ "deck_id": 1, "calibrate_dynamic_retention": true }));
+    let result = optimize_result();
+    if result["outcome"] == "changed" {
+        ok("set_deck_options", json!({ "deck_id": 1, "apply_optimized": true }));
+    }
+    let values = ok("deck_options", deck.clone())["values"].clone();
+    assert_eq!(values["fsrs_dynamic_retention_calibrated"], true, "{result}");
+    assert_eq!(values["fsrs_dynamic_retention"], true, "{result}");
+    ok("select_deck", deck.clone());
+    assert!(ok("next_card", json!({}))["card_id"].is_i64(), "studied with Dynamic DR");
+    ok("answer", json!({ "ease": 3 }));
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "fsrs_dynamic_retention": false } }));
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "fsrs_dynamic_retention": true } }));
+    ok("set_deck_options", json!({ "deck_id": 1, "values": { "fsrs_dynamic_retention": false } }));
 
     // Stopped by the user.
     ok("optimize", deck.clone());

@@ -196,10 +196,28 @@ we measured; the sizes' comparisons we have are kuma3's.
   with unchanged parameters is saved at once, as the desktop keeps it.
   Tested on the host with a year of made-up reviews (changed, applied,
   cancelled, stopped by closing).
+- **Deck options grouped as the desktop's** (its sections and order, labels
+  from the fork's own strings): Daily limits, New cards, Lapses (with the two
+  collection-wide same-day switches), Scheduler, the chosen scheduler's
+  sections, Burying, Audio, Timer, Auto advance, Advanced (FSRS's minimum
+  interval with FSRS). Scheduler: the Review scheduler is the choice (picking
+  one turns FSRS on; no separate on/off row; a collection on SM-2 shows
+  "SM-2"), the Fallback with RWKV-Instant (RWKV-Curve recommended), Desired
+  retention "Preset" / "This deck"; `src/scheduler_choice.rs` ports
+  `scheduler-choice.ts` with its tests. RWKV section with RWKV is chosen
+  (Instant and Curve parts, Advanced: model Small/Tiny and "one model", kept
+  per console like the desktop's per-profile settings, then RWKV-Instant's
+  queue updates). FSRS section only when FSRS is the scheduler or the
+  Fallback: parameters, Optimize, FSRS-7's options, Dynamic DR (ADR) with its
+  clamp, Optimize and Evaluation search filters, Reschedule cards on change
+  (per screen, as the desktop's), health check. Dynamic DR is
+  refused without a calibration (Anki can't schedule its cards then: the
+  desktop only warns); turning it on offers the optimization that calibrates
+  it and turns it on when saved.
 - **Not ported** (desktop-only extras of the fork's page): "Optimize all
   presets", the custom decay table, "Same-day reviews: Help me decide",
-  the evaluation search box (its saved value is used), the workload
-  simulator. Card info `extra_rows` (filled by the desktop's Python).
+  editing ADR's policy/calibration arrays by hand and its DR plot, the
+  workload simulator. Card info `extra_rows` (filled by the desktop's Python).
 - **Next**: on-console check with a collection from the desktop fork (also:
   how long Optimize takes on the console's CPU, and its memory), then
   phase 3.

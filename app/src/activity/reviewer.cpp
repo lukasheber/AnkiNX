@@ -397,7 +397,9 @@ void ReviewerActivity::loadNext()
                                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
             onUi(token, [this, next] {
                 card = next;
-                if (card["done"].get<bool>())
+                if (card.contains("rwkv_loading"))
+                    showRwkvWait(card["rwkv_loading"]);
+                else if (card["done"].get<bool>())
                     showDone();
                 else
                     showQuestion();
@@ -405,7 +407,7 @@ void ReviewerActivity::loadNext()
             // RWKV-Instant: the queue re-scoring the last answer left for later
             // (Anki desktop's "Precompute next card", on by default), done
             // while this card is shown. The next answer waits only if sooner.
-            if (!next["done"].get<bool>())
+            if (!next["done"].get<bool>() && !next.contains("rwkv_loading"))
             {
                 try
                 {
@@ -1243,6 +1245,29 @@ void ReviewerActivity::showDone()
     easeButtons->setVisibility(brls::Visibility::GONE);
     showCardState();
     refreshControls();
+}
+
+void ReviewerActivity::showRwkvWait(const anki::json& status)
+{
+    state = State::Done;
+    long total       = status.value("total", 0L);
+    std::string text = total > 0 ? brls::getStr("ankinx/review/rwkv_wait", std::to_string(total))
+                                 : "ankinx/review/rwkv_wait_start"_i18n;
+    std::string body = "<div style=\"text-align:center; margin-top:100px; font-size:26px\">" +
+                       escapeHtml("ankinx/review/rwkv_wait_title"_i18n) + "</div>" +
+                       "<p style=\"text-align:center; font-size:22px; margin:24px 80px\">" + escapeHtml(text) + "</p>";
+    ++timerGeneration;
+    timerLabel->setVisibility(brls::Visibility::GONE);
+    card["css"]        = "";
+    card["body_class"] = nightMode() ? "card nightMode" : "card";
+    cardView->setHtml(documentFor(body));
+    showAnswerBox->setVisibility(brls::Visibility::GONE);
+    easeButtons->setVisibility(brls::Visibility::GONE);
+    refreshControls();
+    brls::delay(2000, [this, token = alive, generation = ++resumeGeneration] {
+        if (*token && state == State::Done && generation == resumeGeneration)
+            loadNext();
+    });
 }
 
 // The answer timer (deck option "Show answer timer"): seconds since the card

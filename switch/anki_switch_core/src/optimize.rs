@@ -105,11 +105,62 @@ pub fn set_scheduling_penalties(c: &mut DeckConfigInner, on: bool) {
     });
 }
 
+/// The search the optimizer's comparison is evaluated on (empty: the
+/// optimizer's own), the desktop's "Evaluation Search Filter".
+pub fn evaluation_search(c: &DeckConfigInner) -> String {
+    extra(c).get(EVALUATION_SEARCH_KEY).and_then(Value::as_str).unwrap_or_default().to_string()
+}
+
+pub fn set_evaluation_search(c: &mut DeckConfigInner, search: &str) {
+    set_extra(c, |map| {
+        if search.trim().is_empty() {
+            map.remove(EVALUATION_SEARCH_KEY);
+        } else {
+            map.insert(EVALUATION_SEARCH_KEY.into(), Value::String(search.trim().into()));
+        }
+    });
+}
+
+/// The preset has a usable calibration of dynamic desired retention (what
+/// an optimization with it on saves): Anki refuses to schedule the preset's
+/// cards with it on otherwise. As the fork's deck options check it
+/// (dynamic-desired-retention.ts).
+pub fn dynamic_retention_calibrated(c: &DeckConfigInner) -> bool {
+    let finite = |v: &[f32]| v.iter().all(|x| x.is_finite());
+    let calibration = |weights: &[f32], drs: &[f32], min: usize| {
+        weights.len() == drs.len()
+            && weights.len() >= min
+            && weights.iter().all(|w| w.is_finite() && *w >= 0.0)
+            && drs.iter().all(|d| d.is_finite() && (0.0..=1.0).contains(d))
+    };
+    let optional = |weights: &[f32], drs: &[f32], min: usize| {
+        (weights.is_empty() && drs.is_empty()) || calibration(weights, drs, min)
+    };
+    let (lo, hi) = (c.fsrs_dynamic_desired_retention_min, c.fsrs_dynamic_desired_retention_max);
+    c.fsrs_dynamic_desired_retention_params.len() == 15
+        && finite(&c.fsrs_dynamic_desired_retention_params)
+        && calibration(&c.fsrs_dynamic_desired_retention_weights, &c.fsrs_dynamic_desired_retention_avg_drs, 2)
+        && optional(&c.fsrs_dynamic_desired_retention_fsrs_eq_weights, &c.fsrs_dynamic_desired_retention_fsrs_eq_drs, 2)
+        && optional(
+            &c.fsrs_dynamic_desired_retention_fixed_target_weights,
+            &c.fsrs_dynamic_desired_retention_fixed_target_drs,
+            1,
+        )
+        && lo.is_finite()
+        && hi.is_finite()
+        && lo > 0.0
+        && lo < hi
+        && hi < 1.0
+}
+
 /// What a run needs, worked out from the preset when it starts.
 pub struct Job {
     pub deck_id: DeckId,
     pub config_id: DeckConfigId,
     pub request: ComputeFsrsParamsRequest,
+    /// Calibrating dynamic desired retention for a preset that has it off:
+    /// the calibration turns it on when saved.
+    pub enable_dynamic_retention: bool,
     /// The current parameters as evaluated: FSRS-7's defaults when the preset
     /// has none yet (Anki's evaluation would take empty ones as FSRS-6's).
     current_for_evaluation: Vec<f32>,
@@ -146,10 +197,12 @@ fn date_ms(date: &str) -> i64 {
 /// The run for `config` (the deck's preset), as the fork's deck options
 /// start it: the preset's search (its decks, suspended cards left out) or
 /// its own, its FSRS version and same-day options, and the collection's
-/// health check setting.
-pub fn job(deck_id: DeckId, config: &DeckConfig, health_check: bool) -> Job {
+/// health check setting. `calibrate`: also calibrate dynamic desired
+/// retention (FSRS-7), to turn it on.
+pub fn job(deck_id: DeckId, config: &DeckConfig, health_check: bool, calibrate: bool) -> Job {
     let c = &config.inner;
     let seven = fsrs_version(c) == FsrsVersion::Seven;
+    let enable_dynamic_retention = seven && calibrate && !c.fsrs_dynamic_desired_retention_enabled;
     let search = if c.param_search.trim().is_empty() {
         format!("preset:\"{}\" -is:suspended", escape_search(&config.name))
     } else {
@@ -179,11 +232,13 @@ pub fn job(deck_id: DeckId, config: &DeckConfig, health_check: bool) -> Job {
             health_check,
             include_same_day_reviews: seven.then(|| include_same_day(c)),
             fsrs_version: Some(c.fsrs_version),
-            dynamic_desired_retention_enabled: seven && c.fsrs_dynamic_desired_retention_enabled,
+            dynamic_desired_retention_enabled: seven
+                && (c.fsrs_dynamic_desired_retention_enabled || enable_dynamic_retention),
             dynamic_desired_retention_review_limit: None,
             dynamic_desired_retention_max_cost_perday_minutes: None,
             enable_scheduling_penalties: Some(seven && scheduling_penalties(c)),
         },
+        enable_dynamic_retention,
         current_for_evaluation,
         evaluation_search,
     }
@@ -203,6 +258,8 @@ pub struct Outcome {
     pub changed: bool,
     pub current: Option<Fit>,
     pub optimized: Option<Fit>,
+    /// From the job: a calibration turns dynamic desired retention on.
+    pub enable_dynamic_retention: bool,
 }
 
 impl Outcome {
@@ -244,11 +301,17 @@ pub fn run(col: &mut Collection, job: &Job, stage: &AtomicU8, cancelled: &Atomic
     let response = SchedulerService::compute_fsrs_params(col, job.request.clone())?;
     check()?;
     let changed = !same_params(&job.request.current_params, &response.params);
-    let mut outcome = Outcome { response, changed, current: None, optimized: None };
+    let mut outcome = Outcome {
+        response,
+        changed,
+        current: None,
+        optimized: None,
+        enable_dynamic_retention: job.enable_dynamic_retention,
+    };
     if !changed {
         if outcome.has_dynamic_retention() {
             stage.store(SAVING, Ordering::Relaxed);
-            save(col, job.deck_id, job.config_id, &outcome, false)?;
+            save(col, job.deck_id, job.config_id, &outcome, false, false)?;
         }
         return Ok(outcome);
     }
@@ -285,8 +348,16 @@ fn invalid(message: &str) -> AnkiError {
 /// Save the outcome to the preset `config_id` (still the deck's): the
 /// optimized parameters when `params`, and a new calibration of dynamic
 /// desired retention if there is one. Through Anki's own update, which
-/// updates the cards' memory states.
-pub fn save(col: &mut Collection, deck_id: DeckId, config_id: DeckConfigId, outcome: &Outcome, params: bool) -> Result<()> {
+/// updates the cards' memory states (and, with `reschedule`, their due dates,
+/// as the desktop's "Reschedule cards on change").
+pub fn save(
+    col: &mut Collection,
+    deck_id: DeckId,
+    config_id: DeckConfigId,
+    outcome: &Outcome,
+    params: bool,
+    reschedule: bool,
+) -> Result<()> {
     let info = col.get_deck_configs_for_update(deck_id)?;
     let Some(mut config) = col.get_deck_config(config_id, false)? else {
         return Err(invalid("the preset no longer exists"));
@@ -307,12 +378,16 @@ pub fn save(col: &mut Collection, deck_id: DeckId, config_id: DeckConfigId, outc
         c.fsrs_dynamic_desired_retention_fixed_target_drs = r.fsrs_dynamic_desired_retention_fixed_target_drs.clone();
         c.fsrs_dynamic_desired_retention_min = r.fsrs_dynamic_desired_retention_min;
         c.fsrs_dynamic_desired_retention_max = r.fsrs_dynamic_desired_retention_max;
+        if outcome.enable_dynamic_retention && dynamic_retention_calibrated(c) {
+            c.fsrs_dynamic_desired_retention_enabled = true;
+        }
     }
     // (the update gives the deck the preset saved: still the one it had)
     if info.current_deck.as_ref().map(|d| d.config_id) != Some(config_id.0) {
         return Err(invalid("the deck now has another preset"));
     }
-    let request = crate::presets::update_request(&info, deck_id, vec![config], UpdateDeckConfigsMode::Normal);
+    let mut request = crate::presets::update_request(&info, deck_id, vec![config], UpdateDeckConfigsMode::Normal);
+    request.fsrs_reschedule = reschedule;
     col.update_deck_configs(request)?;
     Ok(())
 }
@@ -343,7 +418,7 @@ mod tests {
         config.name = r#"Say "hi" \o/"#.into();
         config.inner.relearn_steps = vec![10.0, 1000.0, 1440.0];
         config.inner.ignore_revlogs_before_date = "2024-05-01".into();
-        let job = job(DeckId(1), &config, true);
+        let job = job(DeckId(1), &config, true, false);
         assert_eq!(job.request.search, r#"preset:"Say \"hi\" \\o/" -is:suspended"#);
         assert_eq!(job.evaluation_search, job.request.search);
         assert_eq!(job.request.num_of_relearning_steps, 2);
@@ -355,11 +430,53 @@ mod tests {
         config.inner.fsrs_version = FsrsVersion::Six as i32;
         config.inner.param_search = "deck:French".into();
         config.inner.other = br#"{"fsrsEvaluationSearch": " deck:French::Verbs "}"#.to_vec();
-        let job = super::job(DeckId(1), &config, false);
+        let job = super::job(DeckId(1), &config, false, false);
         assert_eq!(job.request.search, "deck:French");
         assert_eq!(job.evaluation_search, "deck:French::Verbs");
         assert_eq!(job.request.include_same_day_reviews, None, "FSRS-7 only");
         assert!(job.current_for_evaluation.is_empty(), "FSRS-6 evaluates its own defaults");
+    }
+
+    #[test]
+    fn dynamic_retention_needs_a_calibration() {
+        let mut config = DeckConfig::default();
+        let c = &mut config.inner;
+        assert!(!dynamic_retention_calibrated(c), "none by default");
+        c.fsrs_dynamic_desired_retention_params = vec![0.5; 15];
+        c.fsrs_dynamic_desired_retention_weights = vec![0.0, 1.0];
+        c.fsrs_dynamic_desired_retention_avg_drs = vec![0.9, 0.8];
+        c.fsrs_dynamic_desired_retention_min = 0.3;
+        c.fsrs_dynamic_desired_retention_max = 0.995;
+        assert!(dynamic_retention_calibrated(c));
+        c.fsrs_dynamic_desired_retention_params.pop();
+        assert!(!dynamic_retention_calibrated(c), "15 policy parameters");
+        c.fsrs_dynamic_desired_retention_params.push(f32::NAN);
+        assert!(!dynamic_retention_calibrated(c), "finite");
+        c.fsrs_dynamic_desired_retention_params = vec![0.5; 15];
+        c.fsrs_dynamic_desired_retention_fixed_target_weights = vec![1.0];
+        assert!(!dynamic_retention_calibrated(c), "matching fixed target arrays");
+        c.fsrs_dynamic_desired_retention_fixed_target_drs = vec![0.9];
+        assert!(dynamic_retention_calibrated(c));
+        c.fsrs_dynamic_desired_retention_max = 1.0;
+        assert!(!dynamic_retention_calibrated(c), "bounds below 1");
+
+        // Calibrating turns it on (FSRS-7 only, and only when it is off).
+        let job = super::job(DeckId(1), &config, false, true);
+        assert!(job.request.dynamic_desired_retention_enabled && job.enable_dynamic_retention);
+        let job = super::job(DeckId(1), &config, false, false);
+        assert!(!job.request.dynamic_desired_retention_enabled && !job.enable_dynamic_retention);
+        config.inner.fsrs_version = FsrsVersion::Six as i32;
+        let job = super::job(DeckId(1), &config, false, true);
+        assert!(!job.request.dynamic_desired_retention_enabled && !job.enable_dynamic_retention);
+    }
+
+    #[test]
+    fn evaluation_search_in_the_presets_extra_json() {
+        let mut c = DeckConfigInner::default();
+        set_evaluation_search(&mut c, " deck:A ");
+        assert_eq!(evaluation_search(&c), "deck:A");
+        set_evaluation_search(&mut c, "");
+        assert!(!extra(&c).contains_key(EVALUATION_SEARCH_KEY), "empty: the optimizer's search");
     }
 
     #[test]

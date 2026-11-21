@@ -26,10 +26,12 @@ use serde_json::Value;
 
 use crate::sysinfo;
 
-/// Model sizes (kuma3's), each a pair: the two-head model for RWKV-Curve
-/// (and Small's answer-time head), and the Instant-only model. Tiny is the
-/// default: the smallest state per card; Small costs more memory, time and SD
-/// space for a little accuracy (bundled for testing). Big isn't bundled.
+/// Model sizes, as the FSRS-7 fork's desktop defines them
+/// (`RWKV_SIZE_MODELS` in qt/aqt/rwkv_model.py), each a pair: the two-head
+/// model (RWKV-Curve: intervals, S90; Small's has an answer-time head) and the
+/// Instant-only model (RWKV-Instant). Small is the desktop's default, and
+/// AnkiNX's; Tiny costs less time, memory and SD space. Big isn't bundled.
+/// The choice is the device's, as it is the desktop profile's (not synced).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelSize {
     Tiny,
@@ -37,12 +39,12 @@ pub enum ModelSize {
 }
 
 impl ModelSize {
-    /// "small", else Tiny.
+    /// "tiny", else Small (the default).
     pub fn parse(name: &str) -> Self {
-        if name.eq_ignore_ascii_case("small") {
-            ModelSize::Small
-        } else {
+        if name.eq_ignore_ascii_case("tiny") {
             ModelSize::Tiny
+        } else {
+            ModelSize::Small
         }
     }
 
@@ -54,7 +56,12 @@ impl ModelSize {
     }
 }
 
-const WEIGHTS: &str = "weights.int8.bin";
+/// The desktop loads the f32 weights (RWKV_MODEL_FILES): the same here, so
+/// the predictions are the desktop's.
+const WEIGHTS: &str = "weights.f32.bin";
+/// The desktop's default state precision, "cards_int4_notes_int8"
+/// (qt/aqt/rwkv_precision.py): kuma3's "int4".
+const STATE_PRECISION: &str = "int4";
 
 /// First guess at the memory a start needs, checked against what is free:
 /// a fixed part (models, history read) and a part per card (card and note
@@ -86,6 +93,37 @@ pub fn presets(col: &mut Collection) -> Result<Presets> {
         presets.instant |= inner.is_some_and(|c| c.rwkv_review_instant_order_enabled);
     }
     Ok(presets)
+}
+
+/// Whether studying the current deck can involve RWKV: its preset or a
+/// subdeck's (each card is scheduled with its home deck's preset), or, for a
+/// filtered deck, any preset.
+pub fn current_deck_uses_rwkv(col: &mut Collection) -> Result<bool> {
+    use anki::decks::DeckKind;
+    let deck = col.get_current_deck()?;
+    let uses = |config: &anki::deckconfig::DeckConfig| {
+        config.inner.rwkv_review_enabled || config.inner.rwkv_review_instant_order_enabled
+    };
+    if matches!(deck.kind, DeckKind::Filtered(_)) {
+        return Ok(presets(col)?.any());
+    }
+    let name = deck.human_name();
+    let prefix = format!("{name}::");
+    let mut ids = vec![deck.id];
+    for (id, other) in col.get_all_normal_deck_names(false)? {
+        if other.starts_with(&prefix) {
+            ids.push(id);
+        }
+    }
+    for id in ids {
+        let Some(config_id) = col.get_deck(id)?.and_then(|d| d.config_id()) else {
+            continue;
+        };
+        if col.get_deck_config(config_id, true)?.is_some_and(|c| uses(&c)) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The size of what RWKV works on.
@@ -171,6 +209,7 @@ pub fn start(
     collection: &Path,
     models: &Path,
     model_size: ModelSize,
+    single_model: bool,
 ) -> std::result::Result<Run, Off> {
     let presets = presets(col).map_err(|e| Off::Failed(format!("{e:?}")))?;
     if !presets.any() {
@@ -183,6 +222,7 @@ pub fn start(
     let need = estimate(size);
     tracing::info!(
         model_size = ?model_size,
+        single_model,
         curve = presets.curve,
         instant = presets.instant,
         cards = size.cards,
@@ -215,12 +255,14 @@ pub fn start(
         col,
         RwkvPrepareOfflineRequest {
             model_path: two_head.to_string_lossy().into(),
-            // (int8 card and note states: kuma3's default)
-            state_precision: String::new(),
+            // (the desktop's: int4 card states, int8 note states;
+            // ANKINX_RWKV_STATE_PRECISION, e.g. "f32", for comparisons on a PC)
+            state_precision: std::env::var("ANKINX_RWKV_STATE_PRECISION").unwrap_or_else(|_| STATE_PRECISION.into()),
             // the leak-free input rules of the fork's current models
             model_kind: "sm72".into(),
             instant_model_path: instant.to_string_lossy().into(),
-            single_model: false,
+            // the desktop's "one model for both schedulers" (off by default)
+            single_model,
         },
     );
     match prepared {

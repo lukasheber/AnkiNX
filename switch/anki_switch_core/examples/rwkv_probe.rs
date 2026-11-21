@@ -35,7 +35,13 @@ fn main() {
     let dir = args.next().expect("usage: rwkv_probe <data dir> <models dir> [answers]");
     let models = args.next().expect("models dir");
     let answers: usize = args.next().map_or(5, |n| n.parse().unwrap());
-    call("init", json!({ "base_dir": dir, "langs": ["en"], "rwkv_models": models }));
+    // (PROBE_SINGLE=1: the desktop's "one model" opt-out; PROBE_SIZE=tiny)
+    let single = std::env::var_os("PROBE_SINGLE").is_some();
+    let size = std::env::var("PROBE_SIZE").unwrap_or_else(|_| "small".into());
+    call(
+        "init",
+        json!({ "base_dir": dir, "langs": ["en"], "rwkv_models": models, "rwkv_single_model": single, "rwkv_size": size }),
+    );
     call("open", json!({}));
     let started = Instant::now();
     loop {
@@ -49,9 +55,20 @@ fn main() {
     call("sync", json!({}));
     call("rwkv_status", json!({}));
     let tree = call("deck_tree", json!({}));
-    let deck = tree["ok"]["decks"][0]["id"].clone();
+    // (PROBE_DECK: a top-level deck by name; else the first)
+    let decks = tree["ok"]["decks"].as_array().cloned().unwrap_or_default();
+    let wanted = std::env::var("PROBE_DECK").ok();
+    let deck = decks
+        .iter()
+        .find(|d| wanted.as_deref().is_some_and(|name| d["name"] == name))
+        .unwrap_or(&decks[0])["id"]
+        .clone();
     call("status", json!({}));
     call("select_deck", json!({ "deck_id": deck }));
+    // The card shown first and its buttons, in full (to compare with the
+    // desktop's reviewer, as AnkiConnect's guiCurrentCard reports it).
+    let first = call("next_card", json!({}));
+    println!("FIRST card_id={} buttons={}", first["ok"]["card_id"], first["ok"]["buttons"]);
     for _ in 0..answers {
         let card = call("next_card", json!({}));
         if !card["ok"]["card_id"].is_i64() {

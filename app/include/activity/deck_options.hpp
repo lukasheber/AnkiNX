@@ -33,11 +33,26 @@ class DeckOptionsActivity : public brls::Activity
     void load();
     void fill(const anki::json& options);
     void refresh(const anki::json& options);
-    // FSRS shows desired retention; SM-2 shows ease and multipliers.
+    // The desktop's Scheduler section, then its RWKV and FSRS sections.
+    void fillScheduler(const anki::json& options);
+    void fillRwkv();
+    void fillFsrs(const anki::json& options);
+    // Rows for the chosen schedulers, as the desktop shows them.
     void showSchedulerRows();
+    // The deck's own options (Deck only desired retention, subdeck minimums)
+    // and this console's RWKV model.
+    void showDeckValues();
+    std::string deckRetentionText() const;
+    void setRwkvModel(anki::json args);
+    // The desktop's wording for `key` (the backend's labels), else `fallback`.
+    std::string label(const std::string& key, const std::string& fallback) const;
+    brls::Label* note(const std::string& text);
+    brls::Label* subheading(const std::string& text);
+    void collect(size_t from, std::vector<brls::View*>& rows);
     // Send `values` (and/or fsrs, custom_scheduling) to the backend, then show
     // what was saved.
-    void apply(anki::json args);
+    // `done`: shown once the change is saved.
+    void apply(anki::json args, std::string done = "");
 
     // Rows.
     void number(const std::string& title, const std::string& key, bool decimal);
@@ -51,7 +66,8 @@ class DeckOptionsActivity : public brls::Activity
     // Optimize the preset's parameters on the console (Anki's optimizer, in
     // the background with progress and Cancel), then offer the result next
     // to the current parameters.
-    void optimize();
+    void optimize(bool calibrate = false);
+    void search(const std::string& title, const std::string& key);
     void showOptimized(const anki::json& result);
     void applyOptimized();
     void toggle(const std::string& title, const std::string& key);
@@ -66,17 +82,31 @@ class DeckOptionsActivity : public brls::Activity
     std::map<std::string, std::pair<brls::DetailCell*, bool>> details;
     std::map<std::string, brls::BooleanCell*> toggles;
     std::map<std::string, std::pair<brls::SelectorCell*, std::vector<std::string>>> choices;
-    brls::BooleanCell* fsrsCell = nullptr;
-    std::vector<brls::View*> fsrsRows, sm2Rows;
-    // FSRS rows only for FSRS-7 (the optimizer's same-day and penalty options).
-    std::vector<brls::View*> fsrs7Rows;
-    // The FSRS-7 fork's options: collection-wide switches (arg -> cell), the
-    // parameters row, and the note on presets set to RWKV in Anki desktop.
+    // The Review scheduler ("sm2" first while FSRS is off).
+    brls::SelectorCell* schedulerCell = nullptr;
+    std::vector<std::string> schedulerOptions;
+    int schedulerIndex() const;
+    // Rows by when they show (showSchedulerRows): SM-2 (FSRS off), Due dates
+    // (RWKV-Instant), desired retention (FSRS or RWKV-Curve), the RWKV section
+    // and its Instant and Curve parts, the FSRS section, FSRS-7's options.
+    std::vector<brls::View*> sm2Rows, dueDateRows, retentionRows, rwkvRows, instantRows, curveRows, fsrsSectionRows,
+        fsrs7Rows, dynamicRows, fsrsOnRows, sameDayRows;
+    // "Reschedule cards on change", for this screen's changes.
+    bool reschedule                = false;
+    brls::Label* rescheduleWarning = nullptr;
+    // The fork's collection-wide switches (arg -> cell) and the parameters row.
     std::map<std::string, brls::BooleanCell*> collectionToggles;
     int fsrsParams = 0;
     brls::DetailCell* paramsCell = nullptr;
-    std::string rwkv = "off";
-    brls::Label* rwkvNote = nullptr;
+    // The desktop's wording (deck_options' labels).
+    anki::json labels;
+    // The deck's own options, and this console's RWKV model.
+    anki::json deck, rwkvModel;
+    brls::DetailCell* deckRetentionCell = nullptr;
+    brls::BooleanCell* respectSubdeckCell = nullptr;
+    brls::DetailCell* applySubdecksCell   = nullptr;
+    brls::SelectorCell* rwkvSizeCell = nullptr;
+    brls::BooleanCell* singleModelCell = nullptr;
     // Whether the collection has custom scheduling code (written in Anki
     // desktop; selecting the row offers to delete it).
     bool customScheduling = false;

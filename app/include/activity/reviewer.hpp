@@ -49,6 +49,9 @@ class ReviewerActivity : public brls::Activity
     void revealHint(const std::string& id);
     void revealAllHints();
     void showDone();
+    // A deck that uses RWKV, while its model state loads (next_card's
+    // rwkv_loading): what it waits for; studying starts by itself once ready.
+    void showRwkvWait(const anki::json& status);
     void showError(const std::string& message);
     void updateCounts(const anki::json& counts, const std::string& queue);
     void setBar(bool answerSide);

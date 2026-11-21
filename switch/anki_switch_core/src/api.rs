@@ -414,6 +414,8 @@ struct State {
     /// and the size to run (`init`'s `rwkv_size`: "tiny", the default, or "small").
     rwkv_models: Option<PathBuf>,
     rwkv_size: crate::rwkv::ModelSize,
+    /// RWKV's "one model for both schedulers" (`init`'s `rwkv_single_model`; off).
+    rwkv_single_model: bool,
     /// RWKV for the open collection: running (`Ok`), or why not.
     rwkv: Option<std::result::Result<crate::rwkv::Run, crate::rwkv::Off>>,
     runtime: tokio::runtime::Runtime,
@@ -560,6 +562,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "optimize_cancel" => state.optimize_cancel(),
         "rwkv_status" => state.rwkv_status(),
         "rwkv_refresh" => state.rwkv_refresh(),
+        "rwkv_set_model" => state.rwkv_set_model(&args),
         "download_update" => state.download_update(&args),
         "update_status" => state.update_status(),
         "forest" => state.forest(&args),
@@ -640,6 +643,7 @@ fn init(slot: &mut Option<State>, args: &Value) -> ApiResult {
         optimized: None,
         rwkv_models: args.get("rwkv_models").and_then(Value::as_str).filter(|p| !p.is_empty()).map(PathBuf::from),
         rwkv_size: crate::rwkv::ModelSize::parse(args.get("rwkv_size").and_then(Value::as_str).unwrap_or("")),
+        rwkv_single_model: args.get("rwkv_single_model").and_then(Value::as_bool).unwrap_or(false),
         rwkv: None,
         runtime,
         client,
@@ -959,6 +963,7 @@ impl State {
         let collection = self.base.join(COLLECTION_FILE);
         let models = self.rwkv_models.clone();
         let size = self.rwkv_size;
+        let single = self.rwkv_single_model;
         let Some(col) = self.col.as_mut() else {
             return;
         };
@@ -969,7 +974,7 @@ impl State {
             Err(e) => tracing::warn!(error = ?e, "repairing FSRS states on open failed"),
         }
         self.rwkv = Some(match models {
-            Some(models) => crate::rwkv::start(col, &collection, &models, size),
+            Some(models) => crate::rwkv::start(col, &collection, &models, size, single),
             None => Err(crate::rwkv::Off::Failed("this build has no RWKV models".into())),
         });
     }
@@ -1387,6 +1392,16 @@ impl State {
         } else {
             "off"
         };
+        let limits = info.current_deck.as_ref().and_then(|d| d.limits.clone()).unwrap_or_default();
+        // Its subdecks, for "apply to all subdecks" (shown only when it has some).
+        let prefix = format!("{}::", info.current_deck.as_ref().map_or("", |d| d.name.as_str()));
+        let subdecks = self
+            .col()?
+            .get_all_deck_names(false)
+            .map_err(|e| ApiError::anki(e, &tr))?
+            .iter()
+            .filter(|(_, name)| name.starts_with(&prefix))
+            .count();
         Ok(json!({
             "preset": config.name,
             "deck_count": use_count,
@@ -1399,6 +1414,21 @@ impl State {
             // Collection-wide, like FSRS itself.
             "fsrs_short_term_with_steps": info.fsrs_short_term_with_steps_enabled,
             "fsrs_skip_learning_queues": info.fsrs_learning_queues_disabled,
+            "fsrs_health_check": info.fsrs_health_check,
+            // This deck's own (not the preset's): the desktop's "Deck only"
+            // desired retention, and an RWKV-Instant option.
+            "deck": {
+                "desired_retention": limits.desired_retention,
+                "rwkv_respect_subdeck_minimums": limits.rwkv_respect_subdeck_minimums.unwrap_or(false),
+                "subdecks": subdecks,
+            },
+            // This console's (the desktop keeps them per profile, unsynced).
+            "rwkv_model": {
+                "size": match self.rwkv_size { crate::rwkv::ModelSize::Small => "small", crate::rwkv::ModelSize::Tiny => "tiny" },
+                "single_model": self.rwkv_single_model,
+            },
+            // The desktop's own wording, translated as there.
+            "labels": deck_option_labels(&self.tr),
         }))
     }
 
@@ -1421,7 +1451,8 @@ impl State {
             let Some((deck, config_id, outcome)) = self.optimized.take().filter(|(deck, ..)| *deck == did) else {
                 return Err(ApiError::new("args", "no optimized parameters for this deck"));
             };
-            let saved = crate::optimize::save(self.col()?, did, config_id, &outcome, true);
+            let reschedule = args.get("reschedule").and_then(Value::as_bool) == Some(true);
+            let saved = crate::optimize::save(self.col()?, did, config_id, &outcome, true, reschedule);
             if saved.is_err() {
                 self.optimized = Some((deck, config_id, outcome));
             }
@@ -1452,11 +1483,24 @@ impl State {
         };
         let short_term_with_steps = flag("fsrs_short_term_with_steps", info.fsrs_short_term_with_steps_enabled)?;
         let skip_learning_queues = flag("fsrs_skip_learning_queues", info.fsrs_learning_queues_disabled)?;
+        let health_check = flag("fsrs_health_check", info.fsrs_health_check)?;
+        // The desktop's "Reschedule cards on change": for this save only.
+        let reschedule = flag("reschedule", false)?;
+        // Choosing a scheduler turns FSRS on, as the desktop's selectors do.
+        let chose_scheduler = args
+            .get("values")
+            .and_then(Value::as_object)
+            .is_some_and(|v| v.contains_key("scheduler") || v.contains_key("due_dates"));
         let mut request = crate::presets::update_request(&info, did, vec![config], UpdateDeckConfigsMode::Normal);
-        request.fsrs = fsrs;
+        request.fsrs = fsrs || chose_scheduler;
         request.card_state_customizer = card_state_customizer;
         request.fsrs_short_term_with_steps_enabled = short_term_with_steps;
         request.fsrs_learning_queues_disabled = skip_learning_queues;
+        request.fsrs_health_check = health_check;
+        request.fsrs_reschedule = reschedule;
+        if let Some(deck) = args.get("deck").and_then(Value::as_object) {
+            set_deck_limits(&mut request.limits, deck)?;
+        }
         col.update_deck_configs(request).map_err(err)?;
         Ok(json!({}))
     }
@@ -1717,6 +1761,19 @@ impl State {
             .col
             .as_mut()
             .ok_or_else(|| ApiError::new("not_open", "the collection is not open"))?;
+        // A deck that uses RWKV isn't studied while its model state loads
+        // (the first replay, or a rebuild after a sync brought reviews made
+        // elsewhere): its cards would be ordered and scheduled with FSRS
+        // meanwhile. Where RWKV can't run at all, FSRS schedules them, as the
+        // fork's desktop says of clients without RWKV.
+        if let Some(Ok(run)) = self.rwkv.as_mut() {
+            if crate::rwkv::current_deck_uses_rwkv(col).map_err(err)? {
+                let status = run.status(col);
+                if status["state"] == "loading" {
+                    return Ok(json!({ "done": false, "rwkv_loading": status }));
+                }
+            }
+        }
         let queued = col.get_queued_cards(1, false, false).map_err(err)?;
         let counts = json!({
             "new": queued.new_count,
@@ -2502,7 +2559,8 @@ impl State {
         let info = self.col()?.get_deck_configs_for_update(did).map_err(|e| ApiError::anki(e, &tr))?;
         let (config, _) = current_preset(&info)?;
         let config: anki::deckconfig::DeckConfig = config.clone().into();
-        let job = crate::optimize::job(did, &config, info.fsrs_health_check);
+        let calibrate = args.get("calibrate_dynamic_retention").and_then(Value::as_bool) == Some(true);
+        let job = crate::optimize::job(did, &config, info.fsrs_health_check, calibrate);
         let mut col = self.col.take().expect("checked by col()");
         self.optimized = None;
         self.optimize_report = None;
@@ -2612,6 +2670,43 @@ impl State {
         };
         status["memory"] = memory.unwrap_or(Value::Null);
         Ok(status)
+    }
+
+    /// `rwkv_set_model {size?, single_model?}`: this console's RWKV model
+    /// choice (Deck options > RWKV > Advanced, as the desktop's profile
+    /// setting): `size` "small" (the default) or "tiny", `single_model` the
+    /// desktop's "one model for both schedulers". Applied at once: the model
+    /// state is rebuilt for the new models (the state file is per model: a
+    /// full replay), and decks that use RWKV wait for it.
+    fn rwkv_set_model(&mut self, args: &Value) -> ApiResult {
+        let size = match args.get("size") {
+            None => self.rwkv_size,
+            Some(value) => crate::rwkv::ModelSize::parse(
+                value.as_str().ok_or_else(|| ApiError::new("args", "size is not a string"))?,
+            ),
+        };
+        let single = match args.get("single_model") {
+            None => self.rwkv_single_model,
+            Some(value) => value.as_bool().ok_or_else(|| ApiError::new("args", "single_model is not a boolean"))?,
+        };
+        if size == self.rwkv_size && single == self.rwkv_single_model {
+            return Ok(json!({ "changed": false }));
+        }
+        self.rwkv_size = size;
+        self.rwkv_single_model = single;
+        tracing::info!(model_size = ?size, single_model = single, "RWKV: model changed");
+        if self.col.is_none() {
+            return Ok(json!({ "changed": true })); // (applied when it opens)
+        }
+        let collection = self.base.join(COLLECTION_FILE);
+        let models = self.rwkv_models.clone();
+        let col = self.col()?;
+        let started = match models {
+            Some(models) => crate::rwkv::start(col, &collection, &models, size, single),
+            None => Err(crate::rwkv::Off::Failed("this build has no RWKV models".into())),
+        };
+        self.rwkv = Some(started);
+        Ok(json!({ "changed": true }))
     }
 
     /// `rwkv_refresh`: the background half of the desktop's "Precompute next
@@ -2851,7 +2946,93 @@ fn answer_action_name(action: i32) -> &'static str {
     }
 }
 
+/// The deck's own options (`set_deck_options`'s `deck`): "desired_retention"
+/// (the desktop's "Deck only" tab; null: the preset's), and RWKV-Instant's
+/// "rwkv_respect_subdeck_minimums", with
+/// "rwkv_apply_respect_subdeck_minimums_to_children" (once, on this save).
+fn set_deck_limits(
+    limits: &mut anki_proto::deck_config::deck_configs_for_update::current_deck::Limits,
+    deck: &serde_json::Map<String, Value>,
+) -> std::result::Result<(), ApiError> {
+    for (key, value) in deck {
+        let bad = || ApiError::new("args", format!("invalid value for {key}: {value}"));
+        match key.as_str() {
+            "desired_retention" => {
+                limits.desired_retention = match value {
+                    Value::Null => None,
+                    _ => Some(
+                        value.as_f64().map(|r| r as f32).filter(|r| (0.7..=0.99).contains(r)).ok_or_else(bad)?,
+                    ),
+                }
+            }
+            "rwkv_respect_subdeck_minimums" => {
+                limits.rwkv_respect_subdeck_minimums = Some(value.as_bool().ok_or_else(bad)?)
+            }
+            "rwkv_apply_respect_subdeck_minimums_to_children" => {
+                limits.rwkv_apply_respect_subdeck_minimums_to_children = value.as_bool().ok_or_else(bad)?
+            }
+            _ => return Err(ApiError::new("args", format!("unknown deck option {key}"))),
+        }
+    }
+    Ok(())
+}
+
+/// The desktop deck options' wording for what AnkiNX shows, from the fork's
+/// translations (so it reads as on the desktop, in the same languages).
+fn deck_option_labels(tr: &I18n) -> Value {
+    let s = |text: std::borrow::Cow<str>| without_bidi_isolates(&text);
+    json!({
+        "scheduler": "Scheduler",
+        "enable_fsrs": s(tr.deck_config_scheduler_enable_fsrs()),
+        "scheduler_disabled": s(tr.deck_config_scheduler_disabled()),
+        "review_scheduler": s(tr.deck_config_scheduler_review()),
+        "due_dates": s(tr.deck_config_scheduler_due_dates()),
+        "due_dates_description": s(tr.deck_config_scheduler_due_dates_description()),
+        "recommended": s(tr.deck_config_rwkv_recommended()),
+        "desired_retention": s(tr.deck_config_desired_retention()),
+        "shared_preset": s(tr.deck_config_shared_preset()),
+        "deck_only": s(tr.deck_config_deck_only()),
+        "rwkv_instant_subtitle": s(tr.deck_config_rwkv_instant_subtitle()),
+        "rwkv_instant_description": s(tr.deck_config_rwkv_instant_description()),
+        "rwkv_curve_subtitle": s(tr.deck_config_rwkv_curve_subtitle()),
+        "rwkv_curve_description": s(tr.deck_config_rwkv_curve_description()),
+        "rwkv_minimum_reviews_per_day": s(tr.deck_config_rwkv_review_minimum_reviews_per_day()),
+        "rwkv_respect_subdeck_minimums": s(tr.deck_config_rwkv_review_respect_subdeck_minimums()),
+        "rwkv_apply_respect_subdeck_minimums_to_children": s(tr.deck_config_rwkv_apply_respect_subdeck_minimums_to_children()),
+        "rwkv_same_day_repeats": "Same-Day Repeats",
+        "rwkv_repeat_spacing": s(tr.deck_config_rwkv_repeat_spacing_title()),
+        "rwkv_min_intervening_reviews": s(tr.deck_config_rwkv_review_min_intervening_reviews()),
+        "rwkv_min_elapsed_secs": s(tr.deck_config_rwkv_review_min_elapsed_secs()),
+        "rwkv_enforce_grade_order": s(tr.deck_config_rwkv_review_enforce_grade_order()),
+        "advanced": s(tr.deck_config_advanced_title()),
+        "rwkv_model": s(tr.deck_config_rwkv_model()),
+        "rwkv_model_small": s(tr.deck_config_rwkv_model_small()),
+        "rwkv_model_tiny": s(tr.deck_config_rwkv_model_tiny()),
+        "rwkv_single_model": s(tr.deck_config_rwkv_single_model()),
+        "rwkv_single_model_explanation": s(tr.deck_config_rwkv_single_model_explanation()),
+        "rwkv_precompute_next_card": s(tr.deck_config_rwkv_review_precompute_next_card()),
+        "rwkv_candidate_refresh": s(tr.deck_config_rwkv_review_candidate_refresh()),
+        "rwkv_refresh_interval": s(tr.deck_config_rwkv_review_refresh_interval()),
+        "fsrs_params": s(tr.deck_config_weights()),
+        "optimize": s(tr.deck_config_optimize_button()),
+        "fsrs_minimum_interval": s(tr.scheduling_minimum_interval()),
+        "reschedule": s(tr.deck_config_reschedule_cards_on_change()),
+        "reschedule_warning": s(tr.deck_config_reschedule_cards_warning()),
+        "health_check": s(tr.deck_config_slow_suffix(tr.deck_config_health_check())),
+    })
+}
+
 fn deck_option_values(c: &DeckConfigInner) -> Value {
+    let mut values = basic_option_values(c);
+    for more in [scheduler_option_values(c), fsrs_advanced_values(c)] {
+        if let (Some(all), Value::Object(more)) = (values.as_object_mut(), more) {
+            all.extend(more);
+        }
+    }
+    values
+}
+
+fn basic_option_values(c: &DeckConfigInner) -> Value {
     use anki_proto::deck_config::deck_config::config::LeechAction;
     json!({
         "new_per_day": c.new_per_day,
@@ -2888,6 +3069,37 @@ fn deck_option_values(c: &DeckConfigInner) -> Value {
         // FSRS-7 optimizing (kept in the preset's extra JSON, as the fork does)
         "fsrs_include_same_day": crate::optimize::include_same_day(c),
         "fsrs_scheduling_penalties": crate::optimize::scheduling_penalties(c),
+    })
+}
+
+/// The scheduler choice and RWKV options (`deck_option_values` too; apart:
+/// one json! that size passes the macro recursion limit).
+fn scheduler_option_values(c: &DeckConfigInner) -> Value {
+    json!({
+        // The desktop's scheduler choice (src/scheduler_choice.rs).
+        "scheduler": crate::scheduler_choice::scheduler(c),
+        "due_dates": crate::scheduler_choice::due_date_scheduler(c),
+        // RWKV options, as the desktop's RWKV section has them.
+        "rwkv_minimum_reviews_per_day": c.rwkv_review_minimum_reviews_per_day,
+        "rwkv_min_intervening_reviews": c.rwkv_review_min_intervening_reviews,
+        "rwkv_min_elapsed_secs": c.rwkv_review_min_elapsed_secs,
+        "rwkv_enforce_grade_order": c.rwkv_review_enforce_grade_order,
+        "rwkv_precompute_next_card": c.rwkv_review_precompute_next_card,
+        "rwkv_candidate_refresh": c.rwkv_review_candidate_refresh_enabled,
+        "rwkv_refresh_interval": c.rwkv_review_refresh_interval,
+    })
+}
+
+/// The fork's FSRS Advanced settings that are the preset's.
+fn fsrs_advanced_values(c: &DeckConfigInner) -> Value {
+    json!({
+        // Dynamic desired retention (FSRS-7): on only with a calibration,
+        // which optimizing with it on makes.
+        "fsrs_dynamic_retention": c.fsrs_dynamic_desired_retention_enabled,
+        "fsrs_dynamic_retention_calibrated": crate::optimize::dynamic_retention_calibrated(c),
+        "fsrs_dynamic_retention_clamp": c.fsrs_dynamic_desired_retention_clamp,
+        "param_search": c.param_search,
+        "evaluation_search": crate::optimize::evaluation_search(c),
     })
 }
 
@@ -3009,7 +3221,46 @@ fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::re
             c.fsrs_minimum_interval_secs = value.as_str().and_then(parse_minimum_interval).ok_or_else(bad)?;
         }
         "fsrs_include_same_day" => crate::optimize::set_include_same_day(c, flag()?),
+        "fsrs_dynamic_retention" => {
+            let on = flag()?;
+            // (Anki can't schedule the preset's cards with it on and no
+            // calibration: `optimize {calibrate_dynamic_retention}` makes one)
+            if on && !crate::optimize::dynamic_retention_calibrated(c) {
+                return Err(ApiError::new("needs_calibration", "dynamic desired retention needs a calibration"));
+            }
+            c.fsrs_dynamic_desired_retention_enabled = on;
+        }
+        "fsrs_dynamic_retention_clamp" => c.fsrs_dynamic_desired_retention_clamp = flag()?,
+        "param_search" => c.param_search = value.as_str().ok_or_else(bad)?.trim().to_string(),
+        "evaluation_search" => crate::optimize::set_evaluation_search(c, value.as_str().ok_or_else(bad)?),
         "fsrs_scheduling_penalties" => crate::optimize::set_scheduling_penalties(c, flag()?),
+        "scheduler" => {
+            if !value.as_str().is_some_and(|choice| crate::scheduler_choice::set_scheduler(c, choice)) {
+                return Err(bad());
+            }
+        }
+        "due_dates" => {
+            if !value.as_str().is_some_and(|choice| crate::scheduler_choice::set_due_date_scheduler(c, choice)) {
+                return Err(bad());
+            }
+        }
+        // (the desktop's limits for each, ts/routes/deck-options/RwkvOptions.svelte)
+        "rwkv_minimum_reviews_per_day" => {
+            c.rwkv_review_minimum_reviews_per_day = value.as_u64().filter(|n| *n <= 9999).ok_or_else(bad)? as u32
+        }
+        "rwkv_min_intervening_reviews" => {
+            c.rwkv_review_min_intervening_reviews = value.as_u64().filter(|n| *n <= 10_000).ok_or_else(bad)? as u32
+        }
+        "rwkv_min_elapsed_secs" => {
+            c.rwkv_review_min_elapsed_secs = value.as_u64().filter(|n| *n <= 86_400).ok_or_else(bad)? as u32
+        }
+        "rwkv_enforce_grade_order" => c.rwkv_review_enforce_grade_order = flag()?,
+        "rwkv_precompute_next_card" => c.rwkv_review_precompute_next_card = flag()?,
+        "rwkv_candidate_refresh" => c.rwkv_review_candidate_refresh_enabled = flag()?,
+        "rwkv_refresh_interval" => {
+            c.rwkv_review_refresh_interval =
+                value.as_u64().filter(|n| (1..=10_000).contains(n)).ok_or_else(bad)? as u32
+        }
         _ => return Err(ApiError::new("args", format!("unknown deck option {key}"))),
     }
     Ok(())

@@ -396,12 +396,14 @@ void DeckPickerActivity::openCollection()
         {
             anki::json langs = { locale, locale.substr(0, locale.find('-')), "en" };
             // RWKV's models are in the app's resources (romfs on the console);
-            // settings.json's "rwkv_size" ("small") picks the bigger pair.
+            // Deck options > RWKV > Advanced: the model ("rwkv_size": "small", the
+            // default, or "tiny") and "one model for both schedulers".
             anki::json size = settings::get("rwkv_size");
             anki::call("init", { { "base_dir", anki::dataDir() },
                                  { "langs", langs },
                                  { "rwkv_models", BRLS_ASSET("rwkv") },
-                                 { "rwkv_size", size.is_string() ? size.get<std::string>() : "tiny" } });
+                                 { "rwkv_size", size.is_string() ? size.get<std::string>() : "small" },
+                                 { "rwkv_single_model", settings::get("rwkv_single_model") == true } });
             anki::json status = anki::call("open");
             brls::sync([this, status] {
                 ready = true;
@@ -580,6 +582,13 @@ void DeckPickerActivity::pollRwkv()
                 {
                     brls::Application::notify("ankinx/decks/rwkv_ready"_i18n);
                     refresh();
+                }
+                else if (state == "off" && status.value("reason", "") != "not_used")
+                {
+                    // Presets set to RWKV, but it can't run here: FSRS
+                    // schedules them, as on clients without RWKV.
+                    brls::Application::notify(status.value("reason", "") == "memory" ? "ankinx/decks/rwkv_off_memory"_i18n
+                                                                                       : "ankinx/decks/rwkv_off"_i18n);
                 }
             });
         });

@@ -13,6 +13,7 @@ mod optimize;
 mod rwkv;
 mod sysinfo;
 pub mod presets;
+mod scheduler_choice;
 mod scheduling;
 mod update;
 pub mod weather;
