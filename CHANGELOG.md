@@ -8,6 +8,51 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.11.0-fsrs7 (2026-11-21, experimental)
+
+An experimental build for people who use the FSRS-7 fork of Anki on their
+computer: FSRS-7 and RWKV scheduling on the Switch, with the same results
+as the fork's desktop app.
+
+### Added
+
+- **FSRS-7.** Decks set to FSRS-7 on the computer are scheduled with FSRS-7
+  on the console too, including its same-day intervals.
+- **RWKV-Instant and RWKV-Curve.** Decks set to RWKV pick their reviews and
+  intervals as on the computer. The first time, RWKV reads your whole review
+  history (about two and a half minutes for 75,000 reviews); until then,
+  studying those decks shows **RWKV is getting ready** and starts by itself.
+  Later starts are much quicker (about 15 seconds).
+- **Prediction model.** Small (the default) or Tiny, in **Deck options ›
+  RWKV › Advanced**. Tiny uses less memory. Changing it reads the history
+  again.
+- **Optimize on the console.** **Deck options › FSRS › Optimize Current
+  Preset** fits the FSRS parameters to your reviews and shows how much
+  better they fit before you use them.
+- **More FSRS settings.** Dynamic DR, the optimizer's search filters,
+  reschedule cards on change, and the health check.
+
+### Changed
+
+- **Deck options as on the computer.** The same sections, in the same order,
+  with the computer's wording. Choose the **Review scheduler** (and, with
+  RWKV-Instant, its **Fallback** for syncing); the console shows the
+  settings of the scheduler you chose.
+- **Loading message.** When the next card takes a moment (after a sync or a
+  change of options), the study screen says so instead of staying blank.
+
+### Good to know
+
+- Install it as `AnkiNX-fsrs7.nro` next to the regular `AnkiNX.nro`: both
+  use the same profiles and collections.
+- Studying an FSRS-7 or RWKV deck in the regular AnkiNX, official Anki or
+  AnkiDroid drops the extra FSRS-7 data of the cards you answer. Stick to
+  this build and the fork's desktop app for those decks.
+- If there isn't enough memory for RWKV, those decks are scheduled with
+  FSRS, as on phones without RWKV, and a notice says so.
+- In-app updates don't offer this build. A regular release from 0.12.0 on
+  would replace it.
+
 ## 0.10.0 (2026-11-20)
 
 Type your answers without letting go of the console.

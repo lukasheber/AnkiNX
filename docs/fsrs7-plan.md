@@ -164,6 +164,29 @@ answer with either size; answering faster waits for it (with Tiny, cards came
 every ~5 s at most). Whether Small predicts better than Tiny is not something
 we measured; the sizes' comparisons we have are kuma3's.
 
+## Status (2026-11-21): released as 0.11.0-fsrs7 (pre-release)
+
+Checked on the console against the desktop fork (build 26.9.4), with the
+answer side shown on the desktop (it applies RWKV-Curve in
+`_answerButtons`), on an 8,921-card / 75.7k-review collection:
+
+- **RWKV (Small, two models)**: same next card and the same buttons as the
+  desktop; reviews answered on either side sync with the intervals shown;
+  the console's state after its own answers equals a full replay of the
+  synced history (checked against a fresh download replayed on a PC). The
+  desktop's predictions after a sync stay stale until it restarts
+  (reported: JSchoreels/anki#30).
+- **FSRS-7**: same cards and buttons (same-day hours included) both ways;
+  Hard/Easy/Again from the console arrive with the shown intervals.
+- **Optimize**: current parameters score the same; the optimized ones differ
+  in the 4th decimal between the console (ARM) and a PC (x86), each
+  deterministic.
+- **Console**: first replay 142 s (Small) / 128 s (Tiny), later starts
+  ~15 s from the state file plus the new reviews; heap under 330 MB; the
+  study gate and model change work.
+- **Next round**: Display order and Easy days sections, switching presets,
+  Tiny and "one model" against the desktop.
+
 ## Status (2026-11-20)
 
 - **Phase 1 done** except the console check: the core builds for the Switch
