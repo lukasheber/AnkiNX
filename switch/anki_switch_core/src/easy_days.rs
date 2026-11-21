@@ -165,6 +165,7 @@ pub fn labels(tr: &I18n) -> Value {
         "review_fuzz_preview": s(tr.deck_config_review_fuzz_preview()),
         "default_fuzz": s(tr.deck_config_default_fuzz()),
         "current_fuzz": s(tr.deck_config_current_fuzz()),
+        "selected_fuzz": s(tr.deck_config_selected_fuzz()),
     })
 }
 

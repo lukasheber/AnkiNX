@@ -129,7 +129,10 @@ class DeckOptionsActivity : public brls::Activity
     // (arg -> cell, percent), the preview and the warnings.
     std::vector<brls::SelectorCell*> easyDayCells;
     std::map<std::string, std::pair<brls::DetailCell*, bool>> collectionNumbers;
-    brls::Label* fuzzPreview      = nullptr;
+    // The fuzz preview's cells (a header row, then one per interval), and the
+    // preview as when the screen opened (its "Current fuzz").
+    std::vector<std::vector<brls::Label*>> fuzzCells;
+    anki::json fuzzAtOpen;
     brls::Label* noNormalDayNote  = nullptr;
     brls::Label* easyDaysChangeNote = nullptr;
     // Changed here (easy days or fuzz): existing reviews keep their dates

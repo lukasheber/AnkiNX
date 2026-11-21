@@ -772,8 +772,40 @@ void DeckOptionsActivity::fillEasyDays(const anki::json& options)
     collectionNumber(label("review_fuzz_factor_mid", "Fuzz factor (7-20 days)"), "review_fuzz_factor_mid", true);
     collectionNumber(label("review_fuzz_factor_long", "Fuzz factor (20+ days)"), "review_fuzz_factor_long", true);
     subheading(label("review_fuzz_preview", "Review fuzz preview"));
-    // (set below as is: note() would join its lines)
-    fuzzPreview        = note("");
+    // The desktop's table: interval, Default fuzz, Current fuzz (as when this
+    // screen opened) and Selected fuzz (as saved now: changes save at once).
+    // A header row and one row per interval, cells filled by showEasyDays.
+    fuzzAtOpen = options["fuzz_preview"];
+    auto* table = new brls::Box(brls::Axis::COLUMN);
+    table->setMarginLeft(16);
+    table->setMarginRight(16);
+    table->setMarginBottom(8);
+    size_t rows = fuzzAtOpen.is_array() ? fuzzAtOpen.size() : 0;
+    for (size_t r = 0; r <= rows; r++)
+    {
+        auto* line = new brls::Box(brls::Axis::ROW);
+        line->setPaddingTop(4);
+        line->setPaddingBottom(4);
+        std::vector<brls::Label*> cells;
+        for (int c = 0; c < 4; c++)
+        {
+            auto* cell = new brls::Label();
+            cell->setFontSize(16);
+            cell->setSingleLine(true);
+            // (the interval column narrower, the three ranges alike)
+            cell->setWidthPercentage(c == 0 ? 16 : 28);
+            if (r > 0)
+                cell->setTextColor(brls::Application::getTheme()["brls/header/subtitle"]);
+            line->addView(cell);
+            cells.push_back(cell);
+        }
+        table->addView(line);
+        fuzzCells.push_back(cells);
+    }
+    fuzzCells[0][1]->setText(label("default_fuzz", "Default fuzz"));
+    fuzzCells[0][2]->setText(label("current_fuzz", "Current fuzz"));
+    fuzzCells[0][3]->setText(label("selected_fuzz", "Selected fuzz"));
+    list->addView(table);
     noNormalDayNote    = note(label("easy_days_no_normal_days", ""));
     easyDaysChangeNote = note(label("easy_days_change", ""));
     showEasyDays(options);
@@ -793,13 +825,18 @@ void DeckOptionsActivity::showEasyDays(const anki::json& options)
     collectionValues = options;
     for (auto& [arg, row] : collectionNumbers)
         row.first->setDetailText(collectionNumberText(arg) + (row.second ? "%" : ""));
-    // "3d: 2-4d → 2-4d" under "Default fuzz → Current fuzz".
-    std::string preview = label("default_fuzz", "Default fuzz") + "  →  " + label("current_fuzz", "Current fuzz");
-    if (options["fuzz_preview"].is_array())
-        for (const auto& row : options["fuzz_preview"])
-            preview += "\n" + row.value("interval", "") + ":  " + row.value("default", "") + "  →  " +
-                       row.value("current", "");
-    fuzzPreview->setText(preview);
+    // Each interval's ranges: by default, when the screen opened, as saved.
+    const anki::json& now = options["fuzz_preview"];
+    for (size_t r = 1; r < fuzzCells.size(); r++)
+    {
+        size_t i = r - 1;
+        if (!now.is_array() || i >= now.size() || !fuzzAtOpen.is_array() || i >= fuzzAtOpen.size())
+            continue;
+        fuzzCells[r][0]->setText(now[i].value("interval", ""));
+        fuzzCells[r][1]->setText(now[i].value("default", ""));
+        fuzzCells[r][2]->setText(fuzzAtOpen[i].value("current", ""));
+        fuzzCells[r][3]->setText(now[i].value("current", ""));
+    }
     noNormalDayNote->setVisibility(normalDay ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
     showEasyDaysNotes();
 }
