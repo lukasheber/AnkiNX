@@ -98,7 +98,8 @@
     "advance_off": "自動進行オフ",
     "advance_show_reminder": "解答を表示する時間です",
     "scheduling_failed": "このカードでカスタムスケジューリングがエラーになったため、Anki本来の間隔を使います。詳細はログにあります。",
-    "advance_answer_reminder": "回答する時間です"
+    "advance_answer_reminder": "回答する時間です",
+    "loading": "次のカードを読み込み中…"
   },
   "overview": {
     "new": "新規",

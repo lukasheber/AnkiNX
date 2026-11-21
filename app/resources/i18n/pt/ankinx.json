@@ -98,7 +98,8 @@
     "advance_off": "Avanço automático desativado",
     "advance_show_reminder": "Hora de mostrar a resposta",
     "scheduling_failed": "O agendamento personalizado falhou neste cartão, por isso aplicam-se os intervalos do próprio Anki. Os detalhes estão no registo.",
-    "advance_answer_reminder": "Hora de responder"
+    "advance_answer_reminder": "Hora de responder",
+    "loading": "A carregar o próximo cartão…"
   },
   "overview": {
     "new": "Novos",

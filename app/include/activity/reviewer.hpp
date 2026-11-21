@@ -146,6 +146,10 @@ class ReviewerActivity : public brls::Activity
     // Bumped when the done screen's "resume when learning cards are due" timer
     // must no longer fire.
     int resumeGeneration = 0;
+    // Each loadNext(): a slow one (a queue rebuilt after a sync or an options
+    // change) shows "Loading" rather than a blank page or the last card.
+    int loadGeneration = 0;
+    void showLoading();
     // The answer timer: when the card was shown, and its tick chain.
     std::chrono::steady_clock::time_point shownAt;
     int timerGeneration = 0;

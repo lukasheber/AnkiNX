@@ -388,6 +388,14 @@ void ReviewerActivity::loadNext()
     state = State::Loading;
     audio::stop();
     bool night = nightMode();
+    int generation = ++loadGeneration;
+    // "Loading the next card" only when it is slow (a queue rebuilt after a
+    // sync or an options change): most cards come within 1.5 s, and a
+    // message that flashes is distracting.
+    brls::delay(1600, [this, token = alive, generation] {
+        if (*token && state == State::Loading && generation == loadGeneration)
+            showLoading();
+    });
     brls::async([this, night, token = alive] {
         try
         {
@@ -1225,6 +1233,21 @@ void ReviewerActivity::showDone()
     easeButtons->setVisibility(brls::Visibility::GONE);
     showCardState();
     refreshControls();
+}
+
+// While a slow next_card runs: say so, instead of a blank page or the card
+// just answered (whose buttons would look usable).
+void ReviewerActivity::showLoading()
+{
+    std::string body = "<div style=\"text-align:center; margin-top:140px; font-size:24px\">" +
+                       escapeHtml("ankinx/review/loading"_i18n) + "</div>";
+    ++timerGeneration;
+    timerLabel->setVisibility(brls::Visibility::GONE);
+    card["css"]        = "";
+    card["body_class"] = nightMode() ? "card nightMode" : "card";
+    cardView->setHtml(documentFor(body));
+    showAnswerBox->setVisibility(brls::Visibility::GONE);
+    easeButtons->setVisibility(brls::Visibility::GONE);
 }
 
 // The answer timer (deck option "Show answer timer"): seconds since the card

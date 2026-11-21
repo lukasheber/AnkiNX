@@ -98,7 +98,8 @@
     "advance_off": "Auto advance off",
     "advance_show_reminder": "Time to show the answer",
     "scheduling_failed": "Custom scheduling failed on this card, so Anki's own intervals apply. The log has the details.",
-    "advance_answer_reminder": "Time to answer"
+    "advance_answer_reminder": "Time to answer",
+    "loading": "Loading the next card…"
   },
   "overview": {
     "new": "New",

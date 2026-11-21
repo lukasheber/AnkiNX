@@ -19,7 +19,8 @@ using Rows = std::vector<Row>;
 // Sizes, in the 1280x720 screen's points (about 9 per millimetre handheld,
 // 8 on the OLED model). Narrow blocks: holding the console, the Joy-Cons
 // keep the thumbs away from the screen, so they reach only near its edges.
-const float KEY_W     = 60; // a block of 5 keys: 320 points, about 34 mm
+// (60 before: one key column, 65 points, narrower now)
+const float KEY_W     = 47; // a block of 5 keys: 255 points, about 27 mm
 const float GAP       = 5;
 const float MARGIN    = 6; // from the screen's edges
 const float PAD       = 8; // panel around a block of keys
