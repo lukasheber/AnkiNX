@@ -11,10 +11,24 @@ use reqwest::Client;
 use serde_json::json;
 use serde_json::Value;
 
-const LATEST_RELEASE: &str = "https://api.github.com/repos/lukasheber/AnkiNX/releases/latest";
+/// The FSRS-7 edition follows its own releases (pre-releases tagged
+/// "vX.Y.Z-fsrs7"), never the regular ones: those would replace it with the
+/// regular build. The newest come first.
+const RELEASES: &str = "https://api.github.com/repos/lukasheber/AnkiNX/releases?per_page=30";
+const EDITION_SUFFIX: &str = "-fsrs7";
 const USER_AGENT: &str = concat!("AnkiNX/", env!("CARGO_PKG_VERSION"));
-/// The release asset that is the app.
-const ASSET: &str = "AnkiNX.nro";
+/// The release asset that is the app (the edition's).
+const ASSET: &str = "AnkiNX-fsrs7.nro";
+
+/// The newest published edition release that has the app: GitHub lists
+/// releases newest first; drafts and other builds' releases are skipped.
+fn edition_release(releases: &Value) -> Option<&Value> {
+    releases.as_array()?.iter().find(|r| {
+        r["draft"] != true
+            && r["tag_name"].as_str().is_some_and(|t| t.ends_with(EDITION_SUFFIX))
+            && r["assets"].as_array().is_some_and(|a| a.iter().any(|a| a["name"] == ASSET))
+    })
+}
 
 /// Progress of a download, shared with the task writing it.
 #[derive(Default)]
@@ -39,11 +53,11 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     parse(latest) > parse(current)
 }
 
-/// The latest release: version, whether it is newer than this build, the
-/// `.nro` download, its size and the release notes.
+/// The latest edition release: version, whether it is newer than this build,
+/// the `.nro` download, its size and the release notes.
 pub async fn check(client: &Client) -> Result<Value, String> {
     let response = client
-        .get(LATEST_RELEASE)
+        .get(RELEASES)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
         .timeout(Duration::from_secs(20))
@@ -54,7 +68,10 @@ pub async fn check(client: &Client) -> Result<Value, String> {
         return Err(format!("GitHub: {}", response.status()));
     }
     let body = response.bytes().await.map_err(|e| e.to_string())?;
-    let release: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+    let releases: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+    let Some(release) = edition_release(&releases) else {
+        return Err("no FSRS-7 edition release found".into());
+    };
     let tag = release["tag_name"].as_str().unwrap_or_default();
     let asset = release["assets"]
         .as_array()
@@ -114,7 +131,24 @@ async fn fetch(client: &Client, url: &str, path: &PathBuf, progress: &Progress) 
 
 #[cfg(test)]
 mod test {
+    use super::edition_release;
     use super::is_newer;
+    use serde_json::json;
+
+    #[test]
+    fn follows_edition_releases_only() {
+        let asset = |name: &str| json!([{ "name": name }]);
+        let releases = json!([
+            { "tag_name": "v0.13.0", "draft": false, "assets": asset("AnkiNX.nro") },
+            { "tag_name": "v0.12.1-fsrs7", "draft": true, "assets": asset("AnkiNX-fsrs7.nro") },
+            { "tag_name": "v0.12.0-fsrs7", "draft": false, "assets": asset("AnkiNX-fsrs7.nro") },
+            { "tag_name": "v0.11.1-fsrs7", "draft": false, "assets": asset("AnkiNX-fsrs7.nro") },
+        ]);
+        assert_eq!(edition_release(&releases).unwrap()["tag_name"], "v0.12.0-fsrs7");
+        assert!(edition_release(&json!([{ "tag_name": "v0.12.0", "assets": asset("AnkiNX.nro") }])).is_none());
+        assert!(!is_newer("v0.12.0-fsrs7", "0.12.0-fsrs7"));
+        assert!(is_newer("v0.12.1-fsrs7", "0.12.0-fsrs7"));
+    }
 
     #[test]
     fn versions() {
