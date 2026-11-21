@@ -8,6 +8,34 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.12.0 (2026-11-21)
+
+More of the computer's deck options on the console: switch presets, set the
+display order and plan easy days.
+
+### Added
+
+- **Switching presets.** The **Options preset** row in **Deck options** now
+  chooses the deck's preset, and **Manage presets** adds, clones, renames or
+  removes one, or saves it to all subdecks.
+- **Display order.** **Deck options › Display Order**: the order new cards
+  are gathered and sorted in, where new cards and learning cards go among
+  reviews, and the review sort order.
+- **Easy days.** **Deck options › Easy Days**: fewer reviews on the days you
+  choose (Minimum, Reduced or Normal for each weekday).
+
+### Changed
+
+- **Thumb keyboard.** Each half is one key column narrower, easier to reach
+  while holding the console.
+- **Loading message.** When the next card takes more than a moment (after a
+  sync or a change of options), the study screen says so instead of staying
+  blank.
+
+### Good to know
+
+- Removing a preset makes the next sync a one-way sync, as on the computer.
+
 ## 0.11.1-fsrs7 (2026-11-21, experimental)
 
 A fix for large collections that froze the console, and more of the
