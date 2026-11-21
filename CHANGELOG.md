@@ -8,6 +8,30 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.12.0-fsrs7 (2026-11-21, experimental)
+
+The FSRS-7 edition now updates itself, and follows the regular 0.12.0.
+
+### Added
+
+- **In-app updates for this edition.** **Settings › About › Updates** now
+  offers new releases of the FSRS-7 edition, and never the regular build,
+  which would replace it.
+
+### Good to know
+
+- Everything in the regular 0.12.0 was already in 0.11.1-fsrs7: switching
+  presets, display order, easy days, the narrower thumb keyboard and the
+  calmer loading message.
+- On 0.11.0-fsrs7 or 0.11.1-fsrs7, the app offers the regular 0.12.0. Don't
+  take it: install this release by hand once. Later releases arrive in the
+  app.
+
+### How to install
+
+Copy `AnkiNX-fsrs7.nro` to `/switch/` on the SD card, replacing the previous
+one, and start it from the homebrew menu.
+
 ## 0.12.0 (2026-11-21)
 
 More of the computer's deck options on the console: switch presets, set the
