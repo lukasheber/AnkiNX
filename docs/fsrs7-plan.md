@@ -2,6 +2,22 @@
 
 Developed on the `experimental/fsrs7` branch.
 
+## How the edition relates to main (decided 2026-11-21)
+
+- **main stays on official Anki** (the build most users get: official Anki
+  and AnkiDroid). The **FSRS-7 edition** (this branch) is a permanent second
+  line on JSchoreels/anki, not something to merge into main.
+- **Features that work on official Anki go to main**; the branch keeps only
+  the fork layer (the pin, the RWKV patch, RWKV and FSRS-7 options, fork-only
+  settings such as review fuzz, the load balancer switch and the intraday
+  order).
+- **Merges go one way, main → edition**; the edition is released after each
+  main release with the same number (0.12.0, then 0.12.0-fsrs7). Files both
+  have (deck options, presets, display order, easy days) keep the edition's
+  fuller version in those merges.
+- **Revisit when official Anki ships FSRS-7**: FSRS-7 then comes to main and
+  the edition is RWKV only.
+
 ## Why
 
 FSRS-7 (fsrs-rs 7.0.0) is out, but official Anki won't ship it for a while.
@@ -191,7 +207,7 @@ we measured; the sizes' comparisons we have are kuma3's.
   exists (`anki-rwkv.patch`): history read 9,620 → 181 ms, same queue and
   buttons. The desktop fork has the same lookup: reported, JSchoreels/anki#31.
 - Checked on the console: Deck options rows, profile switch and
-  restart on the 66k-card profile (no freeze). Still to do: Tiny and "one
+  restart on the 66k-card profile (no freeze). Deferred (user): Tiny and "one
   model" against the desktop;
   safeguards (RWKV's start off the open path, a start that never finished
   skips RWKV next time, a way to keep RWKV off on a console).
