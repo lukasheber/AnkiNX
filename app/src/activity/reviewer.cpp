@@ -389,7 +389,9 @@ void ReviewerActivity::loadNext()
     audio::stop();
     bool night = nightMode();
     int generation = ++loadGeneration;
-    brls::delay(400, [this, token = alive, generation] {
+    // "Loading the next card" only when it is slow: most cards come within
+    // 1.5 s (RWKV's included), and a message that flashes is distracting.
+    brls::delay(1600, [this, token = alive, generation] {
         if (*token && state == State::Loading && generation == loadGeneration && !rwkvWaiting)
             showLoading();
     });
