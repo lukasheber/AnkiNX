@@ -12854,7 +12854,7 @@ index 58df9a98a..b7de1929e 100644
          self.db
              .prepare_cached(concat!(
 diff --git a/rslib/src/storage/revlog/mod.rs b/rslib/src/storage/revlog/mod.rs
-index 20c873311..5ee0911a8 100644
+index 20c873311..1872e40b3 100644
 --- a/rslib/src/storage/revlog/mod.rs
 +++ b/rslib/src/storage/revlog/mod.rs
 @@ -28,11 +28,20 @@ pub(crate) const RWKV_REVIEW_RETRIEVABILITY_CACHE_TABLE: &str =
@@ -12867,7 +12867,7 @@ index 20c873311..5ee0911a8 100644
 +/// AnkiNX: the per-card config lookup only when the collection has any reset
 +/// key (counted once per statement). A lookup that finds nothing ends next to
 +/// the neighbouring key, and config is a WITHOUT ROWID table: when that key's
-+/// value is large, every miss reads all of it (an AnkiDroid `sm20_state` of
++/// value is large, every miss reads all of it (an add-on's leftover `sm20_state` of
 +/// 195 KB made 66k cards take 6 s on a PC, minutes on the Switch).
 +pub(crate) const RWKV_HISTORY_RESET_AFTER_SQL: &str = "coalesce(
 +    case when (select count() from config

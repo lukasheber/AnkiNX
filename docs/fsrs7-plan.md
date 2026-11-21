@@ -185,7 +185,7 @@ we measured; the sizes' comparisons we have are kuma3's.
   66k-card profile froze the console, HOME slow or frozen. RWKV's start looks
   up a per-card `rwkvHistoryReset_<id>` config key twice per card; a miss
   lands next to the neighbouring key, and config is WITHOUT ROWID, so an
-  AnkiDroid `sm20_state` of 195 KB was read in full on every miss: 9.6 s on
+  `sm20_state` of 195 KB (an old desktop add-on's leftover data) was read in full on every miss: 9.6 s on
   a PC, minutes on the console, starving the system (Horizon doesn't
   time-slice equal priorities). The lookup now runs only when a reset key
   exists (`anki-rwkv.patch`): history read 9,620 → 181 ms, same queue and
