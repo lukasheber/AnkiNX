@@ -6,6 +6,8 @@
 
 mod api;
 pub mod forest;
+mod display_order;
+mod easy_days;
 mod math;
 mod mhchem;
 mod occlusion;

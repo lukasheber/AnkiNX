@@ -1402,8 +1402,26 @@ impl State {
             .iter()
             .filter(|(_, name)| name.starts_with(&prefix))
             .count();
-        Ok(json!({
+        let mut labels = deck_option_labels(&self.tr);
+        merge(&mut labels, crate::display_order::labels(&self.tr));
+        merge(&mut labels, crate::easy_days::labels(&self.tr));
+        merge(&mut labels, preset_labels(&self.tr));
+        // The presets as the desktop's selector lists them.
+        let presets: Vec<Value> = crate::presets::sorted_presets(&info)
+            .into_iter()
+            .map(|c| {
+                let use_count = info.all_config.iter().find(|e| e.config.as_ref().is_some_and(|e| e.id == c.id));
+                let use_count = use_count.map_or(0, |e| e.use_count);
+                // (the desktop's entry: "Default (used by 3 decks)")
+                let label = format!("{} ({})", c.name, without_bidi_isolates(&tr.deck_config_used_by_decks(use_count)));
+                json!({ "id": c.id, "name": c.name, "use_count": use_count, "label": label })
+            })
+            .collect();
+        let mut result = json!({
             "preset": config.name,
+            "preset_id": config.id,
+            "presets": presets,
+            "remove_preset_confirm": without_bidi_isolates(&tr.deck_config_confirm_remove_name(config.name.as_str())),
             "deck_count": use_count,
             "fsrs": info.fsrs,
             "custom_scheduling": !info.card_state_customizer.is_empty(),
@@ -1428,8 +1446,15 @@ impl State {
                 "single_model": self.rwkv_single_model,
             },
             // The desktop's own wording, translated as there.
-            "labels": deck_option_labels(&self.tr),
-        }))
+            "labels": labels,
+            // Display order's choices (values and the desktop's words).
+            "choices": crate::display_order::choices(&inner, info.fsrs, &self.tr),
+            // Easy Days: the review fuzz ranges, by default and as saved.
+            "fuzz_preview": crate::easy_days::fuzz_preview(&info),
+        });
+        // Easy Days' collection-wide settings (load balancer, review fuzz).
+        merge(&mut result, crate::easy_days::collection_values(&info));
+        Ok(result)
     }
 
     /// `set_deck_options {deck_id, values?, fsrs?, custom_scheduling?,
@@ -1457,6 +1482,18 @@ impl State {
                 self.optimized = Some((deck, config_id, outcome));
             }
             saved.map_err(err)?;
+            return Ok(json!({}));
+        }
+        if let Some(preset) = args.get("preset") {
+            let action = preset_action(preset)?;
+            let col = self.col()?;
+            let info = col.get_deck_configs_for_update(did).map_err(err)?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            let request =
+                crate::presets::action_request(&info, did, &action, now).map_err(|e| ApiError::new("args", e))?;
+            col.update_deck_configs(request).map_err(err)?;
             return Ok(json!({}));
         }
         let col = self.col()?;
@@ -1500,6 +1537,10 @@ impl State {
         request.fsrs_reschedule = reschedule;
         if let Some(deck) = args.get("deck").and_then(Value::as_object) {
             set_deck_limits(&mut request.limits, deck)?;
+        }
+        // Easy Days' collection-wide settings (load balancer, review fuzz).
+        if let Some(args) = args.as_object() {
+            crate::easy_days::set_collection(&mut request, args).map_err(|e| ApiError::new("args", e))?;
         }
         col.update_deck_configs(request).map_err(err)?;
         Ok(json!({}))
@@ -2888,7 +2929,7 @@ fn prune_backups(backups: &std::path::Path, keep: usize) {
 
 /// Fluent wraps placeables in Unicode bidi isolation marks (U+2068..U+2069),
 /// which Anki's own UIs strip; the Switch fonts would draw them as boxes.
-fn without_bidi_isolates(text: &str) -> String {
+pub(crate) fn without_bidi_isolates(text: &str) -> String {
     text.chars()
         .filter(|c| !matches!(c, '\u{2066}'..='\u{2069}'))
         .collect()
@@ -2944,6 +2985,26 @@ fn answer_action_name(action: i32) -> &'static str {
         AnswerAction::AnswerHard => "hard",
         AnswerAction::ShowReminder => "reminder",
     }
+}
+
+/// `set_deck_options`' `preset`: {"select": id}, {"add": name},
+/// {"clone": name}, {"rename": name}, {"remove": true} or
+/// {"apply_to_subdecks": true}.
+fn preset_action(preset: &Value) -> std::result::Result<crate::presets::PresetAction, ApiError> {
+    use crate::presets::PresetAction;
+    let bad = || ApiError::new("args", format!("invalid preset action: {preset}"));
+    let object = preset.as_object().filter(|o| o.len() == 1).ok_or_else(bad)?;
+    let (key, value) = object.iter().next().unwrap();
+    let name = || value.as_str().map(String::from).ok_or_else(bad);
+    Ok(match key.as_str() {
+        "select" => PresetAction::Select(value.as_i64().ok_or_else(bad)?),
+        "add" => PresetAction::Add(name()?),
+        "clone" => PresetAction::Clone(name()?),
+        "rename" => PresetAction::Rename(name()?),
+        "remove" if value == &Value::Bool(true) => PresetAction::Remove,
+        "apply_to_subdecks" if value == &Value::Bool(true) => PresetAction::ApplyToSubdecks,
+        _ => return Err(bad()),
+    })
 }
 
 /// The deck's own options (`set_deck_options`'s `deck`): "desired_retention"
@@ -3022,14 +3083,40 @@ fn deck_option_labels(tr: &I18n) -> Value {
     })
 }
 
+/// The preset selector's and its menu's wording (apart from
+/// `deck_option_labels`: one json! that size passes the recursion limit).
+fn preset_labels(tr: &I18n) -> Value {
+    let s = |text: std::borrow::Cow<str>| without_bidi_isolates(&text);
+    json!({
+        "add_preset": s(tr.deck_config_add_group()),
+        "clone_preset": s(tr.deck_config_clone_group()),
+        "rename_preset": s(tr.deck_config_rename_group()),
+        "remove_preset": s(tr.deck_config_remove_group()),
+        "save_to_all_subdecks": s(tr.deck_config_save_to_all_subdecks()),
+        "preset_name_prompt": s(tr.deck_config_name_prompt()),
+        "will_require_full_sync": s(tr.deck_config_will_require_full_sync()),
+        "default_preset_cant_be_removed": s(tr.scheduling_the_default_configuration_cant_be_removed()),
+    })
+}
+
 fn deck_option_values(c: &DeckConfigInner) -> Value {
     let mut values = basic_option_values(c);
-    for more in [scheduler_option_values(c), fsrs_advanced_values(c)] {
-        if let (Some(all), Value::Object(more)) = (values.as_object_mut(), more) {
-            all.extend(more);
-        }
+    for more in [
+        scheduler_option_values(c),
+        fsrs_advanced_values(c),
+        crate::display_order::values(c),
+        json!({ "easy_days": crate::easy_days::easy_days(c) }),
+    ] {
+        merge(&mut values, more);
     }
     values
+}
+
+/// `more`'s keys into the object `into`.
+fn merge(into: &mut Value, more: Value) {
+    if let (Some(all), Value::Object(more)) = (into.as_object_mut(), more) {
+        all.extend(more);
+    }
 }
 
 fn basic_option_values(c: &DeckConfigInner) -> Value {
@@ -3153,7 +3240,11 @@ fn set_deck_option(c: &mut DeckConfigInner, key: &str, value: &Value) -> std::re
     let ratio = || value.as_f64().filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as f32).ok_or_else(bad);
     let flag = || value.as_bool().ok_or_else(bad);
     let steps = || value.as_str().and_then(parse_steps).ok_or_else(bad);
+    if let Some(set) = crate::display_order::set(c, key, value) {
+        return set.map_err(|e| ApiError::new("args", e));
+    }
     match key {
+        "easy_days" => crate::easy_days::set_easy_days(c, value).map_err(|e| ApiError::new("args", e))?,
         "new_per_day" => c.new_per_day = count()?,
         "reviews_per_day" => c.reviews_per_day = count()?,
         "learn_steps" => c.learn_steps = steps()?,

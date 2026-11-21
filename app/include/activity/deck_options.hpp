@@ -37,6 +37,15 @@ class DeckOptionsActivity : public brls::Activity
     void fillScheduler(const anki::json& options);
     void fillRwkv();
     void fillFsrs(const anki::json& options);
+    // The preset selector and its menu (the desktop's Save menu actions).
+    void showPresets(const anki::json& options);
+    void presetActions();
+    // The desktop's Display Order and Easy Days sections.
+    void fillDisplayOrder(const anki::json& options);
+    void fillEasyDays(const anki::json& options);
+    // Easy Days' values: the weekdays' levels, the fuzz preview and warnings.
+    void showEasyDays(const anki::json& options);
+    void showEasyDaysNotes();
     // Rows for the chosen schedulers, as the desktop shows them.
     void showSchedulerRows();
     // The deck's own options (Deck only desired retention, subdeck minimums)
@@ -74,6 +83,13 @@ class DeckOptionsActivity : public brls::Activity
     // A choice among `options` (backend values), shown as `names`.
     void choice(const std::string& title, const std::string& key, const std::vector<std::string>& options,
                 const std::vector<std::string>& names);
+    // A choice among the backend's `choices[key]` (numbers, with the
+    // desktop's words), which can change with other values.
+    void orderChoice(const std::string& key);
+    void showOrderChoices();
+    // A collection-wide number sent as `arg`; `percent`: shown and typed as %.
+    void collectionNumber(const std::string& title, const std::string& arg, bool percent);
+    std::string collectionNumberText(const std::string& arg) const;
 
     int64_t deckId;
     anki::json values;
@@ -100,6 +116,27 @@ class DeckOptionsActivity : public brls::Activity
     brls::DetailCell* paramsCell = nullptr;
     // The desktop's wording (deck_options' labels).
     anki::json labels;
+    // The presets (ids in the selector's order) and the deck's.
+    brls::SelectorCell* presetCell = nullptr;
+    std::vector<int64_t> presetIds;
+    int64_t presetId = 0;
+    std::string presetName, removeConfirm;
+    brls::Label* sharedNote = nullptr;
+    // Display Order's choices: key -> (cell, the choices' values).
+    anki::json orderChoicesJson;
+    std::map<std::string, std::pair<brls::SelectorCell*, std::vector<int>>> orderChoices;
+    // Easy Days: the weekdays (Monday first), the collection-wide numbers
+    // (arg -> cell, percent), the preview and the warnings.
+    std::vector<brls::SelectorCell*> easyDayCells;
+    std::map<std::string, std::pair<brls::DetailCell*, bool>> collectionNumbers;
+    brls::Label* fuzzPreview      = nullptr;
+    brls::Label* noNormalDayNote  = nullptr;
+    brls::Label* easyDaysChangeNote = nullptr;
+    // Changed here (easy days or fuzz): existing reviews keep their dates
+    // unless "Reschedule cards on change" is on, as the desktop warns.
+    bool easyDaysChanged = false;
+    // The collection-wide values as saved (deck_options' answer).
+    anki::json collectionValues;
     // The deck's own options, and this console's RWKV model.
     anki::json deck, rwkvModel;
     brls::DetailCell* deckRetentionCell = nullptr;

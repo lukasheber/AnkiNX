@@ -167,23 +167,31 @@ void DeckOptionsActivity::fill(const anki::json& options)
 {
     values = options["values"];
     fsrs   = options.value("fsrs", false);
+    labels = options["labels"];
     built  = true;
 
-    // Which preset this is; a shared one changes other decks too.
-    int decks = options.value("deck_count", 1);
-    auto* preset = new brls::DetailCell();
-    preset->setText(t("preset"));
-    preset->setDetailText(options.value("preset", ""));
-    list->addView(preset);
-    if (decks > 1)
-    {
-        auto* note = new brls::Label();
-        note->setText(brls::getStr("ankinx/options/shared", std::to_string(decks)));
-        note->setFontSize(16);
-        note->setMarginLeft(16);
-        note->setMarginBottom(8);
-        list->addView(note);
-    }
+    // The deck's preset, chosen among all as with the desktop's selector,
+    // and its menu (add, clone, rename, remove, save to all subdecks). A
+    // shared one changes other decks too.
+    presetCell = new brls::SelectorCell();
+    presetCell->init(t("preset"), { "" }, 0, [this](int index) {
+        if (index >= 0 && index < (int)presetIds.size() && presetIds[index] != presetId)
+            apply({ { "preset", { { "select", presetIds[index] } } } });
+    });
+    list->addView(presetCell);
+    auto* presetMenu = new brls::DetailCell();
+    presetMenu->setText(t("preset_menu"));
+    presetMenu->registerClickAction([this](brls::View*) {
+        presetActions();
+        return true;
+    });
+    list->addView(presetMenu);
+    sharedNote = new brls::Label();
+    sharedNote->setFontSize(16);
+    sharedNote->setMarginLeft(16);
+    sharedNote->setMarginBottom(8);
+    list->addView(sharedNote);
+    showPresets(options);
 
     list->addView(header(t("daily_limits")));
     number(t("new_per_day"), "new_per_day", false);
@@ -208,6 +216,7 @@ void DeckOptionsActivity::fill(const anki::json& options)
     number(t("leech_threshold"), "leech_threshold", false);
     choice(t("leech_action"), "leech_action", { "suspend", "tag" }, { t("leech_suspend"), t("leech_tag") });
 
+    fillDisplayOrder(options);
     fillScheduler(options);
 
     list->addView(header(t("burying")));
@@ -232,6 +241,8 @@ void DeckOptionsActivity::fill(const anki::json& options)
            { t("qa_show_answer"), t("qa_reminder") });
     choice(t("answer_action"), "answer_action", { "bury", "again", "good", "hard", "reminder" },
            { t("aa_bury"), t("aa_again"), t("aa_good"), t("aa_hard"), t("aa_reminder") });
+
+    fillEasyDays(options);
 
     list->addView(header(t("advanced")));
     number(t("maximum_interval"), "maximum_review_interval", false);
@@ -572,6 +583,7 @@ void DeckOptionsActivity::fillFsrs(const anki::json& options)
     rescheduleCell->init(label("reschedule", t("reschedule")), false, [this](bool on) {
         reschedule = on;
         rescheduleWarning->setVisibility(on ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+        showEasyDaysNotes();
     });
     list->addView(rescheduleCell);
     rescheduleWarning = note(label("reschedule_warning", ""));
@@ -581,6 +593,254 @@ void DeckOptionsActivity::fillFsrs(const anki::json& options)
     collect(start, fsrsSectionRows);
     fsrsParams = options.value("fsrs_params", 0);
     showParams();
+}
+
+// The presets (the desktop's list: by name, with how many decks use each),
+// the deck's selected, and the shared note.
+void DeckOptionsActivity::showPresets(const anki::json& options)
+{
+    presetId      = options.value("preset_id", (int64_t)0);
+    presetName    = options.value("preset", "");
+    removeConfirm = options.value("remove_preset_confirm", "");
+    std::vector<std::string> names;
+    presetIds.clear();
+    int selected = 0;
+    if (options["presets"].is_array())
+        for (const auto& entry : options["presets"])
+        {
+            if (entry.value("id", (int64_t)0) == presetId)
+                selected = (int)names.size();
+            presetIds.push_back(entry.value("id", (int64_t)0));
+            names.push_back(entry.value("label", entry.value("name", "")));
+        }
+    if (names.empty())
+        names.push_back(presetName);
+    presetCell->setData(names);
+    presetCell->setSelection(selected, true);
+    int decks = options.value("deck_count", 1);
+    sharedNote->setText(brls::getStr("ankinx/options/shared", std::to_string(decks)));
+    sharedNote->setVisibility(decks > 1 ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+}
+
+// The desktop's Save menu, for presets: each action saves at once.
+void DeckOptionsActivity::presetActions()
+{
+    bool subdecks = deck.is_object() && deck.value("subdecks", 0) > 0;
+    std::vector<std::string> names = { label("add_preset", "Add Preset"), label("clone_preset", "Clone Preset"),
+                                       label("rename_preset", "Rename Preset"),
+                                       label("remove_preset", "Remove Preset") };
+    if (subdecks)
+        names.push_back(label("save_to_all_subdecks", "Save to All Subdecks"));
+    auto* dropdown = new brls::Dropdown(t("preset_menu"), names, [this, token = alive](int choice) {
+        // (after the menu has closed: the next step opens a keyboard or dialog)
+        brls::sync([this, token, choice] {
+            if (!*token)
+                return;
+            std::string prompt = label("preset_name_prompt", "Name");
+            auto named         = [this, prompt](const std::string& title, const std::string& action,
+                                        const std::string& initial) {
+                keyboard::text(title + " · " + prompt, initial, 60, [this, action](const std::string& text) {
+                    if (text.find_first_not_of(' ') == std::string::npos)
+                        return;
+                    apply({ { "preset", { { action, text } } } });
+                });
+            };
+            switch (choice)
+            {
+                case 0:
+                    named(label("add_preset", "Add Preset"), "add", "");
+                    break;
+                case 1:
+                    named(label("clone_preset", "Clone Preset"), "clone", presetName);
+                    break;
+                case 2:
+                    named(label("rename_preset", "Rename Preset"), "rename", presetName);
+                    break;
+                case 3:
+                {
+                    if (presetId == 1)
+                    {
+                        sync_flow::showMessage(label("default_preset_cant_be_removed", ""));
+                        break;
+                    }
+                    // As the desktop asks: removing a preset needs a one-way sync.
+                    std::string text = label("will_require_full_sync", "") + "\n\n" + removeConfirm;
+                    auto* dialog     = new brls::Dialog(text);
+                    dialog->addButton("hints/cancel"_i18n, [] {});
+                    dialog->addButton(label("remove_preset", "Remove Preset"), [this, token] {
+                        if (*token)
+                            apply({ { "preset", { { "remove", true } } } });
+                    });
+                    dialog->open();
+                    break;
+                }
+                case 4:
+                    apply({ { "preset", { { "apply_to_subdecks", true } } } }, t("preset_saved_to_subdecks"));
+                    break;
+            }
+        });
+    });
+    brls::Application::pushActivity(new brls::Activity(app::withoutStatus(dropdown)));
+}
+
+// The desktop's Display Order (DisplayOrder.svelte): its six choices, in its
+// order and words (the backend's choices: the sort orders the gather order
+// allows, the review orders FSRS has).
+void DeckOptionsActivity::fillDisplayOrder(const anki::json& options)
+{
+    orderChoicesJson = options["choices"];
+    list->addView(header(label("display_order", "Display Order")));
+    for (const char* key : { "new_gather_order", "new_sort_order", "new_mix", "interday_learning_mix",
+                             "intraday_learning_mix", "review_order" })
+        orderChoice(key);
+}
+
+void DeckOptionsActivity::orderChoice(const std::string& key)
+{
+    auto* cell = new brls::SelectorCell();
+    cell->init(label(key, key), { "" }, 0, [this, key](int index) {
+        const std::vector<int>& options = orderChoices[key].second;
+        if (index >= 0 && index < (int)options.size() && options[index] != values.value(key, -1))
+            apply({ { "values", { { key, options[index] } } } });
+    });
+    orderChoices[key] = { cell, {} };
+    list->addView(cell);
+    showOrderChoices();
+}
+
+// Each choice row's entries and the saved one (the entries can change: the
+// sort orders follow the gather order).
+void DeckOptionsActivity::showOrderChoices()
+{
+    for (auto& [key, row] : orderChoices)
+    {
+        std::vector<std::string> names;
+        row.second.clear();
+        int selected = 0;
+        if (orderChoicesJson.is_object() && orderChoicesJson[key].is_array())
+            for (const auto& entry : orderChoicesJson[key])
+            {
+                int value = entry.value("value", 0);
+                if (value == values.value(key, 0))
+                    selected = (int)names.size();
+                row.second.push_back(value);
+                names.push_back(entry.value("label", ""));
+            }
+        if (names.empty())
+            continue;
+        row.first->setData(names);
+        row.first->setSelection(selected, true);
+    }
+}
+
+// The desktop's Easy Days (EasyDays.svelte): the load balancer and review
+// fuzz switches (collection-wide), each weekday's reviews (the desktop's
+// slider: Minimum, Reduced, Normal), the fuzz numbers and their preview,
+// and the desktop's two warnings.
+void DeckOptionsActivity::fillEasyDays(const anki::json& options)
+{
+    list->addView(header(label("easy_days", "Easy Days")));
+    collectionToggle(label("load_balancer", "Enable load balancer"), "load_balancer",
+                     options.value("load_balancer", false));
+    collectionToggle(label("review_fuzz_enabled", "Enable review fuzz"), "review_fuzz_enabled",
+                     options.value("review_fuzz_enabled", true));
+    std::vector<std::string> levels = { "Minimum", "Reduced", "Normal" };
+    if (labels.is_object() && labels["easy_days_levels"].is_array() && labels["easy_days_levels"].size() == 3)
+        levels = labels["easy_days_levels"].get<std::vector<std::string>>();
+    const char* weekdays[] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+    for (int day = 0; day < 7; day++)
+    {
+        std::string name = weekdays[day];
+        if (labels.is_object() && labels["easy_days_weekdays"].is_array() && labels["easy_days_weekdays"].size() == 7)
+            name = labels["easy_days_weekdays"][day].get<std::string>();
+        auto* cell = new brls::SelectorCell();
+        cell->init(name, levels, 2, [this, day](int index) {
+            if (index < 0 || index > 2 || !values["easy_days"].is_array() || values["easy_days"].size() != 7)
+                return;
+            anki::json days = values["easy_days"];
+            if (days[day].get<double>() == index / 2.0)
+                return;
+            days[day] = index / 2.0;
+            apply({ { "values", { { "easy_days", days } } } });
+        });
+        easyDayCells.push_back(cell);
+        list->addView(cell);
+    }
+    subheading(label("review_fuzz", "Review fuzz"));
+    collectionNumber(label("review_fuzz_base", "Base fuzz (days)"), "review_fuzz_base", false);
+    collectionNumber(label("review_fuzz_factor_short", "Fuzz factor (2.5-7 days)"), "review_fuzz_factor_short", true);
+    collectionNumber(label("review_fuzz_factor_mid", "Fuzz factor (7-20 days)"), "review_fuzz_factor_mid", true);
+    collectionNumber(label("review_fuzz_factor_long", "Fuzz factor (20+ days)"), "review_fuzz_factor_long", true);
+    subheading(label("review_fuzz_preview", "Review fuzz preview"));
+    // (set below as is: note() would join its lines)
+    fuzzPreview        = note("");
+    noNormalDayNote    = note(label("easy_days_no_normal_days", ""));
+    easyDaysChangeNote = note(label("easy_days_change", ""));
+    showEasyDays(options);
+}
+
+void DeckOptionsActivity::showEasyDays(const anki::json& options)
+{
+    bool normalDay = false;
+    if (values["easy_days"].is_array() && values["easy_days"].size() == 7)
+        for (size_t day = 0; day < 7 && day < easyDayCells.size(); day++)
+        {
+            double share = values["easy_days"][day].get<double>();
+            normalDay    = normalDay || share == 1.0;
+            // (the nearest level: other values come only from older versions)
+            easyDayCells[day]->setSelection((int)std::lround(std::fmin(std::fmax(share, 0.0), 1.0) * 2), true);
+        }
+    collectionValues = options;
+    for (auto& [arg, row] : collectionNumbers)
+        row.first->setDetailText(collectionNumberText(arg) + (row.second ? "%" : ""));
+    // "3d: 2-4d → 2-4d" under "Default fuzz → Current fuzz".
+    std::string preview = label("default_fuzz", "Default fuzz") + "  →  " + label("current_fuzz", "Current fuzz");
+    if (options["fuzz_preview"].is_array())
+        for (const auto& row : options["fuzz_preview"])
+            preview += "\n" + row.value("interval", "") + ":  " + row.value("default", "") + "  →  " +
+                       row.value("current", "");
+    fuzzPreview->setText(preview);
+    noNormalDayNote->setVisibility(normalDay ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+    showEasyDaysNotes();
+}
+
+void DeckOptionsActivity::showEasyDaysNotes()
+{
+    if (easyDaysChangeNote)
+        easyDaysChangeNote->setVisibility(easyDaysChanged && !(fsrs && reschedule) ? brls::Visibility::VISIBLE
+                                                                                   : brls::Visibility::GONE);
+}
+
+void DeckOptionsActivity::collectionNumber(const std::string& title, const std::string& arg, bool percent)
+{
+    auto* cell = new brls::DetailCell();
+    cell->setText(title);
+    cell->registerClickAction([this, title, arg, percent](brls::View*) {
+        keyboard::text(title + (percent ? " (%)" : ""), collectionNumberText(arg), 10, [this, arg, percent](const std::string& text) {
+            char* end     = nullptr;
+            double number = std::strtod(text.c_str(), &end);
+            if (text.empty() || *end != 0 || !std::isfinite(number))
+            {
+                brls::Application::notify(t("invalid"));
+                return;
+            }
+            apply({ { arg, percent ? number / 100 : number } });
+        });
+        return true;
+    });
+    collectionNumbers[arg] = { cell, percent };
+    list->addView(cell);
+}
+
+// A collection-wide number as saved: "0.5", or "15" for a percent.
+std::string DeckOptionsActivity::collectionNumberText(const std::string& arg) const
+{
+    auto row     = collectionNumbers.find(arg);
+    bool percent = row != collectionNumbers.end() && row->second.second;
+    double value = collectionValues.is_object() ? collectionValues.value(arg, 0.0) : 0.0;
+    char text[32];
+    std::snprintf(text, sizeof text, "%g", percent ? std::round(value * 1000) / 10 : std::round(value * 100) / 100);
+    return text;
 }
 
 std::string DeckOptionsActivity::deckRetentionText() const
@@ -795,6 +1055,10 @@ void DeckOptionsActivity::refresh(const anki::json& options)
     schedulerCell->setSelection(schedulerIndex(), true);
     for (auto& [arg, cell] : collectionToggles)
         cell->setOn(options.value(arg, false), false);
+    orderChoicesJson = options["choices"];
+    showOrderChoices();
+    showEasyDays(options);
+    showPresets(options);
     fsrsParams = options.value("fsrs_params", 0);
     showParams();
     deck      = options["deck"];
@@ -901,6 +1165,12 @@ void DeckOptionsActivity::apply(anki::json args, std::string done)
     args["deck_id"] = deckId;
     if (reschedule)
         args["reschedule"] = true;
+    // Easy days or review fuzz changed here: existing reviews keep their
+    // dates without rescheduling, as the desktop warns.
+    if ((args.contains("values") && args["values"].contains("easy_days")) || args.contains("review_fuzz_enabled") ||
+        args.contains("review_fuzz_base") || args.contains("review_fuzz_factor_short") ||
+        args.contains("review_fuzz_factor_mid") || args.contains("review_fuzz_factor_long"))
+        easyDaysChanged = true;
     brls::async([this, args, done, token = alive] {
         std::string error;
         try

@@ -164,6 +164,25 @@ answer with either size; answering faster waits for it (with Tiny, cards came
 every ~5 s at most). Whether Small predicts better than Tiny is not something
 we measured; the sizes' comparisons we have are kuma3's.
 
+## Next round (in progress, 2026-11-21)
+
+- **Display order** (`src/display_order.rs`, the desktop's DisplayOrder.svelte):
+  gather and sort orders (sort orders the gather order disables are left
+  out, and reset as on the desktop), new/review, interday and intraday
+  learning/review order, review sort order (FSRS's own entries with FSRS).
+  The intraday order is the fork's: kept in the preset's extra JSON
+  (`jschoreels.deckoptions.intraday_learning_mix`, older switch removed).
+- **Easy days** (`src/easy_days.rs`, EasyDays.svelte): load balancer and
+  review fuzz switches (collection-wide), each weekday as Minimum /
+  Reduced / Normal (the desktop's slider steps), fuzz base and factors
+  (collection-wide, percent as on the desktop), the fuzz preview (default →
+  current), the "no normal day" and "not rescheduled" warnings.
+- **Presets** (`presets::action_request`, ConfigSelector + SaveButton):
+  choose the deck's preset among all (desktop's list and entries), add,
+  clone, rename, remove (default refused; full-sync warning; the deck gets
+  the preset before it), save to all subdecks.
+- Still to do: check on the console; Tiny and "one model" against the desktop.
+
 ## Status (2026-11-21): released as 0.11.0-fsrs7 (pre-release)
 
 Checked on the console against the desktop fork (build 26.9.4), with the

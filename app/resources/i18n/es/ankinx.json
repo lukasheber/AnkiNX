@@ -148,6 +148,8 @@
     "rwkv_apply_subdecks_off": "¿Desactivar \"Respetar también los mínimos de los submazos\" también en todos los submazos de este mazo?",
     "rwkv_apply_subdecks_confirm": "Aplicar",
     "rwkv_apply_subdecks_done": "Aplicado a todos los submazos",
+    "preset_menu": "Gestionar ajustes",
+    "preset_saved_to_subdecks": "Ajuste guardado en todos los submazos",
     "deck_retention_preset": "Igual que el preajuste",
     "fsrs_dynamic_retention": "Dynamic DR (ADR)",
     "fsrs_dynamic_retention_clamp": "Clamp Unsupported Dynamic DR Targets",

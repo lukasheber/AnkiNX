@@ -148,6 +148,8 @@
     "rwkv_apply_subdecks_off": "Turn \"Also honor subdeck minimums\" off for all subdecks of this deck too?",
     "rwkv_apply_subdecks_confirm": "Apply",
     "rwkv_apply_subdecks_done": "Applied to all subdecks",
+    "preset_menu": "Manage presets",
+    "preset_saved_to_subdecks": "Preset saved to all subdecks",
     "deck_retention_preset": "Same as preset",
     "fsrs_dynamic_retention": "Dynamic DR (ADR)",
     "fsrs_dynamic_retention_clamp": "Clamp Unsupported Dynamic DR Targets",

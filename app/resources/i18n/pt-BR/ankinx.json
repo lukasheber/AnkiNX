@@ -148,6 +148,8 @@
     "rwkv_apply_subdecks_off": "Desativar também \"Respeitar os mínimos dos sub-baralhos\" em todos os sub-baralhos deste baralho?",
     "rwkv_apply_subdecks_confirm": "Aplicar",
     "rwkv_apply_subdecks_done": "Aplicado a todos os sub-baralhos",
+    "preset_menu": "Gerenciar predefinições",
+    "preset_saved_to_subdecks": "Predefinição salva em todos os sub-baralhos",
     "deck_retention_preset": "Igual à predefinição",
     "fsrs_dynamic_retention": "Dynamic DR (ADR)",
     "fsrs_dynamic_retention_clamp": "Clamp Unsupported Dynamic DR Targets",

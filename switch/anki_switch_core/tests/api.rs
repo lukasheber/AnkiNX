@@ -135,6 +135,72 @@ fn study_flow() {
     assert_eq!(ok("undo", json!({}))["undone"], true);
     assert_eq!(ok("deck_options", json!({ "deck_id": verbs }))["values"]["new_per_day"], 20);
 
+    // Display order and Easy Days (the preset's), the load balancer and review
+    // fuzz (collection-wide): read back, then undone together.
+    let options = ok("deck_options", json!({ "deck_id": verbs }));
+    assert_eq!(options["values"]["intraday_learning_mix"], 0);
+    assert_eq!(options["values"]["easy_days"], json!([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]));
+    assert_eq!(options["choices"]["new_gather_order"].as_array().unwrap().len(), 8);
+    assert_eq!(options["fuzz_preview"][0], json!({ "interval": "3d", "default": "2-4d", "current": "2-4d" }));
+    assert_eq!(options["labels"]["display_order"], "Display Order");
+    ok(
+        "set_deck_options",
+        json!({
+            "deck_id": verbs,
+            "values": { "new_gather_order": 4, "intraday_learning_mix": 2, "review_order": 12,
+                        "easy_days": [1, 1, 1, 1, 1, 0.5, 0] },
+            "load_balancer": !options["load_balancer"].as_bool().unwrap(),
+            "review_fuzz_base": 2.0,
+        }),
+    );
+    let changed = ok("deck_options", json!({ "deck_id": verbs }));
+    let values = &changed["values"];
+    assert_eq!((values["new_gather_order"].clone(), values["new_sort_order"].clone()), (json!(4), json!(0)));
+    assert_eq!((values["intraday_learning_mix"].clone(), values["review_order"].clone()), (json!(2), json!(12)));
+    assert_eq!(values["easy_days"], json!([1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.0]));
+    assert_ne!(changed["load_balancer"], options["load_balancer"]);
+    assert_eq!(changed["review_fuzz_base"], 2.0);
+    assert_eq!(changed["fuzz_preview"][0]["current"], "1-5d");
+    // (random cards: a sort order that would repeat another is refused)
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": verbs, "values": { "new_sort_order": 4 } })), "args");
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": verbs, "review_fuzz_base": 11 })), "args");
+    assert_eq!(ok("undo", json!({}))["undone"], true);
+    let restored = ok("deck_options", json!({ "deck_id": verbs }));
+    assert_eq!(restored["values"]["intraday_learning_mix"], 0);
+    assert_eq!(restored["load_balancer"], options["load_balancer"]);
+
+    // Presets, as the desktop's selector and Save menu: add, rename, clone,
+    // switch, remove (the deck gets the one before it), then all undone.
+    assert_eq!(restored["presets"], json!([{ "id": 1, "name": "Default", "use_count": 3, "label": "Default (used by 3 decks)" }]));
+    let preset = |action: Value| ok("set_deck_options", json!({ "deck_id": verbs, "preset": action }));
+    let current = || ok("deck_options", json!({ "deck_id": verbs }));
+    preset(json!({ "add": " Mine " }));
+    let added = current();
+    assert_eq!((added["preset"].clone(), added["deck_count"].clone()), (json!("Mine"), json!(1)));
+    assert_eq!(added["values"]["new_per_day"], 20, "the defaults");
+    preset(json!({ "rename": "Verbs" }));
+    preset(json!({ "clone": "Verbs" }));
+    let cloned = current();
+    let name = cloned["preset"].as_str().unwrap().to_string();
+    assert!(name.starts_with("Verbs") && name.len() > 5, "a name in use gets the time: {name}");
+    let names: Vec<&str> = cloned["presets"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Default", "Verbs", name.as_str()]);
+    preset(json!({ "select": 1 }));
+    assert_eq!(current()["preset"], "Default");
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": verbs, "preset": { "remove": true } })), "args");
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": verbs, "preset": { "select": 999 } })), "args");
+    assert_eq!(error_kind("set_deck_options", json!({ "deck_id": verbs, "preset": { "add": "  " } })), "args");
+    preset(json!({ "select": cloned["preset_id"] }));
+    preset(json!({ "remove": true }));
+    let after = current();
+    assert_eq!(after["preset"], "Verbs", "the one before it");
+    assert_eq!(after["presets"].as_array().unwrap().len(), 2);
+    for _ in 0..6 {
+        assert_eq!(ok("undo", json!({}))["undone"], true);
+    }
+    assert_eq!(current()["presets"].as_array().unwrap().len(), 1);
+    assert_eq!(current()["preset"], "Default");
+
     // Custom study: two new cards in a "Custom Study Session" deck, undone.
     let defaults = ok("custom_study_defaults", json!({ "deck_id": verbs }));
     assert_eq!(defaults["available_new"], 3, "{defaults}"); // the deck's new cards

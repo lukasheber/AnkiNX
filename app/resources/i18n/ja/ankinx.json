@@ -148,6 +148,8 @@
     "rwkv_apply_subdecks_off": "このデッキのすべてのサブデッキでも「サブデッキの最小値も守る」をオフにしますか？",
     "rwkv_apply_subdecks_confirm": "適用",
     "rwkv_apply_subdecks_done": "すべてのサブデッキに適用しました",
+    "preset_menu": "プリセットを管理",
+    "preset_saved_to_subdecks": "すべてのサブデッキにプリセットを保存しました",
     "deck_retention_preset": "プリセットと同じ",
     "fsrs_dynamic_retention": "Dynamic DR (ADR)",
     "fsrs_dynamic_retention_clamp": "Clamp Unsupported Dynamic DR Targets",
