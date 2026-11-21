@@ -181,7 +181,18 @@ we measured; the sizes' comparisons we have are kuma3's.
   choose the deck's preset among all (desktop's list and entries), add,
   clone, rename, remove (default refused; full-sync warning; the deck gets
   the preset before it), save to all subdecks.
-- Still to do: check on the console; Tiny and "one model" against the desktop.
+- **Freeze on a real collection (fixed)**: opening (or switching to) a
+  66k-card profile froze the console, HOME slow or frozen. RWKV's start looks
+  up a per-card `rwkvHistoryReset_<id>` config key twice per card; a miss
+  lands next to the neighbouring key, and config is WITHOUT ROWID, so an
+  AnkiDroid `sm20_state` of 195 KB was read in full on every miss: 9.6 s on
+  a PC, minutes on the console, starving the system (Horizon doesn't
+  time-slice equal priorities). The lookup now runs only when a reset key
+  exists (`anki-rwkv.patch`): history read 9,620 → 181 ms, same queue and
+  buttons. The desktop fork has the same lookup (to report).
+- Still to do: check on the console; Tiny and "one model" against the desktop;
+  safeguards (RWKV's start off the open path, a start that never finished
+  skips RWKV next time, a way to keep RWKV off on a console).
 
 ## Status (2026-11-21): released as 0.11.0-fsrs7 (pre-release)
 
