@@ -309,7 +309,8 @@ brls::Label* DeckOptionsActivity::note(const std::string& text)
     note->setMarginBottom(8);
     // (the full row width: some notes wrapped at their first measure)
     note->setWidthPercentage(100);
-    note->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
+    // (descriptions: readable in both themes; text_disabled is for disabled rows)
+    note->setTextColor(brls::Application::getTheme()["brls/header/subtitle"]);
     list->addView(note);
     return note;
 }
