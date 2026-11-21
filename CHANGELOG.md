@@ -8,6 +8,46 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.11.1-fsrs7 (2026-11-21, experimental)
+
+A fix for large collections that froze the console, and more of the
+computer's deck options: display order, easy days and switching presets.
+
+### Fixed
+
+- **Freeze when opening a collection.** Some collections that use RWKV froze
+  the console while loading or when switching to their profile, with the HOME
+  menu slow or frozen too. They now open in moments.
+
+### Added
+
+- **Display order.** **Deck options › Display Order**: the order new cards
+  are gathered and sorted in, where new cards and learning cards go among
+  reviews, and the review sort order.
+- **Easy days.** **Deck options › Easy Days**: fewer reviews on the days you
+  choose (Minimum, Reduced or Normal for each weekday), the load balancer, and
+  review fuzz with a preview of the ranges it gives.
+- **Switching presets.** The **Options preset** row now chooses the deck's
+  preset, and **Manage presets** adds, clones, renames or removes one, or saves
+  it to all subdecks.
+
+### Changed
+
+- **Thumb keyboard.** Each half is one key column narrower, easier to reach
+  while holding the console.
+- **Loading message.** "Loading the next card" appears only when the next
+  card takes more than 1.6 seconds, so it no longer flashes.
+
+### Good to know
+
+- Removing a preset makes the next sync a one-way sync, as on the computer.
+- In-app updates don't offer this build.
+
+### How to install
+
+Copy `AnkiNX-fsrs7.nro` to `/switch/` on the SD card, replacing the previous
+one, and start it from the homebrew menu.
+
 ## 0.11.0-fsrs7 (2026-11-21, experimental)
 
 An experimental build for people who use the FSRS-7 fork of Anki on their

@@ -164,7 +164,7 @@ answer with either size; answering faster waits for it (with Tiny, cards came
 every ~5 s at most). Whether Small predicts better than Tiny is not something
 we measured; the sizes' comparisons we have are kuma3's.
 
-## Next round (in progress, 2026-11-21)
+## Status (2026-11-21): released as 0.11.1-fsrs7 (pre-release)
 
 - **Display order** (`src/display_order.rs`, the desktop's DisplayOrder.svelte):
   gather and sort orders (sort orders the gather order disables are left
@@ -190,7 +190,9 @@ we measured; the sizes' comparisons we have are kuma3's.
   time-slice equal priorities). The lookup now runs only when a reset key
   exists (`anki-rwkv.patch`): history read 9,620 → 181 ms, same queue and
   buttons. The desktop fork has the same lookup: reported, JSchoreels/anki#31.
-- Still to do: check on the console; Tiny and "one model" against the desktop;
+- Checked on the console: Deck options rows, profile switch and
+  restart on the 66k-card profile (no freeze). Still to do: Tiny and "one
+  model" against the desktop;
   safeguards (RWKV's start off the open path, a start that never finished
   skips RWKV next time, a way to keep RWKV off on a console).
 
