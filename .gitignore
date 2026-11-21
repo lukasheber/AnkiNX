@@ -31,3 +31,4 @@ target/
 # Editor settings
 /.vscode/
 *.code-workspace
+docs/fsrs7-next-round.md
