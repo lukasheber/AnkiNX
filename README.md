@@ -235,11 +235,8 @@ built.
 `bash switch/test_core_host.sh` runs the backend's tests on Linux, including
 under an emulation of the Switch's filesystem rules.
 
-The FSRS-7 edition is built from the `experimental/fsrs7` branch, which pins
-JSchoreels/anki instead (see `tools/env.sh` and
-[docs/fsrs7-plan.md](https://github.com/lukasheber/AnkiNX/blob/experimental/fsrs7/docs/fsrs7-plan.md)
-there). Changes that work with official Anki are made on `main` and merged into
-it.
+Changes that work with official Anki are made on `main` and merged into this
+branch.
 
 | Path | Contents |
 | --- | --- |
