@@ -24,6 +24,7 @@
   <a href="#screenshots">Screenshots</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="#controls">Controls</a> ·
+  <a href="#fsrs-7-edition">FSRS-7 edition</a> ·
   <a href="#troubleshooting">Troubleshooting</a> ·
   <a href="#building-from-source">Building</a>
 </p>
@@ -44,7 +45,7 @@ computer and the other way round.
   <tr>
     <td width="50%" valign="top">
       <h3>📚 Your decks</h3>
-      Today's new, learning and due counts, an estimate of how long they will take, and your study streak. Each deck has an overview with custom study, deck options (FSRS or SM-2) and statistics, and a card browser.
+      Today's new, learning and due counts, an estimate of how long they will take, and your study streak. Each deck has an overview with custom study, statistics, a card browser and deck options as on the computer: presets, daily limits, steps, display order, easy days, and FSRS or SM-2.
     </td>
     <td width="50%" valign="top">
       <h3>🃏 Cards as Anki shows them</h3>
@@ -58,7 +59,7 @@ computer and the other way round.
     </td>
     <td valign="top">
       <h3>🎮 Made for the Switch</h3>
-      Answer with the shoulder buttons, play with one Joy-Con held sideways, rebind buttons, use touch and swipes in handheld mode, scribble on the whiteboard, and get larger text on a TV.
+      Answer with the shoulder buttons, play with one Joy-Con held sideways, rebind buttons, use touch and swipes in handheld mode, type answers on a keyboard under your thumbs, scribble on the whiteboard, and get larger text on a TV.
     </td>
   </tr>
   <tr>
@@ -176,6 +177,27 @@ buttons, and tap links, buttons and fields inside your cards. To answer with
 a tap or a swipe, turn on **Tap the answer** or **Swipe to answer** in
 **Settings › Study**. Buttons can be changed in **Settings › Controls**.
 
+## FSRS-7 edition
+
+If you use [JSchoreels' FSRS-7 version of Anki](https://github.com/JSchoreels/anki)
+on your computer, there is a matching AnkiNX: **`AnkiNX-fsrs7.nro`**, published
+as a pre-release on the [releases page](https://github.com/lukasheber/AnkiNX/releases)
+(tags ending in `-fsrs7`). It schedules with FSRS-7 and with the RWKV
+schedulers (RWKV-Instant and RWKV-Curve) as that version of Anki does, and
+shows their settings in **Deck options**.
+
+- It sits next to the regular `AnkiNX.nro` in `/switch/` and uses the same
+  profiles and collections.
+- It updates itself from **Settings › About › Updates** with new FSRS-7
+  releases, never with the regular build.
+- Study FSRS-7 and RWKV decks only in this edition and in the FSRS-7 version of
+  Anki: the regular AnkiNX, official Anki and AnkiDroid drop the extra FSRS-7
+  data of the cards you answer.
+- If the console doesn't have enough memory for RWKV, those decks are
+  scheduled with FSRS.
+
+Everyone else should use the regular `AnkiNX.nro`, which follows official Anki.
+
 ## Troubleshooting
 
 AnkiNX keeps a log at `/switch/ankinx/ankinx.log` on the SD card; the previous
@@ -207,6 +229,12 @@ Anki's source (26.09.3) is expected, unmodified, in
 `source_code/anki-26.09.3`; `tools/sync.sh` applies `switch/patches/anki.patch`
 to the copy that is built. `bash switch/test_core_host.sh` runs the backend's
 tests on Linux, including under an emulation of the Switch's filesystem rules.
+
+The FSRS-7 edition is built from the `experimental/fsrs7` branch, which pins
+JSchoreels/anki instead (see `tools/env.sh` and
+[docs/fsrs7-plan.md](https://github.com/lukasheber/AnkiNX/blob/experimental/fsrs7/docs/fsrs7-plan.md)
+there). Changes that work with official Anki are made on `main` and merged into
+it.
 
 | Path | Contents |
 | --- | --- |
