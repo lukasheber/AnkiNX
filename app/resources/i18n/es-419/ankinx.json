@@ -18,7 +18,6 @@
     "due_one": "{} tarjeta pendiente",
     "due_other": "{} tarjetas pendientes",
     "due_none": "Ninguna tarjeta pendiente",
-    "rwkv_ready": "RWKV está listo: ahora elige los repasos de los preajustes RWKV",
     "estimate": "unos {} min",
     "estimate_short": "menos de 1 min",
     "streak_one": "{} día seguido",
@@ -104,7 +103,8 @@
     "advance_answer_reminder": "Es hora de responder",
     "rwkv_wait_title": "RWKV se está preparando",
     "rwkv_wait": "Este mazo usa RWKV. El estudio empieza solo cuando RWKV haya leído tu historial de repasos ({} repasos); la primera vez puede tardar unos minutos.",
-    "rwkv_wait_start": "Este mazo usa RWKV. El estudio empieza solo cuando RWKV haya leído tu historial de repasos; la primera vez puede tardar unos minutos."
+    "rwkv_wait_start": "Este mazo usa RWKV. El estudio empieza solo cuando RWKV haya leído tu historial de repasos; la primera vez puede tardar unos minutos.",
+    "loading": "Cargando la siguiente tarjeta…"
   },
   "overview": {
     "new": "Nuevas",

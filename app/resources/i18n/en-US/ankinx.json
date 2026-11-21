@@ -18,7 +18,6 @@
     "due_one": "{} card due",
     "due_other": "{} cards due",
     "due_none": "No cards due",
-    "rwkv_ready": "RWKV is ready: it now picks the reviews of RWKV presets",
     "estimate": "about {} min",
     "estimate_short": "under 1 min",
     "streak_one": "{}-day streak",
@@ -104,7 +103,8 @@
     "advance_answer_reminder": "Time to answer",
     "rwkv_wait_title": "RWKV is getting ready",
     "rwkv_wait": "This deck uses RWKV. Studying starts by itself once RWKV has read your review history ({} reviews), which can take a few minutes the first time.",
-    "rwkv_wait_start": "This deck uses RWKV. Studying starts by itself once RWKV has read your review history, which can take a few minutes the first time."
+    "rwkv_wait_start": "This deck uses RWKV. Studying starts by itself once RWKV has read your review history, which can take a few minutes the first time.",
+    "loading": "Loading the next card…"
   },
   "overview": {
     "new": "New",

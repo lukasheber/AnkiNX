@@ -388,6 +388,11 @@ void ReviewerActivity::loadNext()
     state = State::Loading;
     audio::stop();
     bool night = nightMode();
+    int generation = ++loadGeneration;
+    brls::delay(400, [this, token = alive, generation] {
+        if (*token && state == State::Loading && generation == loadGeneration && !rwkvWaiting)
+            showLoading();
+    });
     brls::async([this, night, token = alive] {
         try
         {
@@ -396,8 +401,9 @@ void ReviewerActivity::loadNext()
             brls::Logger::info("next card from the collection: {} ms",
                                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
             onUi(token, [this, next] {
-                card = next;
-                if (card.contains("rwkv_loading"))
+                card        = next;
+                rwkvWaiting = card.contains("rwkv_loading");
+                if (rwkvWaiting)
                     showRwkvWait(card["rwkv_loading"]);
                 else if (card["done"].get<bool>())
                     showDone();
@@ -1245,6 +1251,21 @@ void ReviewerActivity::showDone()
     easeButtons->setVisibility(brls::Visibility::GONE);
     showCardState();
     refreshControls();
+}
+
+// While a slow next_card runs: say so, instead of a blank page or the card
+// just answered (whose buttons would look usable).
+void ReviewerActivity::showLoading()
+{
+    std::string body = "<div style=\"text-align:center; margin-top:140px; font-size:24px\">" +
+                       escapeHtml("ankinx/review/loading"_i18n) + "</div>";
+    ++timerGeneration;
+    timerLabel->setVisibility(brls::Visibility::GONE);
+    card["css"]        = "";
+    card["body_class"] = nightMode() ? "card nightMode" : "card";
+    cardView->setHtml(documentFor(body));
+    showAnswerBox->setVisibility(brls::Visibility::GONE);
+    easeButtons->setVisibility(brls::Visibility::GONE);
 }
 
 void ReviewerActivity::showRwkvWait(const anki::json& status)

@@ -580,7 +580,9 @@ void DeckPickerActivity::pollRwkv()
                 brls::Logger::info("RWKV: {}", status.dump());
                 if (state == "ready")
                 {
-                    brls::Application::notify("ankinx/decks/rwkv_ready"_i18n);
+                    // No notice: studying an RWKV deck waits for this on its
+                    // own (the study screen's wait moves on by itself), and a
+                    // sync reloads the state each time.
                     refresh();
                 }
                 else if (state == "off" && status.value("reason", "") != "not_used")

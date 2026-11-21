@@ -18,7 +18,6 @@
     "due_one": "{} cartão pendente",
     "due_other": "{} cartões pendentes",
     "due_none": "Nenhum cartão pendente",
-    "rwkv_ready": "O RWKV está pronto: agora ele escolhe as revisões das predefinições RWKV",
     "estimate": "cerca de {} min",
     "estimate_short": "menos de 1 min",
     "streak_one": "{} dia seguido",
@@ -104,7 +103,8 @@
     "advance_answer_reminder": "Hora de responder",
     "rwkv_wait_title": "O RWKV está se preparando",
     "rwkv_wait": "Este baralho usa o RWKV. O estudo começa sozinho quando o RWKV terminar de ler seu histórico de revisões ({} revisões); na primeira vez pode levar alguns minutos.",
-    "rwkv_wait_start": "Este baralho usa o RWKV. O estudo começa sozinho quando o RWKV terminar de ler seu histórico de revisões; na primeira vez pode levar alguns minutos."
+    "rwkv_wait_start": "Este baralho usa o RWKV. O estudo começa sozinho quando o RWKV terminar de ler seu histórico de revisões; na primeira vez pode levar alguns minutos.",
+    "loading": "Carregando o próximo cartão…"
   },
   "overview": {
     "new": "Novos",
