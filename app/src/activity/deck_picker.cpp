@@ -394,7 +394,10 @@ void DeckPickerActivity::openCollection()
     brls::async([this, locale] {
         try
         {
-            anki::json langs = { locale, locale.substr(0, locale.find('-')), "en" };
+            // (Anki reads "zh" and "zh-Hans" as Simplified Chinese; the console's
+            // Traditional Chinese is Anki's zh-TW)
+            std::string ankiLocale = locale.rfind("zh-Hant", 0) == 0 ? "zh-TW" : locale;
+            anki::json langs       = { ankiLocale, locale.substr(0, locale.find('-')), "en" };
             anki::call("init", { { "base_dir", anki::dataDir() }, { "langs", langs } });
             anki::json status = anki::call("open");
             brls::sync([this, status] {

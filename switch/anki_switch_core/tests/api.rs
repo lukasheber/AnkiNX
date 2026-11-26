@@ -517,6 +517,19 @@ fn study_flow() {
     ok("select_deck", json!({ "deck_id": deck_id(&decks, "Typing") }));
     let card = ok("next_card", json!({}));
     assert_eq!(card["type_answer"], true);
+    // The note types and card types (Settings › Study › Hiragana keyboard),
+    // and which this card is.
+    let types = ok("card_types", json!({}))["notetypes"].clone();
+    let typing_type = types
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|nt| nt["name"] == "Basic (type in the answer)")
+        .unwrap();
+    assert_eq!(typing_type["templates"], json!([{ "ord": 0, "name": "Card 1", "typing": true }]));
+    let basic = types.as_array().unwrap().iter().find(|nt| nt["name"] == "Basic").unwrap();
+    assert_eq!(basic["templates"][0]["typing"], false);
+    assert_eq!((card["notetype_id"].clone(), card["template_ord"].clone()), (typing_type["id"].clone(), json!(0)));
     let question = card["question"].as_str().unwrap();
     assert!(!question.contains("[[type:"), "{question}");
     assert!(question.contains(card["typed_marker"].as_str().unwrap()), "{question}");

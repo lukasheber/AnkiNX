@@ -55,10 +55,11 @@ def visitor_text() -> dict:
     return {k: {"name": milestones.NAMES[k], "stayed": milestones.STAYED[k], "came": milestones.CAME[k]} for k in milestones.NAMES}
 
 
-# The languages the app speaks that the add-on is translated into (en-US, es, pt-BR, ja; the app's
+# The languages the app speaks that the add-on is translated into (en-US, es, pt-BR, ja, zh-CN for
+# zh-Hans; the app's
 # es-419 and pt take es and pt-BR), and the words its Python writes that the page now writes: the
 # journal, the events' lines and the animals' names
-LANGUAGES = ("en", "es", "pt-BR", "ja")
+LANGUAGES = ("en", "es", "pt-BR", "ja", "zh-CN")
 PYTHON_WORDS = ("journal.", "events.", "visitor.")
 
 

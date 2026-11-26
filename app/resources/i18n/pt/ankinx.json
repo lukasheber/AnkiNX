@@ -391,7 +391,11 @@
     "backend": "Núcleo do Anki",
     "data_folder": "Pasta de dados",
     "licence": "Licença",
-    "source": "Código-fonte"
+    "source": "Código-fonte",
+    "hiragana": "Teclado hiragana",
+    "hiragana_count": "{} tipos de cartão",
+    "hiragana_note": "As respostas escritas dos tipos de cartão ativados aqui são em hiragana: escreva em romaji e ele passa a hiragana enquanto escreve (ka → か, nn → ん, kka → っか), como no WaniKani. Maiúsculas dão katakana. No teclado do sistema, o romaji passa a hiragana ao confirmar.",
+    "hiragana_typed": "resposta escrita"
   },
   "controls": {
     "layout": "Layout do controle",
@@ -420,7 +424,8 @@
     "delete": "Apagar",
     "space": "Espaço",
     "done": "Concluído",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "hiragana": "Hiragana"
   },
   "login": {
     "title": "Entrar no AnkiWeb",

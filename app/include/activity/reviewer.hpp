@@ -149,6 +149,8 @@ class ReviewerActivity : public brls::Activity
     // Each loadNext(): a slow one (a queue rebuilt after a sync or an options
     // change) shows "Loading" rather than a blank page or the last card.
     int loadGeneration = 0;
+    // Whether the card's typed answers are hiragana (Settings › Study).
+    bool kanaCard() const;
     void showLoading();
     // The answer timer: when the card was shown, and its tick chain.
     std::chrono::steady_clock::time_point shownAt;

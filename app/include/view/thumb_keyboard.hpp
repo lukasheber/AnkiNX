@@ -11,6 +11,9 @@
 // stacked at one edge for one thumb. Latin letters, digits and punctuation;
 // holding a letter offers its accented forms (é, ñ, ü...); no prediction.
 //
+// With `kana`, letters are typed as romaji and become hiragana as they are
+// typed (util/kana: "ka" か, "nn" ん; capitals give katakana).
+//
 // It opens over the current screen, which stays visible (the card is still
 // readable between the halves). Each finger is followed on its own, so the
 // thumbs can overlap: a key types when its finger lifts, or as soon as the
@@ -31,9 +34,10 @@ class ThumbKeyboard : public brls::View
     // onDone runs with the text after Enter or +, not when cancelled (as the
     // system keyboard). maxLength counts characters.
     static void open(Layout layout, const std::string& prompt, const std::string& initial, int maxLength,
-                     Callback onDone);
+                     Callback onDone, bool kana = false);
 
-    ThumbKeyboard(Layout layout, std::string prompt, std::string initial, int maxLength, Callback onDone);
+    ThumbKeyboard(Layout layout, std::string prompt, std::string initial, int maxLength, Callback onDone,
+                  bool kana = false);
 
     void draw(NVGcontext* vg, float x, float y, float width, float height, brls::Style style,
               brls::FrameContext* ctx) override;
@@ -111,6 +115,8 @@ class ThumbKeyboard : public brls::View
     Layout layout;
     std::string prompt, text;
     int maxLength;
+    // Romaji typed as hiragana (see above).
+    bool kana = false;
     Callback onDone;
 
     bool symbols = false;

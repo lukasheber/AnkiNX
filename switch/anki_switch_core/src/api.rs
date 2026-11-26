@@ -491,6 +491,7 @@ pub fn call(cmd: &str, args: &str) -> ApiResult {
         "redo" => state.redo(),
         "card_action" => state.card_action(&args),
         "card_info" => state.card_info(&args),
+        "card_types" => state.card_types(),
         "login" => state.login(&args),
         "logout" => state.logout(),
         "sync" => state.sync(),
@@ -1314,6 +1315,35 @@ impl State {
         Ok(json!({}))
     }
 
+    /// `card_types`: the note types and their card types, by name (Settings ›
+    /// Study › Hiragana keyboard). `typing`: the card type's question asks for
+    /// a typed answer ({{type:...}}) or has a text box of its own (<input>).
+    fn card_types(&mut self) -> ApiResult {
+        let tr = self.tr.clone();
+        let mut notetypes = self.col()?.get_all_notetypes().map_err(|e| ApiError::anki(e, &tr))?;
+        notetypes.sort_by_key(|nt| nt.name.to_lowercase());
+        let list: Vec<Value> = notetypes
+            .iter()
+            .map(|nt| {
+                let templates: Vec<Value> = nt
+                    .templates
+                    .iter()
+                    .enumerate()
+                    .map(|(ord, t)| {
+                        let front = &t.config.q_format;
+                        json!({
+                            "ord": ord,
+                            "name": t.name,
+                            "typing": front.contains("{{type:") || front.to_lowercase().contains("<input"),
+                        })
+                    })
+                    .collect();
+                json!({ "id": nt.id.0, "name": nt.name, "templates": templates })
+            })
+            .collect();
+        Ok(json!({ "notetypes": list }))
+    }
+
     /// `custom_study_defaults {deck_id}`: what Anki's custom study dialog
     /// starts with: how much to extend today's limits, how many cards are
     /// available beyond them, and the deck's tags.
@@ -1677,6 +1707,9 @@ impl State {
         }
 
         let type_answer = typing.is_some();
+        // Which note type and card type this is (the app's hiragana keyboard
+        // is chosen per card type).
+        let notetype_id = col.storage.get_note(note_id).map_err(err)?.map_or(0, |n| n.notetype_id.0);
         self.shown = Some(Shown {
             card_id,
             states: card.states,
@@ -1710,6 +1743,8 @@ impl State {
             // answer side for what was typed with `type_answer`.
             "type_answer": type_answer,
             "typed_marker": TYPED_MARKER,
+            "notetype_id": notetype_id,
+            "template_ord": ord,
             "css": render.css,
             "body_class": body_class,
             "question_av": av_json(&q_av),

@@ -910,7 +910,8 @@ void ReviewerActivity::typeIntoField(const std::string& description)
                              return;
                          script->typed(serial, text);
                          afterScript();
-                     });
+                     },
+                     kanaCard());
 }
 
 // One pending delay for the page's next timer; a later call replaces it.
@@ -1039,12 +1040,22 @@ void ReviewerActivity::typeAnswer()
 {
     if (state != State::Question || !card.value("type_answer", false))
         return;
-    keyboard::answer("ankinx/review/your_answer"_i18n, typed, 500, [this, token = alive](const std::string& text) {
-        if (!*token || state != State::Question)
-            return;
-        typed = text;
-        showAnswer();
-    });
+    keyboard::answer(
+        "ankinx/review/your_answer"_i18n, typed, 500,
+        [this, token = alive](const std::string& text) {
+            if (!*token || state != State::Question)
+                return;
+            typed = text;
+            showAnswer();
+        },
+        kanaCard());
+}
+
+// Whether this card's typed answers are hiragana (its card type is chosen in
+// Settings › Study › Hiragana keyboard).
+bool ReviewerActivity::kanaCard() const
+{
+    return settings::kanaCardType(card.value("notetype_id", (int64_t)0), card.value("template_ord", 0));
 }
 
 void ReviewerActivity::showAnswer()
