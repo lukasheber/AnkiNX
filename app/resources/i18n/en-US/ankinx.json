@@ -431,7 +431,11 @@
     "backend": "Anki backend",
     "data_folder": "Data folder",
     "licence": "Licence",
-    "source": "Source code"
+    "source": "Source code",
+    "hiragana": "Hiragana keyboard",
+    "hiragana_count": "{} card types",
+    "hiragana_note": "Typed answers of the card types switched on here are hiragana: type romaji and it becomes hiragana as you type (ka → か, nn → ん, kka → っか), as in WaniKani. Capitals give katakana. With the system keyboard, romaji becomes hiragana when you confirm.",
+    "hiragana_typed": "typed answer"
   },
   "controls": {
     "layout": "Controller layout",
@@ -460,7 +464,8 @@
     "delete": "Delete",
     "space": "Space",
     "done": "Done",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "hiragana": "Hiragana"
   },
   "login": {
     "title": "Log in to AnkiWeb",

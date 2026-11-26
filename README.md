@@ -59,7 +59,7 @@ computer and the other way round.
     </td>
     <td valign="top">
       <h3>🎮 Made for the Switch</h3>
-      Answer with the shoulder buttons, play with one Joy-Con held sideways, rebind buttons, use touch and swipes in handheld mode, type answers on a keyboard under your thumbs, scribble on the whiteboard, and get larger text on a TV.
+      Answer with the shoulder buttons, play with one Joy-Con held sideways, rebind buttons, use touch and swipes in handheld mode, type answers on a keyboard under your thumbs (romaji to hiragana for Japanese readings), scribble on the whiteboard, and get larger text on a TV.
     </td>
   </tr>
   <tr>
@@ -69,7 +69,7 @@ computer and the other way round.
     </td>
     <td valign="top">
       <h3>🛟 Safe and up to date</h3>
-      Backups you can restore on the console, Anki's Check Database, light and dark themes, four languages (English, Portuguese, Spanish, Japanese) and updates from inside the app.
+      Backups you can restore on the console, Anki's Check Database, light and dark themes, five languages (English, Portuguese, Spanish, Japanese, Simplified Chinese) and updates from inside the app.
     </td>
   </tr>
   <tr>

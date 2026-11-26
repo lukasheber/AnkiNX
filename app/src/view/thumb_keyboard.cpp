@@ -1,5 +1,7 @@
 #include "view/thumb_keyboard.hpp"
 
+#include "util/kana.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -223,18 +225,20 @@ class FingerRecognizer : public brls::GestureRecognizer
 } // namespace
 
 void ThumbKeyboard::open(Layout layout, const std::string& prompt, const std::string& initial, int maxLength,
-                         Callback onDone)
+                         Callback onDone, bool kana)
 {
-    auto* keyboard = new ThumbKeyboard(layout, prompt, initial, maxLength, std::move(onDone));
+    auto* keyboard = new ThumbKeyboard(layout, prompt, initial, maxLength, std::move(onDone), kana);
     // No fade in: the first touches would be lost while it plays.
     brls::Application::pushActivity(new brls::Activity(keyboard), brls::TransitionAnimation::NONE);
 }
 
-ThumbKeyboard::ThumbKeyboard(Layout layout, std::string prompt, std::string initial, int maxLength, Callback onDone)
+ThumbKeyboard::ThumbKeyboard(Layout layout, std::string prompt, std::string initial, int maxLength, Callback onDone,
+                             bool kana)
     : layout(layout)
     , prompt(std::move(prompt))
     , text(std::move(initial))
     , maxLength(maxLength > 0 ? maxLength : 500)
+    , kana(kana)
     , onDone(std::move(onDone))
 {
     this->setFocusable(true);
@@ -424,7 +428,18 @@ void ThumbKeyboard::insert(const std::string& s)
 {
     if (closing || characters(text) + characters(s) > (size_t)maxLength)
         return;
-    text += s;
+    if (!kana)
+    {
+        text += s;
+        return;
+    }
+    // Hiragana: a letter converts the romaji typed so far as far as it can;
+    // anything else (space, digits, punctuation) finishes it first.
+    bool romaji = s.size() == 1 && (std::isalpha((unsigned char)s[0]) || s[0] == '-' || s[0] == '\'');
+    if (romaji)
+        text = kana::convertTail(text + s, false);
+    else
+        text = kana::convertTail(text, true) + s;
 }
 
 void ThumbKeyboard::deleteLast()
@@ -629,7 +644,8 @@ void ThumbKeyboard::finishClose()
 {
     closePending = false;
     Callback done = closeConfirms ? onDone : nullptr;
-    std::string typed = text;
+    // (a romaji ending such as a lone "n" is finished: ん)
+    std::string typed = kana ? kana::convertTail(text, true) : text;
     // Faded out, so the view is deleted after this touch or button has been
     // handled (it may be on the stack below), and with inputs blocked.
     brls::Application::popActivity(brls::TransitionAnimation::FADE);
@@ -826,6 +842,10 @@ void ThumbKeyboard::drawField(NVGcontext* vg)
                         promptRect.getHeight());
     label(vg, promptRect.getMinX() + 4, promptRect.getMidY(), prompt, 18, dim, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     nvgRestore(vg);
+    // Hiragana mode, at the prompt's end (over it when the prompt is long).
+    if (kana)
+        label(vg, promptRect.getMaxX() - 4, promptRect.getMidY(), "ankinx/keyboard/hiragana"_i18n, 18,
+              theme("brls/highlight/color1"), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
 
     const brls::Rect& r = fieldRect;
     nvgBeginPath(vg);

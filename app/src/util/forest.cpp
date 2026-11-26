@@ -259,9 +259,11 @@ std::string grow(const Scenery& scenery)
     anki::json data = anki::call("forest", args);
     // the page's words in the app's language, where Memory Forest is translated into it
     std::string locale = brls::Application::getLocale();
-    std::string lang   = locale.rfind("pt", 0) == 0 ? "pt-BR" : locale.rfind("es", 0) == 0 ? "es"
-                         : locale.rfind("ja", 0) == 0 ? "ja"
-                                                     : "en";
+    std::string lang   = locale.rfind("pt", 0) == 0      ? "pt-BR"
+                         : locale.rfind("es", 0) == 0      ? "es"
+                         : locale.rfind("ja", 0) == 0      ? "ja"
+                         : locale.rfind("zh-Hans", 0) == 0 ? "zh-CN"
+                                                           : "en";
     std::ifstream words(std::string(BRLS_ASSET("forest/i18n/")) + lang + ".json");
     anki::json i18n = anki::json::parse(words, nullptr, false);
     if (i18n.is_object())

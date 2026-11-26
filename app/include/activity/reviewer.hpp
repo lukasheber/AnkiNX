@@ -152,6 +152,8 @@ class ReviewerActivity : public brls::Activity
     // Each loadNext(): a slow one (a queue rebuilt after a sync, RWKV's
     // scoring) shows "Loading" rather than a blank page or the last card.
     int loadGeneration = 0;
+    // Whether the card's typed answers are hiragana (Settings › Study).
+    bool kanaCard() const;
     void showLoading();
     // The RWKV wait screen is up (its re-polls keep it, without "Loading").
     bool rwkvWaiting = false;

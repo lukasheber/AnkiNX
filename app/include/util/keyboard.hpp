@@ -21,7 +21,11 @@ void password(const std::string& prompt, int maxLength, Callback onText);
 
 // Text typed as an answer (type-answer cards, text fields in card
 // templates): the thumb keyboard chosen in Settings > Study (view/
-// thumb_keyboard) in handheld mode, else the system keyboard.
-void answer(const std::string& prompt, const std::string& initial, int maxLength, Callback onText);
+// thumb_keyboard) in handheld mode, else the system keyboard. With `kana`
+// (card types chosen in Settings > Study > Hiragana keyboard), romaji
+// becomes hiragana: as it is typed on the thumb keyboard, when it is
+// confirmed on the system keyboard.
+void answer(const std::string& prompt, const std::string& initial, int maxLength, Callback onText,
+            bool kana = false);
 
 } // namespace keyboard

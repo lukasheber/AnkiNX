@@ -158,6 +158,71 @@ void openForestDecks(std::function<void()> changed)
     brls::Application::pushActivity(new brls::Activity(frame));
 }
 
+// How many card types are typed in hiragana (Settings › Study).
+std::string hiraganaText()
+{
+    anki::json chosen = settings::get("kana_card_types");
+    size_t count      = chosen.is_array() ? chosen.size() : 0;
+    return count == 0 ? "hints/off"_i18n : brls::getStr("ankinx/settings/hiragana_count", std::to_string(count));
+}
+
+// The card types whose typed answers are hiragana: each note type of the
+// collection with a switch per card type. Note types that ask for typed
+// answers come first, and those card types say so. `changed` runs after
+// each change.
+void openHiraganaCardTypes(std::function<void()> changed)
+{
+    anki::json notetypes;
+    try
+    {
+        notetypes = anki::call("card_types")["notetypes"];
+    }
+    catch (const anki::Error& e)
+    {
+        brls::Application::notify(e.what());
+        return;
+    }
+    brls::ScrollingFrame* scroller = nullptr;
+    brls::Box* box                 = column(&scroller);
+    auto* note                     = new brls::Label();
+    note->setFontSize(16);
+    note->setMarginBottom(12);
+    note->setText("ankinx/settings/hiragana_note"_i18n);
+    box->addView(note);
+    auto typing = [](const anki::json& nt) {
+        for (const auto& t : nt["templates"])
+            if (t.value("typing", false))
+                return true;
+        return false;
+    };
+    for (bool typed : { true, false })
+        for (const auto& nt : notetypes)
+        {
+            if (typing(nt) != typed)
+                continue;
+            box->addView(header(nt.value("name", "")));
+            int64_t id = nt.value("id", (int64_t)0);
+            for (const auto& t : nt["templates"])
+            {
+                int ord           = t.value("ord", 0);
+                std::string title = t.value("name", "");
+                if (t.value("typing", false))
+                    title += "  ·  " + "ankinx/settings/hiragana_typed"_i18n;
+                auto* cell = new brls::BooleanCell();
+                cell->init(title, settings::kanaCardType(id, ord), [id, ord, changed](bool on) {
+                    settings::setKanaCardType(id, ord, on);
+                    changed();
+                });
+                box->addView(cell);
+            }
+        }
+    // (pushed with its cells in it, so the first one has the focus)
+    auto* frame = new brls::AppletFrame(scroller);
+    frame->setTitle("ankinx/settings/hiragana"_i18n);
+    app::hideStatus(frame);
+    brls::Application::pushActivity(new brls::Activity(frame));
+}
+
 } // namespace
 
 SettingsActivity::SettingsActivity() = default;
@@ -444,6 +509,15 @@ brls::View* SettingsActivity::studyTab()
     keyboardNote->setTextColor(brls::Application::getTheme()["brls/text_disabled"]);
     keyboardNote->setText("ankinx/settings/typing_keyboard_note"_i18n);
     box->addView(keyboardNote);
+    // Card types typed in hiragana (romaji converted as it is typed).
+    auto* hiragana = new brls::DetailCell();
+    hiragana->setText("ankinx/settings/hiragana"_i18n);
+    hiragana->setDetailText(hiraganaText());
+    hiragana->registerClickAction([hiragana](brls::View*) {
+        openHiraganaCardTypes([hiragana] { hiragana->setDetailText(hiraganaText()); });
+        return true;
+    });
+    box->addView(hiragana);
 
     // Docked: card text a size up by default, for reading from the couch.
     box->addView(header("ankinx/settings/tv"_i18n));
@@ -747,17 +821,18 @@ brls::View* SettingsActivity::aboutTab()
 
     // The language (also of Anki's own messages): the console's, or one of
     // the translations. borealis reads it at start, so it applies after a restart.
-    static const char* CODES[] = { "", "en-US", "pt-BR", "es", "ja" };
+    static const char* CODES[] = { "", "en-US", "pt-BR", "es", "ja", "zh-Hans" };
+    const int count            = (int)(sizeof CODES / sizeof CODES[0]);
     std::vector<std::string> names = { "ankinx/settings/language_auto"_i18n, "English", "Português (Brasil)", "Español",
-                                       "日本語" };
+                                       "日本語", "简体中文" };
     anki::json chosen = settings::get("language");
     int selected      = 0;
-    for (int i = 1; i < 5; i++)
+    for (int i = 1; i < count; i++)
         if (chosen.is_string() && chosen.get<std::string>() == CODES[i])
             selected = i;
     auto* language = new brls::SelectorCell();
-    language->init("ankinx/settings/language"_i18n, names, selected, [](int index) {
-        if (index < 0 || index > 4)
+    language->init("ankinx/settings/language"_i18n, names, selected, [count](int index) {
+        if (index < 0 || index >= count)
             return;
         settings::set("language", index ? anki::json(CODES[index]) : anki::json());
         brls::Application::notify("ankinx/settings/language_restart"_i18n);

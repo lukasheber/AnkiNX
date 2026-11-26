@@ -1,12 +1,15 @@
 #include "util/keyboard.hpp"
 
 #include "app.hpp"
+#include "util/kana.hpp"
 #include "util/settings.hpp"
 #include "view/thumb_keyboard.hpp"
 
 #include <borealis.hpp>
 #include <utility>
 #include <vector>
+
+using namespace brls::literals;
 
 #ifdef __SWITCH__
 #include <switch.h>
@@ -77,7 +80,7 @@ void password(const std::string& prompt, int maxLength, Callback onText)
 namespace keyboard
 {
 
-void answer(const std::string& prompt, const std::string& initial, int maxLength, Callback onText)
+void answer(const std::string& prompt, const std::string& initial, int maxLength, Callback onText, bool kana)
 {
     anki::json choice = settings::get("typing_keyboard");
     if (app::isHandheld() && choice.is_string() && choice != "system")
@@ -85,10 +88,18 @@ void answer(const std::string& prompt, const std::string& initial, int maxLength
         ThumbKeyboard::open(choice == "thumb_right"  ? ThumbKeyboard::Layout::RightThumb
                             : choice == "thumb_left" ? ThumbKeyboard::Layout::LeftThumb
                                                      : ThumbKeyboard::Layout::Split,
-                            prompt, initial, maxLength, std::move(onText));
+                            prompt, initial, maxLength, std::move(onText), kana);
         return;
     }
-    text(prompt, initial, maxLength, std::move(onText));
+    if (!kana)
+    {
+        text(prompt, initial, maxLength, std::move(onText));
+        return;
+    }
+    // The system keyboard doesn't convert: romaji typed there becomes
+    // hiragana when confirmed.
+    text(prompt + " (" + "ankinx/keyboard/hiragana"_i18n + ")", initial, maxLength,
+         [onText](const std::string& typed) { onText(kana::toKana(typed)); });
 }
 
 } // namespace keyboard

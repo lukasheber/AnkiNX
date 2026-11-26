@@ -59,6 +59,12 @@ std::string forestStart();
 bool forestKeepEarlier();
 bool forestKeepSuspended();
 
+// The card types whose typed answers are hiragana (Settings › Study ›
+// Hiragana keyboard): romaji typed there becomes hiragana. Per profile (the
+// ids are the collection's).
+bool kanaCardType(int64_t notetype, int ord);
+void setKanaCardType(int64_t notetype, int ord, bool on);
+
 // Any other setting (null when unset), e.g. "controls" (util/controls.cpp).
 anki::json get(const std::string& key);
 void set(const std::string& key, anki::json value);

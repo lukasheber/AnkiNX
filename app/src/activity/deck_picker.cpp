@@ -394,7 +394,10 @@ void DeckPickerActivity::openCollection()
     brls::async([this, locale] {
         try
         {
-            anki::json langs = { locale, locale.substr(0, locale.find('-')), "en" };
+            // (Anki reads "zh" and "zh-Hans" as Simplified Chinese; the console's
+            // Traditional Chinese is Anki's zh-TW)
+            std::string ankiLocale = locale.rfind("zh-Hant", 0) == 0 ? "zh-TW" : locale;
+            anki::json langs       = { ankiLocale, locale.substr(0, locale.find('-')), "en" };
             // RWKV's models are in the app's resources (romfs on the console);
             // Deck options > RWKV > Advanced: the model ("rwkv_size": "small", the
             // default, or "tiny") and "one model for both schedulers".

@@ -431,7 +431,11 @@
     "backend": "Ankiのバックエンド",
     "data_folder": "データフォルダー",
     "licence": "ライセンス",
-    "source": "ソースコード"
+    "source": "ソースコード",
+    "hiragana": "ひらがなキーボード",
+    "hiragana_count": "{} 個のカードタイプ",
+    "hiragana_note": "ここでオンにしたカードタイプでは、入力した答えがひらがなになります。WaniKani と同じく、ローマ字で入力するとその場でひらがなに変換されます（ka → か、nn → ん、kka → っか）。大文字はカタカナになります。システムのキーボードでは、確定したときにひらがなに変換されます。",
+    "hiragana_typed": "入力して答える"
   },
   "controls": {
     "layout": "コントローラーの配置",
@@ -460,7 +464,8 @@
     "delete": "削除",
     "space": "スペース",
     "done": "決定",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "hiragana": "ひらがな"
   },
   "login": {
     "title": "AnkiWebにログイン",

@@ -107,6 +107,7 @@ template JavaScript, then this list, taken in groups of related features
 | Audio options: autoplay on/off, replay question only, playback speed | 🔶 | "Don't play audio automatically" honoured; "Skip question when replaying answer" applied (replay on the answer side plays the question's audio first unless set); no playback speed (SDL_mixer can't change it) |
 | Redo, multiple undo levels shown | ✅ | Redo in the card menu (Anki's redo stack) |
 | Rumble on answer (HD Rumble) | ✅ | Settings > Study, off by default; a 60 ms pulse on the handheld or player-1 controller. Needs an on-console check |
+| Hiragana keyboard for Japanese readings (WaniKani-style typed answers) | ✅ | Settings > Study > Hiragana keyboard: card types (per note type) whose typed answers are hiragana; romaji converts as it is typed on the thumb keyboard (util/kana: WanaKana's IME rules, capitals give katakana), and on confirming with the system keyboard. Needs an on-console check |
 
 ### Around studying
 
@@ -130,7 +131,7 @@ template JavaScript, then this list, taken in groups of related features
 
 | Feature | Priority | Notes |
 | --- | --- | --- |
-| Interface translations (Portuguese, Spanish, Japanese, ...) | ✅ | Portuguese (Brazil; also used for Portugal), Spanish (also Latin America), Japanese; follows the console, or Settings > About > Language (after a restart). Anki's own strings come from rslib |
+| Interface translations (Portuguese, Spanish, Japanese, Chinese, ...) | ✅ | Portuguese (Brazil; also used for Portugal), Spanish (also Latin America), Japanese, Simplified Chinese (asked for in issue #1; Memory Forest in Chinese too); follows the console, or Settings > About > Language (after a restart). Anki's own strings come from rslib |
 | Docked/TV layout: larger card text and buttons at 1080p | ✅ | borealis already renders at 1080p docked; card text is scaled up on a TV (Settings > Study > On a TV: 100/125/150%, default 125%), on top of the deck's zoom, switching live on dock/undock |
 | In-app theme choice (light/dark/follow system) | ✅ | Settings > About > Theme: same as the console, light or dark; applies at once |
 | Resume after sleep: keep the current card, sync on wake if automatic sync is on | ✅ | The study screen stays on its card; 5 s after waking (Wi-Fi back) the deck list refreshes and syncs, or when you return to it. Needs an on-console check |

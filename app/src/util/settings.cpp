@@ -27,8 +27,8 @@ anki::json& values()
 // The settings that go with a collection (its decks, its account): each
 // profile has its own. The first profile's are with the others, where they
 // all were before there were profiles; the rest are in "profiles", by id.
-const char* const PER_PROFILE[] = { "sync_server",         "zoom",                 "forest_excluded", "forest_start",
-                                    "forest_keep_earlier", "forest_keep_suspended" };
+const char* const PER_PROFILE[] = { "sync_server",         "zoom",                  "forest_excluded", "forest_start",
+                                    "forest_keep_earlier", "forest_keep_suspended", "kana_card_types" };
 std::string profile;
 
 bool perProfile(const std::string& key)
@@ -150,6 +150,40 @@ std::vector<int64_t> forestExcluded()
 void setForestExcluded(const std::vector<int64_t>& decks)
 {
     slot("forest_excluded") = decks;
+    save();
+}
+
+// Card types typed in hiragana: "<note type id>:<card type ord>".
+namespace
+{
+std::string kanaKey(int64_t notetype, int ord) { return std::to_string(notetype) + ":" + std::to_string(ord); }
+} // namespace
+
+bool kanaCardType(int64_t notetype, int ord)
+{
+    const anki::json& value = in("kana_card_types").value("kana_card_types", anki::json::array());
+    if (!value.is_array())
+        return false;
+    std::string key = kanaKey(notetype, ord);
+    for (const auto& entry : value)
+        if (entry.is_string() && entry.get<std::string>() == key)
+            return true;
+    return false;
+}
+
+void setKanaCardType(int64_t notetype, int ord, bool on)
+{
+    anki::json value = in("kana_card_types").value("kana_card_types", anki::json::array());
+    if (!value.is_array())
+        value = anki::json::array();
+    std::string key = kanaKey(notetype, ord);
+    anki::json kept = anki::json::array();
+    for (const auto& entry : value)
+        if (entry.is_string() && entry.get<std::string>() != key)
+            kept.push_back(entry);
+    if (on)
+        kept.push_back(key);
+    slot("kana_card_types") = kept;
     save();
 }
 
