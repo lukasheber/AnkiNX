@@ -8,6 +8,52 @@ features are still arriving). The version lives in `VERSION`: the `.nro`
 How to release: update `VERSION` and the crate version, add a section here,
 build, then commit and tag (`git tag v0.2.0`).
 
+## 0.12.1-fsrs7 (2026-11-26, experimental)
+
+The FSRS-7 edition follows the regular 0.12.1: Simplified Chinese and a
+hiragana keyboard.
+
+### Added
+
+- **Simplified Chinese.** **Settings › Language › 简体中文**, including the
+  edition's RWKV and FSRS-7 options. Anki's own text (deck options,
+  scheduling messages) follows in Simplified Chinese.
+- **Hiragana keyboard.** **Settings › Study › Hiragana keyboard** chooses
+  the card types whose typed answers are hiragana, for example the reading
+  cards of a WaniKani-style deck. Type romaji and it becomes hiragana as you
+  type (ka → か, nn → ん, kka → っか); capitals give katakana. Other card
+  types in the same deck keep the normal keyboard.
+
+### How to update
+
+In AnkiNX, open **Settings › About › Updates**, or copy `AnkiNX-fsrs7.nro`
+to `/switch/` on the SD card, replacing the previous one.
+
+## 0.12.1 (2026-11-26)
+
+AnkiNX in Simplified Chinese, and a hiragana keyboard for typed readings.
+
+### Added
+
+- **Simplified Chinese.** **Settings › Language › 简体中文**. Anki's own
+  text (deck options, scheduling messages) follows in Simplified Chinese.
+- **Hiragana keyboard.** **Settings › Study › Hiragana keyboard** chooses
+  the card types whose typed answers are hiragana, for example the reading
+  cards of a WaniKani-style deck. Type romaji and it becomes hiragana as you
+  type (ka → か, nn → ん, kka → っか); capitals give katakana. Other card
+  types in the same deck keep the normal keyboard.
+
+### Good to know
+
+- With the system keyboard, romaji becomes hiragana when you confirm.
+- **Using the FSRS-7 edition (`AnkiNX-fsrs7.nro`)?** Install
+  **0.12.1-fsrs7** instead. From 0.12.0-fsrs7 on, the app offers it by
+  itself.
+
+### How to update
+
+In AnkiNX, open **Settings › About › Updates**, or copy `AnkiNX.nro` to
+`/switch/` on your SD card.
 ## 0.12.0-fsrs7 (2026-11-21, experimental)
 
 The FSRS-7 edition now updates itself, and follows the regular 0.12.0.
